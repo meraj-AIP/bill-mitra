@@ -1,0 +1,20 @@
+export const queryKeys = {
+  health: ['health'] as const,
+  me: ['auth', 'me'] as const,
+  privacy: ['privacy'] as const,
+  tariffs: ['tariffs'] as const,
+  calculate: (units: number, month: string, gruhaJyothi: boolean) =>
+    ['tariffs', 'calculate', units, month, gruhaJyothi] as const,
+  consoleSummary: ['console', 'summary'] as const,
+  consoleComplaints: ['console', 'complaints'] as const,
+  consoleComplaintList: (query: object) => ['console', 'complaints', 'list', query] as const,
+  consoleComplaint: (ticket: string) => ['console', 'complaints', 'one', ticket] as const,
+  accounts: ['admin', 'accounts'] as const,
+  accountList: (query: object) => ['admin', 'accounts', query] as const,
+  auditLog: (query: object) => ['admin', 'audit', query] as const,
+  bills: ['bills'] as const,
+  billList: (page: number, pageSize: number, status: string, sort: string) =>
+    ['bills', 'list', page, pageSize, status, sort] as const,
+  bill: (id: string, language: string) => ['bills', 'one', id, language] as const,
+  assistantHistory: ['assistant', 'history'] as const,
+};

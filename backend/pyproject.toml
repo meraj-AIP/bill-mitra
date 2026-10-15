@@ -1,0 +1,18 @@
+[project]
+name = "bill-mitra-backend"
+version = "0.1.0"
+description = "Bill Mitra: Telugu-first electricity bill assistant (API and channel adapters)"
+authors = [{ name = "Meraj Akhtar", email = "meraj@aiplanet.com" }]
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["E501", "SIM108"]

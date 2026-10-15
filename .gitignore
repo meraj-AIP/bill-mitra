@@ -1,0 +1,25 @@
+# Dependencies and builds
+node_modules/
+dist/
+backend/.venv/
+.venv/
+
+# Runtime data (SQLite, media)
+backend/var/
+
+# Secrets
+.env
+
+# Python and tool caches
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+
+# Real consumer bills used to tune vision locally. Never commit.
+backend/tests/real_bills/

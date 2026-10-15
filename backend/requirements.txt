@@ -1,0 +1,10 @@
+# Runtime dependencies for the Bill Mitra API (Python 3.11+)
+fastapi==0.143.2
+uvicorn[standard]==0.53.0
+pydantic==2.13.5
+pydantic-settings==2.16.0
+httpx==0.28.1
+python-multipart==0.0.32
+pypdfium2==5.13.0
+pillow==12.3.0
+pillow-heif==1.8.0

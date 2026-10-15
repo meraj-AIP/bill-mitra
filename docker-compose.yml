@@ -1,0 +1,15 @@
+services:
+  bill-mitra:
+    build: .
+    image: bill-mitra:latest
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - bill-mitra-data:/srv/backend/var
+    restart: unless-stopped
+
+volumes:
+  bill-mitra-data:

@@ -1,0 +1,60 @@
+"""Bill Mitra API: conversation engine, web channel, bill dashboard, WhatsApp channel, console, and the built web app."""
+
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+from app.api import admin, auth, bills, catalog, complaint_actions, complaints, console, privacy
+from app.channels import web
+from app.channels.whatsapp import router as whatsapp
+from app.config import get_settings
+from app.core import security
+from app.store import accounts
+from app.store import privacy as retention
+from app.store.db import connection, purge_mock_data
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+
+settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    connection()
+    accounts.bootstrap_admin()
+    purge_mock_data()
+    retention.sweep()
+    yield
+
+
+app = FastAPI(title="Bill Mitra", version="0.1.0", lifespan=lifespan,
+              description="Telugu-first electricity bill assistant for Telangana. WhatsApp-first, with a web dashboard.")
+# Credentials need an explicit origin list, so a wildcard entry is dropped.
+app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in settings.cors_origins.split(",")
+                                                  if o.strip() not in ("", "*")],
+                   allow_credentials=True, allow_methods=["GET", "POST", "PATCH", "DELETE"],
+                   allow_headers=["*"])
+
+app.middleware("http")(security.protect)
+
+for router in (auth.router, privacy.router, admin.router, catalog.router, bills.router, complaints.router, complaint_actions.router, console.router, web.router,
+               whatsapp.router):
+    app.include_router(router)
+
+
+if settings.frontend_dist.exists():
+    app.mount("/assets", StaticFiles(directory=settings.frontend_dist / "assets"), name="assets")
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def spa(path: str) -> FileResponse:
+        if path == "api" or path.startswith("api/"):
+            raise HTTPException(404, "Not found")
+        candidate = (settings.frontend_dist / path).resolve()
+        if path and candidate.is_file() and settings.frontend_dist.resolve() in candidate.parents:
+            return FileResponse(candidate)
+        return FileResponse(settings.frontend_dist / "index.html")

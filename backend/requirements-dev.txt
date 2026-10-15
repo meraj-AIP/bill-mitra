@@ -1,0 +1,7 @@
+# Tests and linting
+-r requirements.txt
+pytest==9.1.1
+ruff==0.17.1
+
+# Optional: only needed to regenerate sample bills with scripts/make_samples.py
+# playwright==1.56.0
