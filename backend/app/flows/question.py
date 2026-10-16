@@ -39,7 +39,8 @@ def _answer(intent: Intent, a: Analysis, lang: str, units: int | None) -> str:
     if intent.startswith("explain_"):
         return composer.explain_charge(f, lang, intent.removeprefix("explain_"))
     if intent == "what_if" and units is not None:
-        amount = compute(units, a.bill.month_date(), a.bill.load_kw or 1.0, gruha_jyothi_eligible(a.bill)).net
+        amount = compute(units, a.bill.month_date(), a.bill.load_kw or 1.0, gruha_jyothi_eligible(a.bill),
+                         category=a.comp.category).net
         return text(lang, "what_if", units=units, amount=rs(amount))
     return composer.why_high(f, lang)
 

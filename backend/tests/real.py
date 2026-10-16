@@ -29,6 +29,22 @@ OCT_2025 = ExtractedBill.model_validate({
     "subsidy_amount": 0.0, "confidence": 0.99,
 })
 
+# A real TGSPDCL category 2B commercial bill with rooftop solar (net metering), September 2026, billed on kVAh.
+SOLAR_SEP_2026 = ExtractedBill.model_validate({
+    "discom": "TGSPDCL", "service_number": PLACEHOLDER_USC, "category": "2B NON-DOMESTIC/COMM", "is_domestic": False,
+    "bill_month": "2026-09", "bill_date": "2026-09-07", "due_date": "2026-09-21",
+    "previous_reading_date": "2026-08-05", "billing_days": 33, "previous_reading": 61918.0, "present_reading": 65019.0,
+    "units": 3101, "export_units": 9, "billed_units": 3092, "load_kw": 40.0,
+    "line_items": _items(("energy", "Energy Charges", 33384.90), ("fixed", "Fixed Charges", 4000.0),
+                         ("customer", "Customer Charges", 160.0), ("duty", "Electricity Duty", 186.06),
+                         ("other", "Interest on ED", 0.0), ("surcharge", "Surcharge", 0.0),
+                         ("surcharge", "ACD Surcharge", 0.0), ("fsa", "FSA/FCA Charges", 0.0),
+                         ("other", "Subsidy", 0.0), ("adjustment", "Adjustment", 0.0),
+                         ("other", "Interest on CD", 0.0), ("adjustment", "Loss/Gain", 0.04)),
+    "bill_amount": 37731.0, "arrears": -545.0, "total_payable": 37186.0, "gruha_jyothi_household": False,
+    "confidence": 0.95,
+})
+
 MAR_2024 = ExtractedBill.model_validate({
     "discom": "TGSPDCL", "service_number": PLACEHOLDER_USC, "category": "1B(1) Domestic", "is_domestic": True,
     "bill_month": "2024-03", "bill_date": "2024-03-06", "due_date": "2024-03-20",

@@ -65,15 +65,19 @@ discom: "TGSPDCL" | "TGNPDCL" | "OTHER" | "UNKNOWN"   (TSSPDCL is the old name o
 service_number: the USC No. exactly as printed (not the SC No. and not the meter number), or null
 section: the "Sec:" value as printed, or null
 category: as printed after "Cat", e.g. "1B(i) DOMESTIC", or null
-is_domestic: true for category 1 / LT-I domestic, false for commercial, industrial, agriculture
+is_domestic: true for category 1 / LT-I domestic, false for category 2 NON-DOMESTIC/COMMERCIAL, industrial, agriculture
 bill_month: "YYYY-MM" of the bill date ("Dt:"), or null
 bill_date: "YYYY-MM-DD" from "Dt:", or null
 due_date: "YYYY-MM-DD" from "Due Date" (not "Disc Date", not "Last Paid"), or null
 previous_reading_date: "YYYY-MM-DD" from the "Previous" reading row (dates are DD/MM/YY), or null
 billing_days: the "Days:" number, or null
-previous_reading, present_reading: kWh readings from the "Previous" and "Present" rows, or null
-units: the "Units:" value (import units for net metering), or null
-export_units: units exported by rooftop solar, or null
+previous_reading, present_reading: readings from the "Previous" and "Present" rows, or null. Commercial and solar
+  slips print them as "Prs DD/MM/YY Sts KWH KVAH" and "Prv DD/MM/YY Sts KWH KVAH": the two numbers after the date
+  and the 2 digit status are the KWH and KVAH readings. Take the column the units are billed on, the one whose
+  difference equals the units or the "Import:" value (these bills are usually billed on KVAH)
+units: the "Units:" value; on a solar net-metered bill the "Import:" value instead (units drawn from the grid), or null
+export_units: on a solar net-metered bill the "Export:" value (units sent to the grid), else null
+billed_units: the "Billed Units:" value when printed (import minus export on net-metered bills), or null
 load_kw: "Contracted Load" in kW, or null
 line_items: every charge row between the readings and "Bill Amount", as {code, label, amount}, label as printed,
   amounts negative when printed with a minus. Include rows that are 0.00. code is one of:
@@ -81,7 +85,8 @@ line_items: every charge row between the readings and "Bill Amount", as {code, l
   fsa = FSA/FCA Charges; true_up = True-up; surcharge = Surcharge, ACD Surcharge, DPS;
   adjustment = Adjustment, Loss/Gain, rounding; other = Interest on ED, Interest on CD or SD, Subsidy row, anything else
 bill_amount: the "Bill Amount" value, or null
-arrears: the sum of the arrears rows ("Arrears as on ...", "Arrears after ...") plus "ACD Due", 0 if all are 0.00
+arrears: the sum of the arrears rows ("Arrears", "Arrears as on ...", "Arrears after ...") plus "ACD Due", 0 if all are
+  0.00. A row printed with a minus is a credit and makes the sum negative; check it against Total Due minus Bill Amount
 total_payable: the "Total Due" value, or null
 gruha_jyothi_household: true if the bill mentions Gruha Jyothi or a 200 unit free scheme for this connection,
   false if it clearly does not, null if you cannot tell
@@ -113,8 +118,17 @@ class Reading:
     reread: str | None = None  # the failed check that triggered a second careful read, if any
 
 
+MIN_SHORT_SIDE = 1000
+
+
 def _bounded(image: Image.Image) -> bytes:
     image = image.convert("RGB")
+    # WhatsApp shrinks a long thermal slip to about 330 px wide; enlarging it gives the reader room for each digit.
+    short = min(image.size)
+    if short < MIN_SHORT_SIDE:
+        scale = min(MIN_SHORT_SIDE / short, MAX_SIDE / max(image.size))
+        if scale > 1:
+            image = image.resize((round(image.width * scale), round(image.height * scale)), Image.Resampling.LANCZOS)
     image.thumbnail((MAX_SIDE, MAX_SIDE))
     return _jpeg(image)
 

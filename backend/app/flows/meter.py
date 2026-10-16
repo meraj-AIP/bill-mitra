@@ -4,7 +4,7 @@ from datetime import date
 
 from app.domain.bill import ExtractedBill
 from app.domain.conversation.facts import rs
-from app.domain.tariff.engine import compute
+from app.domain.tariff.engine import compute, has_tariff
 from app.flows.analysis import gruha_jyothi_eligible
 from app.flows.turn import Turn
 from app.store import repos
@@ -23,7 +23,9 @@ async def handle(turn: Turn, reading_doc: ExtractedBill, today: date | None = No
     async with turn.tracer.step("Project the month end", "rules") as step:
         projected = round(used / days * 30)
         eligible = gruha_jyothi_eligible(bill)
-        amount = compute(projected, today.replace(day=1), bill.load_kw or 1.0, eligible).net
+        month = today.replace(day=1)
+        category = bill.tariff_category() if has_tariff(month, bill.tariff_category()) else "domestic"
+        amount = compute(projected, month, bill.load_kw or 1.0, eligible, category=category).net
         step.note(f"{used} units in {days} days; month end about {projected} units, Rs {rs(amount)}")
     message = turn.t("meter_projection", reading=round(reading_doc.meter_reading), used=used, days=days,
                      proj=projected, amount=rs(amount))

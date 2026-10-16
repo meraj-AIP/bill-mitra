@@ -50,6 +50,8 @@ class ExtractedBill(BaseModel):
     present_reading: float | None = None
     units: int | None = None
     export_units: int | None = None
+    # Net-metered bills print import, export and the billed (net) units; the billed figure is a cross-check.
+    billed_units: int | None = None
     load_kw: float | None = None
     line_items: list[LineItem] = Field(default_factory=list)
     bill_amount: float | None = None
@@ -78,8 +80,21 @@ class ExtractedBill(BaseModel):
         return min(max(self.billing_days / month_days, 0.5), 2.0)
 
     def net_units(self) -> int:
+        # The printed billed units are the DISCOM's own net figure; import minus export is checked against it.
+        if self.billed_units is not None:
+            return self.billed_units
         units = self.units or 0
         return max(units - (self.export_units or 0), 0)
+
+    def import_units(self) -> int | None:
+        """Units drawn from the grid. On a net-metered bill billed plus export is exact, where the faint
+        "Import:" figure is the one most often misread."""
+        if self.billed_units is not None and self.export_units is not None:
+            return self.billed_units + self.export_units
+        return self.units
+
+    def tariff_category(self) -> Literal["domestic", "non_domestic"]:
+        return "domestic" if self.is_domestic else "non_domestic"
 
     def item(self, code: str) -> float | None:
         values = [line.amount for line in self.line_items if line.code == code]

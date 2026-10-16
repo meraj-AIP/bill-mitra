@@ -17,7 +17,7 @@ CheckStatus = Literal["pass", "fail", "skipped"]
 MONEY_TOLERANCE = 1.0  # bills round the payable amount to the rupee through a Loss/Gain line
 MIN_CONFIDENCE = 0.6
 # A failed check here means a number on the bill was misread, so the reading cannot be trusted.
-BLOCKING = ("readings", "charges_sum", "total")
+BLOCKING = ("readings", "net_units", "charges_sum", "total")
 KEY_FIELDS = ("units", "energy", "bill_amount")
 
 FIELDS = (
@@ -29,6 +29,8 @@ FIELDS = (
     ("customer", "Customer charges"), ("duty", "Electricity duty"), ("bill_amount", "Bill amount"),
     ("total_payable", "Total due"),
 )
+# Only solar net-metered bills print these, so other bills are not marked down for lacking them.
+SOLAR_FIELDS = (("export_units", "Units exported (solar)"), ("billed_units", "Billed units (net)"))
 
 
 class FieldCapture(BaseModel):
@@ -85,6 +87,17 @@ def _readings(bill: ExtractedBill) -> Check:
                  detail=f"{bill.present_reading:g} - {bill.previous_reading:g} = {diff}, bill says {bill.units}")
 
 
+def _net_units(bill: ExtractedBill) -> Check:
+    label = "Import minus solar export equals billed units"
+    if None in (bill.units, bill.export_units, bill.billed_units):
+        return Check(key="net_units", label=label, status="skipped", detail="Not a net-metered bill, or a figure is missing")
+    assert bill.units is not None and bill.export_units is not None and bill.billed_units is not None
+    net = bill.units - bill.export_units
+    ok = net == bill.billed_units  # whole units on both sides, so any gap is a misread digit
+    return Check(key="net_units", label=label, status="pass" if ok else "fail",
+                 detail=f"{bill.units} - {bill.export_units} = {net}, bill says {bill.billed_units}")
+
+
 def _charges_sum(bill: ExtractedBill) -> Check:
     label = "Charges add up to the bill amount"
     if not bill.line_items or bill.bill_amount is None:
@@ -121,13 +134,21 @@ def _days(bill: ExtractedBill) -> Check:
                  detail=f"{days} days between the dates, bill says {bill.billing_days}")
 
 
+def _blocking(checks: list[Check]) -> list[Check]:
+    """Failed checks that mean a number was misread. On a net-metered bill the exact import, export and billed
+    figures already confirm the units, so a misread meter reading alone no longer blocks it."""
+    status = {c.key: c.status for c in checks}
+    skip = {"readings"} if status.get("net_units") == "pass" else set()
+    return [c for c in checks if c.key in BLOCKING and c.key not in skip and c.status == "fail"]
+
+
 def _problem(bill: ExtractedBill, checks: list[Check]) -> str | None:
     if bill.units is None:
         return "The units used this month could not be read."
     unreadable = [key for key in KEY_FIELDS if key in bill.unreadable_fields]
     if unreadable:
         return "Some key numbers are not clear enough to read with certainty."
-    failed = [c for c in checks if c.key in BLOCKING and c.status == "fail"]
+    failed = _blocking(checks)
     if failed:
         return f"The numbers we read do not add up ({failed[0].label.lower()}), so one of them is probably misread."
     if bill.confidence < MIN_CONFIDENCE:
@@ -137,15 +158,14 @@ def _problem(bill: ExtractedBill, checks: list[Check]) -> str | None:
 
 def failed_check(bill: ExtractedBill) -> str | None:
     """Label of the first blocking consistency check that fails, or None."""
-    for check in (_readings(bill), _charges_sum(bill), _total(bill)):
-        if check.status == "fail":
-            return check.label
-    return None
+    failed = _blocking([_readings(bill), _net_units(bill), _charges_sum(bill), _total(bill)])
+    return failed[0].label if failed else None
 
 
 def report(bill: ExtractedBill) -> CaptureReport:
-    fields = [_field(bill, key, label) for key, label in FIELDS]
-    checks = [_readings(bill), _charges_sum(bill), _total(bill), _days(bill)]
+    solar = bill.export_units is not None or bill.billed_units is not None
+    fields = [_field(bill, key, label) for key, label in (*FIELDS, *(SOLAR_FIELDS if solar else ()))]
+    checks = [_readings(bill), *([_net_units(bill)] if solar else []), _charges_sum(bill), _total(bill), _days(bill)]
     problem = _problem(bill, checks)
     return CaptureReport(captured=sum(f.status == "captured" for f in fields), expected=len(fields), fields=fields,
                          checks=checks, trusted=problem is None, problem=problem)

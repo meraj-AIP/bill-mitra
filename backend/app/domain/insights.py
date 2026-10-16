@@ -5,7 +5,7 @@ from datetime import date
 from pydantic import BaseModel
 
 from app.domain.prediction import MonthUsage
-from app.domain.tariff.engine import compute, money
+from app.domain.tariff.engine import Category, compute, money
 
 THRESHOLDS = (100, 200)
 AC_KWH_PER_HOUR = 1.5  # 1.5 ton split AC, typical
@@ -48,9 +48,10 @@ class Insights(BaseModel):
     comparison: Comparison | None
 
 
-def what_if_curve(month: date, load_kw: float, gruha_jyothi: bool, upto: int) -> list[CurvePoint]:
-    step = 2 if upto > 300 else 1
-    return [CurvePoint(units=u, amount=compute(u, month, load_kw, gruha_jyothi).net)
+def what_if_curve(month: date, load_kw: float, gruha_jyothi: bool, upto: int,
+                  category: Category = "domestic") -> list[CurvePoint]:
+    step = max(2 if upto > 300 else 1, upto // 500)
+    return [CurvePoint(units=u, amount=compute(u, month, load_kw, gruha_jyothi, category=category).net)
             for u in range(0, upto + 1, step)]
 
 
@@ -91,11 +92,13 @@ def comparison(month: date, units: int, amount: float, history: list[MonthUsage]
 
 
 def build(month: date, units: int, amount: float, load_kw: float, gruha_jyothi: bool,
-          history: list[MonthUsage]) -> Insights:
+          history: list[MonthUsage], category: Category = "domestic") -> Insights:
     upto = max(400, ((units + 150) // 50) * 50)
+    household = category == "domestic"
+    # Cliffs and the AC and geyser saving tip describe household slabs and habits, so shops get the curve only.
     return Insights(
-        curve=what_if_curve(month, load_kw, gruha_jyothi, upto),
-        cliffs=cliffs(month, load_kw, gruha_jyothi),
-        saving=saving(units, month, load_kw, gruha_jyothi),
+        curve=what_if_curve(month, load_kw, gruha_jyothi, upto, category),
+        cliffs=cliffs(month, load_kw, gruha_jyothi) if household else [],
+        saving=saving(units, month, load_kw, gruha_jyothi) if household else None,
         comparison=comparison(month, units, amount, history),
     )

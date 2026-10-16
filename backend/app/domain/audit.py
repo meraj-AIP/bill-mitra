@@ -43,7 +43,7 @@ def _line(code: str, printed: float | None, expected: float) -> AuditLine:
 
 
 def audit(bill: ExtractedBill, comp: Computation) -> AuditResult:
-    if not bill.is_domestic:
+    if not bill.is_domestic and comp.category != "non_domestic":
         return AuditResult(status="not_checkable", lines=[], overcharge=0, undercharge=0, notes=["non_domestic"])
 
     expected = comp.charges()

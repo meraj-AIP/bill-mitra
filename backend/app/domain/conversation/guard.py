@@ -29,7 +29,8 @@ def allowed_numbers(facts: Facts) -> set[float]:
         if isinstance(value, bool) or value is None:
             continue
         if isinstance(value, (int, float)):
-            allowed.update({round(float(value), 2), float(round(value)), float(int(value))})
+            # Text never carries the sign: a credit of -545 is written "Rs 545 in your favour".
+            allowed.update({round(abs(float(value)), 2), float(round(abs(value))), float(int(abs(value)))})
         elif isinstance(value, list):
             for item in value:
                 if isinstance(item, (int, float)):

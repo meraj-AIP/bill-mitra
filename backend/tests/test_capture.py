@@ -51,3 +51,14 @@ def test_cut_off_bottom_skips_checks_and_asks_again():
 def test_days_check_uses_reading_dates():
     rep = capture.report(variant(OCT_2025, billing_days=45))
     assert {c.key: c.status for c in rep.checks}["days"] == "fail"
+
+
+def test_solar_bill_misread_meter_reading_does_not_block_when_net_units_agree():
+    from tests.real import SOLAR_SEP_2026
+
+    misread = variant(SOLAR_SEP_2026, previous_reading=61910.0)  # 8 read as 0, the real misread seen on this bill
+    rep = capture.report(misread)
+    checks = {c.key: c.status for c in rep.checks}
+    assert checks["readings"] == "fail" and checks["net_units"] == "pass" and rep.trusted
+    wrong_import = variant(SOLAR_SEP_2026, units=3190, previous_reading=61910.0)
+    assert not capture.report(wrong_import).trusted

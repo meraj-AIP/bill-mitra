@@ -16,7 +16,7 @@ def _label(language: str, code: str) -> str:
 
 
 def _audit_sentences(f: Facts, lang: str) -> list[str]:
-    if not f.is_domestic:
+    if f.audit_status == "not_checkable":
         return [text(lang, "non_domestic")]
     if f.audit_status == "verified":
         return [text(lang, "verified")]
@@ -42,11 +42,13 @@ def explain(f: Facts, lang: str) -> list[str]:
     """Spoken explanation, in the order a person would say it."""
     month = month_label(lang, f.month_number, f.year)
     out = [text(lang, "headline", month=month, units=f.units, net=rs(f.bill_amount))]
-    if f.arrears:
+    if f.arrears > 0:
         out.append(text(lang, "arrears_total", arrears=rs(f.arrears), total=rs(f.total_payable)))
+    elif f.arrears < 0:
+        out.append(text(lang, "credit_total", credit=rs(-f.arrears), total=rs(f.total_payable)))
     if f.export_units:
         out.append(text(lang, "net_metering", export=f.export_units, units=f.units))
-    if f.is_domestic:
+    if f.audit_status != "not_checkable":
         out.append(text(lang, f"group_{f.group}"))
     if f.gj_applied:
         out.append(text(lang, "gj_applied", subsidy=rs(f.subsidy)))

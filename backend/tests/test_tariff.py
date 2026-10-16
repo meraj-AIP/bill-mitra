@@ -3,7 +3,7 @@ from datetime import date
 import pytest
 
 from app.domain.tariff.engine import compute, true_up_rate
-from tests.real import MAR_2024, OCT_2025
+from tests.real import MAR_2024, OCT_2025, SOLAR_SEP_2026
 
 OCT = date(2026, 10, 1)
 
@@ -85,3 +85,26 @@ def test_true_up_rates():
 def test_negative_units_rejected():
     with pytest.raises(ValueError):
         compute(-1, OCT)
+
+
+def test_lt2_commercial_solar_bill_matches_to_the_paisa():
+    """A real 2B net-metered bill: 3101 imported, 9 exported, 3092 billed over 33 days from an August reading."""
+    from app.domain.audit import audit
+    from app.domain.capture import report
+
+    bill = SOLAR_SEP_2026
+    comp = compute(bill.net_units(), bill.month_date(), bill.load_kw or 1.0, period=bill.period(),
+                   category="non_domestic", import_units=bill.units)
+    assert (comp.group, comp.units) == ("LT-II(B)", 3092)
+    assert (comp.energy, comp.fixed, comp.customer, comp.duty) == (33384.90, 4000.0, 160.0, 186.06)
+    result = audit(bill, comp)
+    assert result.status == "verified" and "net_metering" in result.notes
+    rep = report(bill)
+    assert rep.trusted and {c.key: c.status for c in rep.checks}["net_units"] == "pass"
+
+
+def test_lt2_needs_a_version_with_lt2_rates_and_never_gets_gruha_jyothi():
+    with pytest.raises(ValueError):
+        compute(100, date(2024, 3, 1), category="non_domestic")
+    shop = compute(40, date(2025, 6, 1), gruha_jyothi_eligible=True, category="non_domestic")
+    assert shop.group == "LT-II(A)" and shop.energy == 280.0 and not shop.gruha_jyothi_applied and shop.net > 0

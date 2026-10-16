@@ -18,7 +18,7 @@ T = {
     "mismatch": "Your {label} is *Rs {diff} more* than the tariff allows. You can raise a complaint in one tap.",
     "undercharge": "Your {label} is Rs {diff} less than the tariff. The DISCOM may add it to a later bill.",
     "partial": "Some charges were not readable, so we could not check all of them.",
-    "non_domestic": "This is not a household bill. I can read it, but my checks cover household (LT-I) bills only. For help, call 1912.",
+    "non_domestic": "I can read this bill, but its category is not one I can check yet. I check household (LT-I) bills, and commercial (LT-II) bills from April 2025. For help, call 1912.",
     "others": "The rest is fixed charge Rs {fixed}, customer charge Rs {customer} and electricity duty Rs {duty}.",
     "surcharge": "It also has a late payment surcharge of Rs {surcharge}, because an earlier bill was paid after its due date. Paying by the due date avoids it.",
     "fsa": "There is also a fuel cost adjustment (FSA) of Rs {fsa}.",
@@ -110,4 +110,7 @@ T = {
     "quick_correction": "The extra amount will be adjusted in your next bill.",
     "quick_visit": "A lineman will visit to check your meter.",
     "quick_1912": "For a power cut or any urgent supply problem, please call 1912.",
+    "group_LT-II(A)": "This is a commercial (LT-II) connection under 50 units: Rs 7.00 a unit.",
+    "group_LT-II(B)": "This is a commercial (LT-II) connection: Rs 8.50 a unit for the first 100, Rs 9.90 up to 300, Rs 10.40 up to 500 and Rs 11.00 above that. The steps stretch a little with the days in the bill.",
+    "credit_total": "Rs {credit} from earlier bills is in your favour, so the total due is *Rs {total}*.",
 }

@@ -31,6 +31,8 @@ export interface Bill {
   present_reading: number | null;
   units: number | null;
   export_units: number | null;
+  /** Import minus export, as printed on a net-metered bill. */
+  billed_units?: number | null;
   load_kw: number | null;
   billing_days?: number | null;
   line_items: LineItem[];

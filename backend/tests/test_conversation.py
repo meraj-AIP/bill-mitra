@@ -12,7 +12,7 @@ from app.core.trace import Event
 from app.domain.conversation.lang import PACKS
 from app.services.openai_client import ProviderError
 from app.store import media
-from tests.real import MAR_2024, OCT_2025, reading, variant
+from tests.real import MAR_2024, OCT_2025, SOLAR_SEP_2026, reading, variant
 
 
 def run(user: str, language: str = "en", **fields: object) -> list[Event]:
@@ -115,9 +115,16 @@ def test_earlier_upload_of_same_connection_becomes_history(reader):
     assert analyse(OCT_2025, new_user()).history == []  # another person's uploads never mix in
 
 
-def test_non_domestic_bill_not_audited(reader):
-    reader(reading(variant(OCT_2025, is_domestic=False, category="LT-II Non-Domestic")))
-    assert "not a household bill" in bodies(run(new_user(), kind="image"))
+def test_non_domestic_bill_before_lt2_rates_is_not_audited(reader):
+    reader(reading(variant(MAR_2024, is_domestic=False, category="LT-II Non-Domestic")))
+    assert "not one I can check yet" in bodies(run(new_user(), kind="image"))
+
+
+def test_solar_commercial_bill_is_checked_and_explained(reader):
+    reader(reading(SOLAR_SEP_2026))
+    said = bodies(run(new_user(), kind="image"))
+    assert "commercial (LT-II)" in said and "sent 9 units to the grid" in said and "3092 net units" in said
+    assert "Rs 545 from earlier bills is in your favour" in said and "-545" not in said
 
 
 def test_sms_bill():

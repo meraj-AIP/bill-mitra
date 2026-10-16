@@ -2,8 +2,11 @@
 
 from dataclasses import dataclass, field
 from datetime import date
+from typing import Literal
 
-from app.domain.tariff.tables import Group, TariffVersion, version_for
+from app.domain.tariff.tables import CustomerChargeBand, Group, version_for
+
+Category = Literal["domestic", "non_domestic"]
 
 
 @dataclass(frozen=True)
@@ -32,6 +35,7 @@ class Computation:
     net: float
     gruha_jyothi_applied: bool
     verify: tuple[str, ...] = field(default=())
+    category: Category = "domestic"
 
     def charges(self) -> dict[str, float]:
         return {
@@ -51,11 +55,16 @@ def _scaled(limit: int, period: float) -> int:
     return round(limit * period)
 
 
-def group_for(units: int, version: TariffVersion, period: float = 1.0) -> Group:
-    for group in version.groups:
+def group_for(units: int, groups: tuple[Group, ...], period: float = 1.0) -> Group:
+    for group in groups:
         if group.max_units is None or units <= _scaled(group.max_units, period):
             return group
-    return version.groups[-1]
+    return groups[-1]
+
+
+def has_tariff(bill_month: date, category: Category) -> bool:
+    """Non-domestic bills can only be priced from versions that carry LT-II rates."""
+    return category == "domestic" or version_for(bill_month).non_domestic is not None
 
 
 def slab_lines(units: int, group: Group, period: float = 1.0) -> tuple[SlabLine, ...]:
@@ -71,11 +80,11 @@ def slab_lines(units: int, group: Group, period: float = 1.0) -> tuple[SlabLine,
     return tuple(lines)
 
 
-def customer_charge(units: int, version: TariffVersion) -> float:
-    for band in version.customer_charges:
+def customer_charge(units: int, bands: tuple[CustomerChargeBand, ...]) -> float:
+    for band in bands:
         if band.upto is None or units <= band.upto:
             return band.amount
-    return version.customer_charges[-1].amount
+    return bands[-1].amount
 
 
 def compute(
@@ -84,23 +93,32 @@ def compute(
     load_kw: float = 1.0,
     gruha_jyothi_eligible: bool = False,
     period: float = 1.0,
+    category: Category = "domestic",
+    import_units: int | None = None,
 ) -> Computation:
     """Price a month of use. `period` is the billing period as a fraction of a month: real TGSPDCL bills
-    stretch every slab by it (31 days read from a 30 day month bills the first 103 units at the first rate)."""
+    stretch every slab by it (31 days read from a 30 day month bills the first 103 units at the first rate).
+    `import_units` is what came from the grid before solar export; non-domestic duty is charged on it."""
     if units < 0:
         raise ValueError("units cannot be negative")
     if not 0.5 <= period <= 2.0:
         raise ValueError("billing period out of range")
     version = version_for(bill_month)
-    group = group_for(units, version, period)
+    nd = version.non_domestic if category == "non_domestic" else None
+    if category == "non_domestic" and nd is None:
+        raise ValueError(f"{version.id} has no non-domestic rates")
+    group = group_for(units, nd.groups if nd else version.groups, period)
     lines = slab_lines(units, group, period)
     energy = money(sum(line.amount for line in lines))
-    fixed = money(version.fixed_charge_per_kw * max(load_kw, 1.0))
-    customer = customer_charge(units, version)
-    duty = money(units * version.duty_per_unit)
+    per_kw = nd.fixed_charge_per_kw[group.code] if nd else version.fixed_charge_per_kw
+    fixed = money(per_kw * max(load_kw, 1.0))
+    customer = customer_charge(units, nd.customer_charges if nd else version.customer_charges)
+    duty_units = max(import_units or units, units) if nd else units
+    duty = money(duty_units * (nd.duty_per_unit if nd else version.duty_per_unit))
     fsa = money(units * version.fsa_per_unit.get(bill_month.strftime("%Y-%m"), 0.0))
     gross = money(energy + fixed + customer + duty + fsa)
-    applied = gruha_jyothi_eligible and units <= version.gruha_jyothi_limit
+    # Gruha Jyothi is a household scheme; a shop never gets it.
+    applied = nd is None and gruha_jyothi_eligible and units <= version.gruha_jyothi_limit
     subsidy = gross if applied else 0.0
     return Computation(
         tariff_id=version.id,
@@ -118,6 +136,7 @@ def compute(
         net=money(gross - subsidy),
         gruha_jyothi_applied=applied,
         verify=version.verify,
+        category=category,
     )
 
 

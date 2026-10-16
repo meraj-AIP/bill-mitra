@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from app.domain.tariff.engine import compute
+from app.domain.tariff.engine import Category, compute
 
 # Typical Telangana domestic load shape: summer peak, monsoon dip, mild winter.
 SEASONAL_FACTOR = {1: 0.85, 2: 0.92, 3: 1.12, 4: 1.30, 5: 1.38, 6: 1.15,
@@ -64,6 +64,7 @@ def predict(
     history: list[MonthUsage],
     gruha_jyothi: bool,
     load_kw: float = 1.0,
+    category: Category = "domestic",
 ) -> Prediction:
     target = next_month(current_month)
     estimate = _from_history(target, history) or _from_recent(target, history)
@@ -73,10 +74,11 @@ def predict(
     units = max(round(estimate[0]), 0)
     low, high = round(units * 0.92), round(units * 1.08)
     crosses = None
-    for threshold in (100, 200):
+    # The 100 and 200 unit steps are household tariff steps; a shop's bill has no such warning.
+    for threshold in (100, 200) if category == "domestic" else ():
         if current_units <= threshold < high:
             crosses = threshold
             break
-    amount = compute(units, target, load_kw, gruha_jyothi).net
+    amount = compute(units, target, load_kw, gruha_jyothi, category=category).net
     return Prediction(month=_key(target), units_low=low, units_high=high, units=units,
                       amount=amount, method=estimate[1], crosses=crosses)

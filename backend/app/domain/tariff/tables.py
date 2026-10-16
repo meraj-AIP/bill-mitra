@@ -1,4 +1,4 @@
-"""Versioned TGERC retail supply tariff tables for LT-I domestic consumers.
+"""Versioned TGERC retail supply tariff tables: LT-I domestic and, from FY 2025-26, LT-II non-domestic.
 
 Every figure the assistant quotes comes from these tables. A new tariff order is
 added as a new version with its effective dates; old bills keep being checked
@@ -39,6 +39,16 @@ class TrueUpRule:
 
 
 @dataclass(frozen=True)
+class NonDomesticTariff:
+    """LT-II commercial. Groups work like LT-I: the group follows monthly units, slabs are telescopic in it."""
+
+    groups: tuple[Group, ...]
+    fixed_charge_per_kw: dict[str, float]  # by group code, Rs per kW of contracted load per month
+    customer_charges: tuple[CustomerChargeBand, ...]
+    duty_per_unit: float  # charged on units imported from the grid, before solar export is netted off
+
+
+@dataclass(frozen=True)
 class TariffVersion:
     id: str
     order: str
@@ -52,6 +62,7 @@ class TariffVersion:
     true_up: TrueUpRule | None = None
     gruha_jyothi_limit: int = 200
     verify: tuple[str, ...] = ()
+    non_domestic: NonDomesticTariff | None = None
 
 
 _DOMESTIC_GROUPS = (
@@ -78,6 +89,21 @@ _CUSTOMER_CHARGES = (
 
 # Slab pro-rating by billing days is not in the schedule; it is inferred from two real bills (see engine.compute).
 _VERIFY = ("fsa_per_unit", "billing_period_proration")
+
+# LT-II rates from the TGERC FY 2025-26 schedule (FY 2026-27 retains them). The LT-II(B) slabs, the Rs 100 per kW
+# fixed charge, Rs 160 customer charge and duty on import units reproduce a real TGSPDCL net-metered 2B bill of
+# September 2026 to the paisa (3092 billed units over 33 days). LT-II(A), the customer charge bands and the fixed
+# charge for smaller loads are not yet seen on a real bill.
+_NON_DOMESTIC = NonDomesticTariff(
+    groups=(
+        Group("LT-II(A)", 50, (Slab(50, 7.00),)),
+        Group("LT-II(B)", None, (Slab(100, 8.50), Slab(300, 9.90), Slab(500, 10.40), Slab(None, 11.00))),
+    ),
+    fixed_charge_per_kw={"LT-II(A)": 100.0, "LT-II(B)": 100.0},
+    customer_charges=_CUSTOMER_CHARGES,
+    duty_per_unit=0.06,
+)
+_NON_DOMESTIC_VERIFY = ("non_domestic_lt2a", "non_domestic_customer_charges", "non_domestic_fixed_small_loads")
 
 TARIFF_VERSIONS: tuple[TariffVersion, ...] = (
     TariffVersion(
@@ -111,7 +137,8 @@ TARIFF_VERSIONS: tuple[TariffVersion, ...] = (
         customer_charges=_CUSTOMER_CHARGES,
         fixed_charge_per_kw=10.0,
         duty_per_unit=0.06,
-        verify=_VERIFY,
+        verify=(*_VERIFY, *_NON_DOMESTIC_VERIFY),
+        non_domestic=_NON_DOMESTIC,
     ),
     TariffVersion(
         id="TGERC-RST-2026-27",
@@ -123,7 +150,8 @@ TARIFF_VERSIONS: tuple[TariffVersion, ...] = (
         fixed_charge_per_kw=10.0,
         duty_per_unit=0.06,
         true_up=TrueUpRule(starts=date(2026, 11, 1), first_month_rate=0.30, later_rate=0.50),
-        verify=_VERIFY,
+        verify=(*_VERIFY, *_NON_DOMESTIC_VERIFY),
+        non_domestic=_NON_DOMESTIC,
     ),
 )
 
