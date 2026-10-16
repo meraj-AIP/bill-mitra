@@ -5,7 +5,7 @@ import { Box, Button, Container, Stack } from '@mui/material';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { useAuth } from '@/features/auth';
+import { scopeLabel, spansDiscoms, useAuth } from '@/features/auth';
 import { ListPanel } from '@/shared/components/ListPanel';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { EmptyState } from '@/shared/components/States';
@@ -21,7 +21,7 @@ export function ComplaintsInboxPage() {
   const params = useInboxParams();
   const { query } = params;
   const result = useInbox(query);
-  const scopedTo = account?.role === 'officer' ? account.discom : null;
+  const scopedTo = spansDiscoms(account) ? null : scopeLabel(account);
   const filtered = Boolean(query.status || query.discom || query.q || query.triage || query.failed);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const toggle = (ticket: string) => setSelected((now) => {

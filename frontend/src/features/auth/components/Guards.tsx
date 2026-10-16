@@ -3,9 +3,9 @@ import { Navigate, Outlet, useLocation, useSearchParams } from 'react-router-dom
 
 import { ErrorState } from '@/shared/components/States';
 
-import type { Role } from '../api/authApi';
 import { useAuth } from '../hooks/useAuth';
-import { landingFor, safeNext } from '../model/roles';
+import { canAny, landingFor, type Permission } from '../model/permissions';
+import { safeNext } from '../model/roles';
 
 function Checking() {
   return (
@@ -24,10 +24,11 @@ function Unreachable({ onRetry }: { onRetry: () => void }) {
 }
 
 /**
- * Lets the page through only for the given roles. Signed-out people go to the login page with the path
- * they wanted; a signed-in person with the wrong role goes to their own landing page.
+ * Lets the page through when the account holds any of the given permissions, or for anyone signed in when none
+ * are given. Signed-out people go to the login page with the path they wanted; a signed-in person without the
+ * permission goes to their own landing page. The server checks again on every request.
  */
-export function RequireRole({ roles }: { roles: readonly Role[] }) {
+export function RequirePermission({ any }: { any?: readonly Permission[] }) {
   const { account, loading, error, retry } = useAuth();
   const location = useLocation();
   if (loading) return <Checking />;
@@ -36,7 +37,7 @@ export function RequireRole({ roles }: { roles: readonly Role[] }) {
     const next = `${location.pathname}${location.search}`;
     return <Navigate to={next === '/' ? '/login' : `/login?next=${encodeURIComponent(next)}`} replace />;
   }
-  if (!roles.includes(account.role)) return <Navigate to={landingFor(account.role)} replace />;
+  if (any && !canAny(account, any)) return <Navigate to={landingFor(account)} replace />;
   return <Outlet />;
 }
 
@@ -46,6 +47,6 @@ export function PublicOnly() {
   const [params] = useSearchParams();
   if (loading) return <Checking />;
   if (error) return <Unreachable onRetry={retry} />;
-  if (account) return <Navigate to={safeNext(params.get('next')) ?? landingFor(account.role)} replace />;
+  if (account) return <Navigate to={safeNext(params.get('next')) ?? landingFor(account)} replace />;
   return <Outlet />;
 }

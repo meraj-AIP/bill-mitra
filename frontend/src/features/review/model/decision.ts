@@ -1,0 +1,102 @@
+import { dateTime } from '@/shared/lib/format';
+
+import type { CaseDetail, DecisionKind, Evidence, NewDecision, Preview, ReasonCode, ReviewState } from '../api/types';
+import { MIN_NOTE } from './labels';
+
+export interface DecisionDraft {
+  kind: DecisionKind;
+  reading: string;
+  reduction: string;
+  reason: ReasonCode | '';
+  note: string;
+  /** Keys are `${kind}:${id}`. */
+  evidence: string[];
+}
+
+export const emptyDraft = (): DecisionDraft => ({ kind: 'correct', reading: '', reduction: '', reason: 'bill_correct', note: '', evidence: [] });
+
+/** A decision can be recorded while nothing is waiting on someone else. */
+export const OPEN_FOR_DECISION: ReadonlySet<ReviewState> = new Set(['awaiting_review', 'info_requested', 'rejected']);
+
+const evidenceKey = (e: Pick<Evidence, 'kind' | 'id'>) => `${e.kind}:${e.id}`;
+
+/** What an AE can cite: the bill itself, and anything the consumer sent into the thread. */
+export function evidenceOptions(c: CaseDetail): Array<Evidence & { key: string; photo: string | null }> {
+  const bill = c.bill_id ? [{ kind: 'bill' as const, id: c.bill_id, label: 'The bill as uploaded', photo: null }] : [];
+  const messages = c.messages
+    .filter((m) => m.author_kind === 'consumer')
+    .map((m) => ({
+      kind: 'message' as const,
+      id: String(m.id),
+      label: m.media_url ? `Photo from the consumer, ${dateTime(m.created_at)}` : `Consumer reply, ${dateTime(m.created_at)}: ${m.body.slice(0, 80)}`,
+      photo: m.media_url,
+    }));
+  return [...bill, ...messages].map((e) => ({ ...e, key: evidenceKey(e) }));
+}
+
+export function parseAmount(text: string): number | null {
+  if (!text.trim()) return null;
+  const n = Number(text);
+  return Number.isFinite(n) ? n : null;
+}
+
+export interface Outcome {
+  original: number | null;
+  revised: number | null;
+  reduction: number | null;
+  needsApproval: boolean;
+}
+
+/**
+ * The figures the summary shows. A corrected reading uses the engine's preview as is. A custom reduction is the AE's
+ * own typed amount; no revised total is worked out here, the server records it.
+ */
+export function outcomeOf(d: DecisionDraft, c: CaseDetail, preview: Preview | undefined): Outcome {
+  const original = c.printed_amount;
+  if (d.kind === 'correct') return { original, revised: original, reduction: 0, needsApproval: false };
+  if (d.kind === 'corrected_reading') {
+    return preview
+      ? { original, revised: preview.revised_amount, reduction: preview.reduction, needsApproval: preview.needs_approval }
+      : { original, revised: null, reduction: null, needsApproval: false };
+  }
+  return { original, revised: null, reduction: parseAmount(d.reduction), needsApproval: c.policy.custom_needs_approval };
+}
+
+function readingProblem(d: DecisionDraft, c: CaseDetail, outcome: Outcome): string | null {
+  if (d.kind !== 'corrected_reading') return null;
+  const reading = parseAmount(d.reading);
+  const previous = c.bill?.previous_reading ?? null;
+  if (reading === null) return 'Enter the corrected present reading.';
+  if (previous !== null && reading < previous) return `The reading cannot be below the previous reading, ${previous}.`;
+  if (outcome.reduction !== null && outcome.reduction <= 0) return 'At this reading the bill does not go down. Choose Bill is correct instead.';
+  return null;
+}
+
+function reductionProblem(d: DecisionDraft, c: CaseDetail): string | null {
+  if (d.kind !== 'custom') return null;
+  const reduction = parseAmount(d.reduction);
+  if (reduction === null || reduction <= 0) return 'Enter the amount to take off, above zero.';
+  if (c.printed_amount !== null && reduction > c.printed_amount) return 'The reduction cannot be more than the printed amount.';
+  return null;
+}
+
+export function problemsOf(d: DecisionDraft, c: CaseDetail, outcome: Outcome) {
+  return {
+    reading: readingProblem(d, c, outcome),
+    reduction: reductionProblem(d, c),
+    reason: d.reason ? null : 'Pick a reason.',
+    note: d.note.trim().length >= MIN_NOTE ? null : `Write at least ${MIN_NOTE} characters, so the next reader knows why.`,
+    evidence: d.evidence.length > 0 ? null : 'Tick at least one piece of evidence.',
+  };
+}
+
+export function toBody(d: DecisionDraft): NewDecision {
+  const evidence = d.evidence.map((key) => {
+    const [kind, ...rest] = key.split(':');
+    return { kind: kind as Evidence['kind'], id: rest.join(':') };
+  });
+  const base = { kind: d.kind, reason_code: d.reason as ReasonCode, note: d.note.trim(), evidence };
+  if (d.kind === 'corrected_reading') return { ...base, corrected_present_reading: Number(d.reading) };
+  if (d.kind === 'custom') return { ...base, reduction: Number(d.reduction) };
+  return base;
+}

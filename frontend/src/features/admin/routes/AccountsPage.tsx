@@ -10,6 +10,7 @@ import { SearchField } from '@/shared/components/SearchField';
 import { EmptyState } from '@/shared/components/States';
 
 import { useAccounts } from '../api/adminApi';
+import { useRoles } from '../api/rolesApi';
 import { AccountsTable } from '../components/AccountsTable';
 import { CreateAccountDialog } from '../components/CreateAccountDialog';
 import { EditAccountDialog } from '../components/EditAccountDialog';
@@ -20,14 +21,14 @@ type OpenDialog = { kind: 'create' } | { kind: 'edit' | 'reset'; account: Accoun
 
 function Filters({ params }: { params: ReturnType<typeof useAccountsParams> }) {
   const { query, setFilter } = params;
+  const roles = useRoles();
   return (
     <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1.5, flexWrap: 'wrap' }}>
       <SearchField label="Search" placeholder="Name, email or mobile" value={query.q} onChange={(v) => setFilter('q', v)} />
-      <TextField select size="small" label="Role" value={query.role} onChange={(e) => setFilter('role', e.target.value)} sx={{ minWidth: 160 }}>
+      <TextField select size="small" label="Role" value={query.role} onChange={(e) => setFilter('role', e.target.value)} sx={{ minWidth: 180 }}>
         <MenuItem value="">All roles</MenuItem>
-        <MenuItem value="admin">Administrators</MenuItem>
-        <MenuItem value="officer">DISCOM officers</MenuItem>
-        <MenuItem value="consumer">Consumers</MenuItem>
+        {roles.data?.map((r) => <MenuItem key={r.slug} value={r.slug}>{r.name}</MenuItem>)}
+        {query.role && !roles.data && <MenuItem value={query.role}>{query.role}</MenuItem>}
       </TextField>
       <TextField select size="small" label="Status" value={query.active} onChange={(e) => setFilter('active', e.target.value)} sx={{ minWidth: 150 }}>
         <MenuItem value="">Any status</MenuItem>
@@ -58,7 +59,7 @@ export function AccountsPage() {
     <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
       <Stack sx={{ gap: 3 }}>
         <PageHeader eyebrow="Administration" title="Accounts"
-          lead="Consumers register themselves. Staff accounts for officers and administrators are created here."
+          lead="Consumers register themselves. Staff accounts are created here, each with one role and the units it covers."
           actions={<Button variant="contained" startIcon={<PersonAddAltOutlinedIcon />} onClick={() => setDialog({ kind: 'create' })}>
             Create staff account
           </Button>} />

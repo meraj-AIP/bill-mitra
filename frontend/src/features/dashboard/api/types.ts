@@ -1,3 +1,5 @@
+import type { ReviewSummary, Spike } from '@/features/review';
+
 export type Outcome = 'checked' | 'not_a_bill' | 'retake' | 'reading_off' | 'reading_failed';
 export type Discom = 'TGSPDCL' | 'TGNPDCL' | 'OTHER' | 'UNKNOWN';
 export type AuditStatus = 'verified' | 'mismatch' | 'partial' | 'not_checkable' | 'calculated';
@@ -110,6 +112,8 @@ export interface Analysis {
   cliffs: Array<{ threshold: number; amount_at: number; amount_after: number; jump: number }>;
   saving: Saving | null;
   explanation: string[];
+  /** Rule-engine check against the household's usual month. Older reports may not carry it. */
+  spike?: Spike;
 }
 
 export interface BillReport {
@@ -123,6 +127,8 @@ export interface BillReport {
   bill: Bill | null;
   capture: Capture | null;
   analysis: Analysis | null;
+  /** The AE review case for this bill, when one exists. */
+  review?: ReviewSummary | null;
 }
 
 export interface BillSummary {
@@ -135,6 +141,10 @@ export interface BillSummary {
   audit_status: string;
   overcharge: number;
   service_masked: string | null;
+  /** The latest approved revision of this bill, or null when it has none. */
+  revised_amount: number | null;
+  /** An AE reading check is open for this bill. */
+  under_review: boolean;
 }
 
 export interface Page<T> {

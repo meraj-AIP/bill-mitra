@@ -26,7 +26,7 @@ for r in (auth.router, admin.router, complaints.router, complaint_actions.router
 def staff() -> dict[str, accounts.Account]:
     tag = secrets.token_hex(3)
     make = accounts.create
-    return {"admin": make("admin", f"admin-a-{tag}@example.com", "Test admin", PASSWORD),
+    return {"admin": make("super_admin", f"admin-a-{tag}@example.com", "Test admin", PASSWORD),
             "south": make("officer", f"officer-as-{tag}@example.com", "Test officer", PASSWORD, "TGSPDCL")}
 
 

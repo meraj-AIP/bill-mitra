@@ -1,29 +1,30 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import type { Account, Role } from '@/features/auth';
+import type { Account } from '@/features/auth';
 import { getJson, sendJson } from '@/shared/api/http';
 import { queryKeys } from '@/shared/api/queryKeys';
-import type { Discom, Page } from '@/shared/api/types';
-
-export type StaffRole = Exclude<Role, 'consumer'>;
+import type { Page } from '@/shared/api/types';
 
 export interface AccountQuery {
   page: number;
   pageSize: number;
-  role: Role | '';
+  /** A role slug, or '' for every role. */
+  role: string;
   active: 'true' | 'false' | '';
   q: string;
 }
 
 export interface NewAccount {
-  role: StaffRole;
+  /** Any role slug except consumer. */
+  role: string;
   login: string;
   name: string;
-  discom: Discom | null;
+  /** Unit ids. The server refuses a unit outside the creator's own scope. */
+  scopes: string[];
   password: string;
 }
 
-export type AccountChanges = Partial<{ name: string; role: StaffRole; discom: Discom | null; active: boolean }>;
+export type AccountChanges = Partial<{ name: string; role: string; scopes: string[]; active: boolean }>;
 
 export interface AuditEntry {
   id: number;

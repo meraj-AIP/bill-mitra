@@ -8,7 +8,7 @@ from app.domain import capture
 from app.domain.bill import ExtractedBill
 from app.domain.conversation import composer, guard
 from app.domain.conversation.facts import rs
-from app.flows import meter
+from app.flows import cases, meter
 from app.flows.analysis import Analysis, analyse
 from app.flows.turn import Turn
 from app.services import charts, llm, vision
@@ -153,6 +153,7 @@ async def handle_bill(turn: Turn, bill: ExtractedBill, media_id: str | None) -> 
     options = ([("complain", "btn_complain"), ("why", "btn_why"), ("next", "btn_next")]
                if a.audit.status == "mismatch" else [("why", "btn_why"), ("next", "btn_next"), ("save", "btn_save")])
     await turn.buttons(composer.summary_card(a.facts, turn.lang), options)
+    await cases.offer(turn, a)
     repos.log_event(turn.inbound.channel, "bill_read", language=turn.lang, audit_status=a.audit.status,
                     units=a.comp.units, amount=a.comp.net, discom=bill.discom, section=bill.section)
     if a.prediction.crosses:

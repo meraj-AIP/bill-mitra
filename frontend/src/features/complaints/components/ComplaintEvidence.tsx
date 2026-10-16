@@ -13,7 +13,8 @@ function difference(v: number | null): string {
   return v > 0 ? `+ ${rupees(v)}` : `- ${rupees(Math.abs(v))}`;
 }
 
-function AuditLines({ lines }: { lines: ComplaintDetail['audit_lines'] }) {
+/** Printed charges against the tariff, line by line. Shared with the review case page. */
+export function AuditLines({ lines }: { lines: ComplaintDetail['audit_lines'] }) {
   return (
     <Paper variant="outlined">
       <Stack sx={{ px: 2, pt: 1.75, pb: 1.25 }}>

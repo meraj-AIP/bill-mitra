@@ -1,6 +1,5 @@
-import { ROLE_LABEL, type Role } from '@/features/auth';
-
 import type { AuditEntry } from '../api/adminApi';
+import { BUILTIN_ROLE_NAME } from './labels';
 
 const DELIVERY: Record<string, string> = {
   stored: 'Delivered in the web app',
@@ -8,11 +7,7 @@ const DELIVERY: Record<string, string> = {
   failed: 'Not delivered',
 };
 
-const FIELD: Record<string, string> = { name: 'name', role: 'role', discom: 'DISCOM', active: 'active status' };
-
-function isRole(value: string): value is Role {
-  return value in ROLE_LABEL;
-}
+const FIELD: Record<string, string> = { name: 'name', role: 'role', discom: 'DISCOM', scopes: 'units', active: 'active status' };
 
 /** The server writes short machine notes ("delivery sent", "role=officer", "name,role"); say them in words. */
 export function auditDetail(e: AuditEntry): string {
@@ -24,7 +19,7 @@ export function auditDetail(e: AuditEntry): string {
     const delivery = /^delivery (\w+)$/.exec(part);
     if (delivery) return DELIVERY[delivery[1]!] ?? part;
     const role = /^role=(\w+)$/.exec(part)?.[1];
-    if (role && isRole(role)) return `As ${ROLE_LABEL[role]}`;
+    if (role) return `As ${BUILTIN_ROLE_NAME[role] ?? role}`;
     return part;
   }).join('. ');
 }
@@ -33,6 +28,6 @@ export function auditDetail(e: AuditEntry): string {
 export function auditTarget(e: AuditEntry): string {
   if (!e.target) return '';
   const label = e.target_label ?? e.target;
-  if (label === e.target && !e.action.startsWith('complaint.')) return 'Removed account';
+  if (label === e.target && /^(account|auth)\./.test(e.action)) return 'Removed account';
   return label;
 }

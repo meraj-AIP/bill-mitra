@@ -40,10 +40,12 @@ def save_user(state: UserState) -> None:
 
 
 def set_awaiting(user_id: str, awaiting: str | None) -> None:
-    """Lets the console tell the chat what the consumer's next message is for."""
+    """Lets the console tell the chat what the consumer's next message is for. A web consumer who only used the
+    dashboard has no chat state yet, so one is made; a WhatsApp number always has one from its first message."""
+    channel = "whatsapp" if user_id.startswith("wa:") else "web"
     with tx() as conn:
-        conn.execute("UPDATE users SET awaiting = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
-                     (awaiting, user_id))
+        conn.execute("INSERT INTO users (user_id, channel, awaiting) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE "
+                     "SET awaiting = excluded.awaiting, updated_at = CURRENT_TIMESTAMP", (user_id, channel, awaiting))
 
 
 class StoredBill(BaseModel):
@@ -65,7 +67,9 @@ def save_bill(user_id: str, bill: ExtractedBill, media_id: str | None, audit_sta
     bill_id = f"b_{secrets.token_hex(8)}"
     with tx() as conn:
         if bill.service_number and bill.bill_month:
-            conn.execute("DELETE FROM bills WHERE user_id = ? AND service_number = ? AND bill_month = ?",
+            # A copy a complaint or case points at stays, because that record is about that exact bill.
+            conn.execute("DELETE FROM bills WHERE user_id = ? AND service_number = ? AND bill_month = ? AND id NOT IN "
+                         "(SELECT bill_id FROM complaints WHERE bill_id IS NOT NULL)",
                          (user_id, bill.service_number, bill.bill_month))
         conn.execute(
             "INSERT INTO bills (id, user_id, service_number, extraction, media_id, bill_month, units, total_payable, "
@@ -95,6 +99,14 @@ def get_own_bill(user_id: str, bill_id: str) -> StoredBill | None:
                       media_id=row["media_id"], created_at=row["created_at"])
 
 
+# A month the AE revised shows its latest approved amount; a month under review says so.
+_REVIEW_COLUMNS = (
+    "(SELECT d.revised_amount FROM review_decisions d WHERE d.bill_id = bills.id AND d.status = 'approved' "
+    "AND d.revision IS NOT NULL ORDER BY d.revision DESC LIMIT 1) AS revised_amount, "
+    "EXISTS (SELECT 1 FROM complaints c WHERE c.bill_id = bills.id AND c.kind = 'wrong_reading' "
+    "AND c.status IN ('Open', 'In progress')) AS under_review")
+
+
 def list_bills(user_id: str, page: int, page_size: int, audit_status: str | None, newest_first: bool) -> BillPage:
     where, params = "WHERE user_id = ?", [user_id]
     if audit_status:
@@ -105,12 +117,13 @@ def list_bills(user_id: str, page: int, page_size: int, audit_status: str | None
         total = conn.execute(f"SELECT COUNT(*) FROM bills {where}", params).fetchone()[0]
         rows = conn.execute(
             f"SELECT id, created_at, bill_month, discom, units, total_payable, audit_status, overcharge, "
-            f"service_number FROM bills {where} ORDER BY created_at {order}, id LIMIT ? OFFSET ?",
+            f"service_number, {_REVIEW_COLUMNS} FROM bills {where} ORDER BY created_at {order}, id LIMIT ? OFFSET ?",
             [*params, page_size, (page - 1) * page_size]).fetchall()
     items = []
     for row in rows:
         item = dict(row)
         item["service_masked"] = mask(item.pop("service_number"))
+        item["under_review"] = bool(item["under_review"])
         items.append(item)
     return BillPage(items=items, total=total, page=page, page_size=page_size)
 

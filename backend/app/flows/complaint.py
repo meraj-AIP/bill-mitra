@@ -6,15 +6,17 @@ from dataclasses import dataclass
 
 from app.config import get_settings
 from app.domain import complaint_reply
-from app.domain.complaint_reply import Triage
+from app.domain.complaint_reply import RequestKind, Triage
 from app.domain.conversation import guard
 from app.domain.conversation.composer import month_label
 from app.domain.conversation.facts import rs
 from app.domain.conversation.intents import classify
+from app.flows import cases
 from app.flows.analysis import Analysis, analyse
 from app.flows.turn import Turn
-from app.services import llm
+from app.services import llm, notify
 from app.store import complaints, repos
+from app.store import review as review_store
 from app.store.complaints import OPEN_STATUSES, Complaint
 
 LABEL_EN = {"energy": "Energy charge", "fixed": "Fixed charge", "customer": "Customer charge",
@@ -51,7 +53,8 @@ async def submit(turn: Turn, a: Analysis) -> None:
         issue = issue_for_discom(a)
         ticket = complaints.create(turn.state.user_id, turn.state.current_bill_id, a.bill, issue,
                                    a.audit.overcharge, turn.lang, turn.inbound.channel, turn.inbound.reply_to, issue,
-                                   complaint_reply.triage(a.audit))
+                                   complaint_reply.triage(a.audit),
+                                   placement=cases.place_general(a.bill.discom, a.bill.section))
         step.note(f"Reference {ticket}; bill photo and audit lines attached for the console. Not sent to 1912")
     turn.state.awaiting = None
     days = get_settings().complaint_reply_days
@@ -95,6 +98,17 @@ def checked_reply(complaint: Complaint) -> str | None:
     return complaint_reply.draft(a.facts, a.audit, complaint.language or "te")
 
 
+async def ask(complaint: Complaint, kind: RequestKind, account_id: str, note: str | None = None) -> notify.Outcome:
+    """Ask the consumer for something on their channel. Their next photo or message is filed under the complaint."""
+    message = complaint_reply.request_text(kind, complaint.language or "te", complaint.ticket)
+    if note:
+        message += "\n" + note
+    outcome = await notify.send(complaint, message)
+    complaints.add_message(complaint.ticket, "officer", account_id, message, outcome.delivery, outcome.note)
+    repos.set_awaiting(complaint.user_id, INFO_PREFIX + complaint.ticket)
+    return outcome
+
+
 async def capture_info(turn: Turn) -> bool:
     """After an officer asks for something, the consumer's next photo or message goes to that complaint."""
     awaiting = turn.state.awaiting or ""
@@ -110,5 +124,6 @@ async def capture_info(turn: Turn) -> bool:
     body = inbound.text if inbound.kind == "text" and inbound.text else PHOTO_NOTE
     media_id = inbound.media_id if inbound.kind != "text" else None
     complaints.add_message(complaint.ticket, "consumer", None, body, "stored", media_id=media_id)
+    review_store.answer_requests(complaint.ticket)
     await turn.say_key("complaint_info_received", ticket=complaint.ticket)
     return True

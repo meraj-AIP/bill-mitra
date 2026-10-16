@@ -10,6 +10,35 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   'complaint.reply': 'Replied to a complaint',
   'complaint.status': 'Changed a complaint status',
   'complaint.export': 'Exported complaints',
+  'role.create': 'Created a role',
+  'role.update': 'Changed a role',
+  'role.delete': 'Deleted a role',
+  'unit.create': 'Added a unit',
+  'unit.update': 'Changed a unit',
+  'unit.import': 'Imported units',
+  'unit.map': 'Mapped a section name',
+  'policy.update': 'Changed review policy',
+  'case.route': 'Routed a case',
+  'case.assign': 'Reassigned a case',
+  'case.request': 'Asked a consumer for information',
+  'case.unmask': 'Viewed a full service number',
+  'decision.create': 'Recorded a decision',
+  'decision.approve': 'Approved a decision',
+  'decision.reject': 'Rejected a decision',
+  'decision.withdraw': 'Withdrew a decision',
+  'decision.applied': 'Marked a revision applied',
+  'revision.export': 'Exported revisions',
+};
+
+/** Built-in role names, for audit lines written before the role list loads. Custom roles show their slug. */
+export const BUILTIN_ROLE_NAME: Record<string, string> = {
+  super_admin: 'Super admin',
+  admin: 'Admin',
+  officer: 'DISCOM officer',
+  section_ae: 'Section AE',
+  billing_approver: 'Billing approver',
+  auditor: 'Auditor',
+  consumer: 'Consumer',
 };
 
 export const AUDIT_ACTION_KEYS = Object.keys(AUDIT_ACTIONS);

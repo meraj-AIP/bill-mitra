@@ -38,7 +38,7 @@ def _account(role: str, login: str, discom: str | None = None) -> accounts.Accou
 @pytest.fixture(scope="module")
 def people() -> dict[str, accounts.Account]:
     tag = secrets.token_hex(3)
-    return {"admin": _account("admin", f"admin-{tag}@example.com"),
+    return {"admin": _account("super_admin", f"admin-{tag}@example.com"),
             "south": _account("officer", f"officer-s-{tag}@example.com", "TGSPDCL"),
             "north": _account("officer", f"officer-n-{tag}@example.com", "TGNPDCL"),
             "consumer": _account("consumer", "99999" + str(secrets.randbelow(10**5)).zfill(5)),

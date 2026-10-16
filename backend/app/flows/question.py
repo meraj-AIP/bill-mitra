@@ -6,7 +6,7 @@ from app.domain.conversation.intents import Intent, classify, parse_units
 from app.domain.conversation.lang import text
 from app.domain.tariff.engine import compute
 from app.flows import bill as bill_flow
-from app.flows import complaint
+from app.flows import cases, complaint
 from app.flows.analysis import Analysis, analyse, gruha_jyothi_eligible
 from app.flows.turn import Turn
 from app.services import llm, sms_parser
@@ -124,6 +124,8 @@ async def handle_button(turn: Turn, reply_id: str) -> None:
         return
     if reply_id == "complaint_send":
         await complaint.submit(turn, a)
+    elif reply_id == "review_request":
+        await cases.request_from_chat(turn, a)
     elif reply_id == "complaint_cancel":
         turn.state.awaiting = None
         await turn.say_key("complaint_cancel")

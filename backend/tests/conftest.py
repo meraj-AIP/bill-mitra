@@ -57,10 +57,12 @@ def sign_in() -> Callable[..., accounts.Account]:
     """Create an account with an obviously fake login and sign the client in through the real login route,
     so every protected call in a test rides on the session cookie."""
 
-    def go(client: TestClient, role: accounts.Role = "consumer", discom: str | None = None) -> accounts.Account:
+    def go(client: TestClient, role: str = "consumer", discom: str | None = None,
+           scopes: list[str] | None = None) -> accounts.Account:
+        """`role` is any role slug. Staff get `scopes` (unit ids) when given, else the DISCOM rule: one, or both."""
         n = next(_ids)
         login = f"99999{n:05d}" if role == "consumer" else f"{role}{n}@example.com"
-        account = accounts.create(role, login, f"Test {role} {n}", PASSWORD, discom)
+        account = accounts.create(role, login, f"Test {role} {n}", PASSWORD, discom, scopes=scopes)
         response = client.post("/api/auth/login", json={"login": login, "password": PASSWORD})
         assert response.status_code == 200, response.text
         return account

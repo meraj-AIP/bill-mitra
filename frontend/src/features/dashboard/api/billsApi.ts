@@ -1,6 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { getJson, postForm } from '@/shared/api/http';
+import type { ReviewSummary } from '@/features/review';
+import { getJson, isStatus, postForm, sendJson } from '@/shared/api/http';
 import { queryKeys } from '@/shared/api/queryKeys';
 import { shrinkImage } from '@/shared/lib/image';
 import type { Language } from '@/shared/lib/languages';
@@ -71,5 +72,21 @@ export function useBill(id: string, language: Language) {
     placeholderData: (previous, previousQuery) => (previousQuery?.queryKey[2] === id ? previous : undefined),
     staleTime: Infinity,
     retry: (count, error) => count < 1 && !('status' in error && error.status === 404),
+  });
+}
+
+/** Ask the section AE to check this bill. A 409 means a case is already open; the bill is reloaded to show it. */
+export function useReviewRequest(billId: string, language: Language) {
+  const client = useQueryClient();
+  const billKey = [...queryKeys.bills, 'one', billId];
+  return useMutation({
+    mutationFn: (note: string) => sendJson<ReviewSummary>(`/api/bills/${encodeURIComponent(billId)}/review-request?language=${language}`, note ? { note } : {}),
+    onSuccess: (review) => {
+      client.setQueriesData<BillReport>({ queryKey: billKey }, (old) => (old ? { ...old, review } : old));
+      void client.invalidateQueries({ queryKey: [...queryKeys.bills, 'list'] });
+    },
+    onError: (error) => {
+      if (isStatus(error, 409)) void client.invalidateQueries({ queryKey: billKey });
+    },
   });
 }

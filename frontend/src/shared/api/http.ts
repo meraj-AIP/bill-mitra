@@ -51,8 +51,8 @@ export async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> 
   return (await response.json()) as T;
 }
 
-/** POST, PATCH or DELETE with an optional JSON body. A 204 resolves to undefined, so call it with T = void. */
-export async function sendJson<T>(url: string, body?: unknown, method: 'POST' | 'PATCH' | 'DELETE' = 'POST'): Promise<T> {
+/** POST, PUT, PATCH or DELETE with an optional JSON body. A 204 resolves to undefined, so call it with T = void. */
+export async function sendJson<T>(url: string, body?: unknown, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'POST'): Promise<T> {
   const response = await request(url, jsonInit(method, body));
   return (response.status === 204 ? undefined : await response.json()) as T;
 }

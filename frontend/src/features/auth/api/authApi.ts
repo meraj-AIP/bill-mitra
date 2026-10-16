@@ -2,15 +2,21 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { getJson, isStatus, sendJson } from '@/shared/api/http';
 import { queryKeys } from '@/shared/api/queryKeys';
-import type { Discom } from '@/shared/api/types';
+import type { Discom, UnitRef } from '@/shared/api/types';
 
-export type Role = 'admin' | 'officer' | 'consumer';
+/** A unit the account works in. It covers that unit and everything under it. */
+export type Scope = UnitRef;
 
 export interface Account {
   id: string;
-  role: Role;
+  /** Role slug. Never branch on it: access is decided by permissions. */
+  role: string;
+  role_name: string;
+  permissions: string[];
+  scopes: Scope[];
   login: string;
   name: string;
+  /** Kept for compatibility: the DISCOM of the first scope, or null. */
   discom: Discom | null;
   active: boolean;
   /** Privacy notice version a consumer agreed to. */

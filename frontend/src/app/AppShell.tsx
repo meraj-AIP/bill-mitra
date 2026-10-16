@@ -2,7 +2,7 @@ import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded';
 import { AppBar, Box, Button, Container, Link as MuiLink, Stack, Tab, Tabs, Typography } from '@mui/material';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
-import { AccountMenu, landingFor, useAuth } from '@/features/auth';
+import { AccountMenu, isConsumer, landingFor, useAuth } from '@/features/auth';
 import { ModeStatus } from '@/shared/components/ModeStatus';
 
 import { ManageMenu } from './ManageMenu';
@@ -67,11 +67,11 @@ function Sections({ nav, pathname }: { nav: Nav; pathname: string }) {
 
 export function AppShell() {
   const { pathname } = useLocation();
-  const { role } = useAuth();
-  // RequireRole wraps the shell, so a role is always present here.
-  const nav = role ? navFor(role) : null;
-  const home = role ? landingFor(role) : '/';
-  const staff = role === 'officer' || role === 'admin';
+  const { account } = useAuth();
+  // RequirePermission wraps the shell, so an account is always present here.
+  const nav = account ? navFor(account) : null;
+  const home = landingFor(account);
+  const staff = Boolean(account) && !isConsumer(account);
   return (
     <Box sx={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
       <MuiLink href="#main" sx={{ position: 'absolute', left: 8, top: -48, zIndex: 'tooltip', bgcolor: 'background.paper', px: 2, py: 1,

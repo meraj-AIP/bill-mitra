@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.api.deps import AnyAccount
+from app.api.deps import ChatUser
 from app.core import service
 from app.core.messages import Inbound
 from app.core.ratelimit import per_ip
@@ -38,13 +38,13 @@ class Uploaded(BaseModel):
 
 
 @router.post("/upload", response_model=Uploaded, dependencies=[Depends(per_ip("chat-upload", 30))])
-async def upload(file: UploadFile, _: AnyAccount) -> Uploaded:
+async def upload(file: UploadFile, _: ChatUser) -> Uploaded:
     data, mime = await read_checked(file, DOCUMENTS | AUDIO)
     return Uploaded(media_id=media.save(data, mime), mime_type=mime, size_kb=len(data) // 1024)
 
 
 @router.post("/messages")
-async def send(message: WebMessage, account: AnyAccount) -> StreamingResponse:
+async def send(message: WebMessage, account: ChatUser) -> StreamingResponse:
     if message.media_id and media.path_for(message.media_id) is None:
         raise HTTPException(404, "Upload not found; please attach it again.")
     inbound = Inbound(channel="web", user_id=account.user_id, kind=message.kind, text=message.text,
@@ -72,11 +72,11 @@ async def send(message: WebMessage, account: AnyAccount) -> StreamingResponse:
 
 
 @router.get("/history", response_model=chat.ChatPage)
-async def history(account: AnyAccount, before: Annotated[int | None, Query(ge=1)] = None,
+async def history(account: ChatUser, before: Annotated[int | None, Query(ge=1)] = None,
                   limit: Annotated[int, Query(ge=1, le=chat.MAX_PAGE)] = 40) -> chat.ChatPage:
     return chat.page(account.user_id, before, limit)
 
 
 @router.post("/reset", status_code=204)
-async def reset(account: AnyAccount) -> None:
+async def reset(account: ChatUser) -> None:
     repos.forget_user(account.user_id)

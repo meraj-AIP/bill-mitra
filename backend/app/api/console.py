@@ -2,17 +2,19 @@
 
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import Staff
+from app.api.deps import require_perm
 from app.store import console
+from app.store.accounts import Account
 
 router = APIRouter(prefix="/api/console", tags=["department console"])
 
 
 @router.get("/summary")
-async def summary(account: Staff, days: Annotated[int, Query(ge=1, le=365)] = 30,
+async def summary(account: Annotated[Account, Depends(require_perm("console.view"))],
+                  days: Annotated[int, Query(ge=1, le=365)] = 30,
                   discom: Literal["TGSPDCL", "TGNPDCL"] | None = None) -> dict[str, Any]:
-    # An officer tied to one DISCOM only ever sees that DISCOM, whatever they ask for.
-    scope = account.discom if account.role == "officer" and account.discom else discom
+    # Staff whose scopes sit in one DISCOM only ever see that DISCOM, whatever they ask for.
+    scope = account.discom or discom
     return console.summary(days, scope)

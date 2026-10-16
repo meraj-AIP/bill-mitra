@@ -12,14 +12,16 @@ from pydantic import BaseModel
 
 from app.config import get_settings
 from app.domain import capture
+from app.domain.bill import ExtractedBill
 from app.domain.conversation import composer
 from app.domain.prediction import MonthUsage
+from app.flows import cases
 from app.flows.analysis import Analysis, analyse
 from app.flows.bill import Outcome, log_read, outcome, read_ms
 from app.flows.complaint import LABEL_EN
 from app.services import vision
 from app.services.openai_client import ProviderError
-from app.store import media, repos
+from app.store import complaints, media, repos
 
 log = logging.getLogger(__name__)
 
@@ -41,26 +43,35 @@ class BillReport(BaseModel):
     bill: dict[str, Any] | None
     capture: capture.CaptureReport | None
     analysis: dict[str, Any] | None
+    review: cases.ReviewSummary | None = None
 
 
-def _bill_out(reading: vision.Reading | None) -> dict[str, Any] | None:
-    if reading is None or reading.bill is None:
-        return None
-    out = reading.bill.model_dump(exclude={"service_number", "meter_reading", "document_type", "is_electricity_bill",
-                                           "quality", "quality_issue"})
-    out["service_masked"] = reading.bill.masked_service_number()
+def bill_out(bill: ExtractedBill) -> dict[str, Any]:
+    """The bill as staff and consumers see it: everything printed, the service number masked."""
+    out = bill.model_dump(exclude={"service_number", "meter_reading", "document_type", "is_electricity_bill",
+                                   "quality", "quality_issue"})
+    out["service_masked"] = bill.masked_service_number()
     return out
 
 
-def _analysis(a: Analysis, language: str) -> dict[str, Any]:
+def _bill_out(reading: vision.Reading | None) -> dict[str, Any] | None:
+    return bill_out(reading.bill) if reading and reading.bill else None
+
+
+def history_rows(a: Analysis) -> list[dict[str, Any]]:
     this_month = MonthUsage(month=a.facts.month, units=a.comp.units, amount=a.comp.net, source="this_bill")
+    return [h.model_dump() for h in [*a.history, this_month]]
+
+
+def _analysis(a: Analysis, language: str) -> dict[str, Any]:
     lines = [{**line.model_dump(), "label": LABEL_EN.get(line.code, line.code.replace("_", " ").title())}
              for line in a.audit.lines]
     return {
         **asdict(a.comp),
         "audit": {**a.audit.model_dump(), "lines": lines},
         "prediction": a.prediction.model_dump(),
-        "history": [h.model_dump() for h in [*a.history, this_month]],
+        "history": history_rows(a),
+        "spike": cases.spike_for(a).model_dump(),
         "cliffs": [c.model_dump() for c in a.insights.cliffs],
         "saving": a.insights.saving.model_dump() if a.insights.saving else None,
         "explanation": [composer.plain(sentence) for sentence in composer.explain(a.facts, language)],
@@ -121,4 +132,10 @@ def load(user_id: str, bill_id: str, language: str) -> BillReport | None:
         id=stored.id, created_at=stored.created_at, media_url=f"/api/media/{media_id}",
         mime_type=media.mime_for(media_id) if media_id else "image/jpeg", outcome="checked", outcome_reason=None,
         classification=reading.classification.model_dump(), bill=_bill_out(reading),
-        capture=capture.report(stored.bill), analysis=_analysis(a, language))
+        capture=capture.report(stored.bill), analysis=_analysis(a, language), review=review_for(user_id, bill_id, language))
+
+
+def review_for(user_id: str, bill_id: str, language: str) -> cases.ReviewSummary | None:
+    """The newest reading check the owner asked for on this bill, as the consumer sees it."""
+    ticket = complaints.latest_for_bill(user_id, bill_id, cases.KIND)
+    return cases.summary(ticket, language) if ticket else None

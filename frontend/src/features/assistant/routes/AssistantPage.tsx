@@ -2,7 +2,7 @@ import { Box, Container, Drawer, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useMemo, useRef, useState } from 'react';
 
-import { useAuth } from '@/features/auth';
+import { isConsumer, useAuth } from '@/features/auth';
 
 import { AsideRail } from '../components/AsideRail';
 import { AssistantHeader } from '../components/AssistantHeader';
@@ -22,8 +22,8 @@ export function AssistantPage() {
   const theme = useTheme();
   const wide = useMediaQuery(theme.breakpoints.up('lg'));
   // The step trace is for staff checking how a reply was built; consumers only need the chat.
-  const { role } = useAuth();
-  const staff = role === 'admin' || role === 'officer';
+  const { account } = useAuth();
+  const staff = Boolean(account) && !isConsumer(account);
   const [traceOpen, setTraceOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement | null>(null);

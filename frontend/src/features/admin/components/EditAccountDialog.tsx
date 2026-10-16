@@ -1,15 +1,15 @@
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Typography } from '@mui/material';
 import { useState, type FormEvent } from 'react';
 
-import type { Account } from '@/features/auth';
-import type { Discom } from '@/shared/api/types';
+import { isConsumer, type Account } from '@/features/auth';
+import type { UnitRef } from '@/shared/api/types';
 
-import { useUpdateAccount, type AccountChanges, type StaffRole } from '../api/adminApi';
+import { useUpdateAccount, type AccountChanges } from '../api/adminApi';
 import { StaffFields } from './StaffFields';
 
 interface EditAccountDialogProps {
   account: Account;
-  /** Admins cannot demote themselves; the server refuses it too. */
+  /** Nobody changes their own role or units; the server refuses it too. */
   isSelf: boolean;
   onClose: () => void;
 }
@@ -17,20 +17,21 @@ interface EditAccountDialogProps {
 /** Mount with a key per account so the form starts from that account's values. */
 export function EditAccountDialog({ account, isSelf, onClose }: EditAccountDialogProps) {
   const update = useUpdateAccount();
-  const staff = account.role !== 'consumer';
+  const staff = !isConsumer(account);
   const [name, setName] = useState(account.name);
-  const [role, setRole] = useState<StaffRole>(account.role === 'admin' ? 'admin' : 'officer');
-  const [discom, setDiscom] = useState<Discom | null>(account.discom);
+  const [role, setRole] = useState(account.role);
+  const [scopes, setScopes] = useState<UnitRef[]>(account.scopes);
   const [checked, setChecked] = useState(false);
+  const editAccess = staff && !isSelf;
   const nameProblem = checked && !name.trim() ? 'Enter their name.' : null;
+  const scopeProblem = checked && editAccess && scopes.length === 0 ? 'Add at least one unit.' : null;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     setChecked(true);
-    if (!name.trim()) return;
-    // Consumers have no staff role; the server only takes admin or officer.
-    const changes: AccountChanges = staff && !isSelf
-      ? { name: name.trim(), role, discom: role === 'admin' ? null : discom }
+    if (!name.trim() || (editAccess && scopes.length === 0)) return;
+    const changes: AccountChanges = editAccess
+      ? { name: name.trim(), role, scopes: scopes.map((u) => u.unit_id) }
       : { name: name.trim() };
     update.mutate({ id: account.id, changes }, { onSuccess: onClose });
   };
@@ -45,8 +46,8 @@ export function EditAccountDialog({ account, isSelf, onClose }: EditAccountDialo
             <Typography variant="body2" sx={{ color: 'text.secondary' }}>Signs in as {account.login}</Typography>
             <TextField label="Full name" value={name} onChange={(e) => setName(e.target.value)} fullWidth autoFocus
               error={Boolean(nameProblem)} helperText={nameProblem ?? ' '} />
-            {staff && !isSelf && <StaffFields role={role} discom={discom} onRole={setRole} onDiscom={setDiscom} />}
-            {isSelf && <Alert severity="info">You cannot change your own role. Ask another administrator.</Alert>}
+            {editAccess && <StaffFields role={role} scopes={scopes} onRole={setRole} onScopes={setScopes} scopeError={scopeProblem} />}
+            {isSelf && <Alert severity="info">You cannot change your own role or units. Ask another administrator.</Alert>}
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>

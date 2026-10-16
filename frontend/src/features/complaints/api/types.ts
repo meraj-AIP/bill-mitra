@@ -16,6 +16,8 @@ export interface ComplaintRow {
   language: string | null;
   channel: 'whatsapp' | 'web' | null;
   triage: Triage;
+  /** A wrong-reading case is handled in the review workspace; general complaints stay in the inbox. */
+  kind: 'general' | 'wrong_reading';
   /** The newest message we sent the consumer did not reach them. */
   delivery_failed: boolean;
   days_open: number;

@@ -37,8 +37,8 @@ async def notice() -> PrivacyNotice:
 
 @router.delete("/api/me", status_code=204)
 async def delete_me(account: AnyAccount, response: Response) -> None:
-    # Staff accounts carry audit history and DISCOM scope, so only an administrator closes them.
-    if account.role != "consumer":
+    # Staff accounts carry audit history and unit scopes, so only an administrator closes them.
+    if account.scopes or not account.can("self.bills"):
         raise HTTPException(403, "Staff accounts are closed by an administrator.")
     store.erase_account(account.id, account.user_id)
     accounts.audit(account.id, "account.delete_self", account.id)

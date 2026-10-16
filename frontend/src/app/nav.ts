@@ -1,11 +1,4 @@
-import type { Role } from '@/features/auth';
-
-export const CONSUMER: readonly Role[] = ['consumer'];
-// Admins can try the chat to see what consumers get; officers have no use for it.
-export const ASSISTANT: readonly Role[] = ['consumer', 'admin'];
-export const STAFF: readonly Role[] = ['officer', 'admin'];
-export const ADMIN: readonly Role[] = ['admin'];
-export const EVERYONE: readonly Role[] = ['consumer', 'officer', 'admin'];
+import { can, canAny, isConsumer, type Account, type Permission } from '@/features/auth';
 
 export interface NavItem {
   to: string;
@@ -21,36 +14,51 @@ export interface Nav {
   help: NavItem;
 }
 
+interface Entry extends NavItem {
+  /** Shown when the account holds any of these. The server checks again on every request. */
+  any: readonly Permission[];
+}
+
+// The Assistant is the consumer's chat; staff with chat.preview see the same chat to know what consumers get.
+export const ASSISTANT: readonly Permission[] = ['self.bills', 'chat.preview'];
+export const CONSOLE: readonly Permission[] = ['console.view'];
+export const COMPLAINTS: readonly Permission[] = ['complaints.view'];
+export const REVIEW: readonly Permission[] = ['cases.view'];
+export const CONSUMER: readonly Permission[] = ['self.bills'];
+// System health has no permission of its own; the server serves it to account managers.
+export const HEALTH: readonly Permission[] = ['accounts.manage'];
+
+const MANAGE: Entry[] = [
+  { to: '/admin/accounts', label: 'Accounts', hint: 'Staff sign ins, roles and units', any: ['accounts.manage'] },
+  { to: '/admin/roles', label: 'Roles', hint: 'What each role is allowed to do', any: ['roles.manage'] },
+  { to: '/admin/units', label: 'Units', hint: 'Circles, divisions, sections and EROs', any: ['units.manage'] },
+  { to: '/admin/policy', label: 'Review policy', hint: 'AE limits, spike rules and time to decide', any: ['policy.manage'] },
+  { to: '/admin/audit', label: 'Audit log', hint: 'Who changed what, and when', any: ['audit.view'] },
+  { to: '/admin/health', label: 'System health', hint: 'Services on or off, and today\'s warnings', any: HEALTH },
+];
+
 const HOW: NavItem = { to: '/how-it-works', label: 'How it works' };
 
-const NAV: Record<Role, Nav> = {
-  consumer: {
-    main: [{ to: '/', label: 'Dashboard' }, { to: '/assistant', label: 'Assistant' }],
-    manage: [],
-    help: HOW,
-  },
-  officer: {
-    main: [{ to: '/console', label: 'Console' }, { to: '/console/complaints', label: 'Complaints' }],
-    manage: [],
-    help: HOW,
-  },
-  admin: {
-    main: [
-      { to: '/console', label: 'Console' },
-      { to: '/console/complaints', label: 'Complaints' },
-      { to: '/assistant', label: 'Consumer chat' },
-    ],
-    manage: [
-      { to: '/admin/accounts', label: 'Accounts', hint: 'Staff sign ins, roles and DISCOMs' },
-      { to: '/admin/audit', label: 'Audit log', hint: 'Who changed what, and when' },
-      { to: '/admin/health', label: 'System health', hint: 'Services on or off, and today\'s warnings' },
-    ],
-    help: HOW,
-  },
-};
+const strip = ({ to, label, hint }: Entry): NavItem => (hint ? { to, label, hint } : { to, label });
 
-export function navFor(role: Role): Nav {
-  return NAV[role];
+export function navFor(account: Pick<Account, 'permissions'>): Nav {
+  const consumer = isConsumer(account);
+  const review: Entry = { to: '/review', label: 'Review', any: REVIEW };
+  const staff: Entry[] = [
+    { to: '/console', label: 'Console', any: CONSOLE },
+    { to: '/console/complaints', label: 'Complaints', any: COMPLAINTS },
+    { to: '/assistant', label: 'Consumer chat', any: ['chat.preview'] },
+  ];
+  // People who decide or approve start their day in the queue, so it comes first for them.
+  const reviewer = can(account, 'cases.decide') || can(account, 'cases.approve');
+  const main: Entry[] = consumer
+    ? [{ to: '/', label: 'Dashboard', any: CONSUMER }, { to: '/assistant', label: 'Assistant', any: CONSUMER }]
+    : reviewer ? [review, ...staff] : [...staff, review];
+  return {
+    main: main.filter((e) => canAny(account, e.any)).map(strip),
+    manage: consumer ? [] : MANAGE.filter((e) => canAny(account, e.any)).map(strip),
+    help: HOW,
+  };
 }
 
 /** The longest matching path wins, so /console/complaints/BM-1 lights up Complaints, not Console. */

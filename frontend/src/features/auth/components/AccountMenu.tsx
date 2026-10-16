@@ -6,7 +6,7 @@ import { useId, useState } from 'react';
 
 import { useLogout } from '../api/authApi';
 import { useAuth } from '../hooks/useAuth';
-import { ROLE_LABEL } from '../model/roles';
+import { isConsumer, scopeLabel } from '../model/permissions';
 import { ChangePasswordDialog } from './ChangePasswordDialog';
 import { DeleteAccountDialog } from './DeleteAccountDialog';
 
@@ -23,7 +23,8 @@ export function AccountMenu() {
   const menuId = useId();
   if (!account) return null;
 
-  const scope = account.role === 'officer' ? (account.discom ?? 'All DISCOMs') : null;
+  const consumer = isConsumer(account);
+  const scope = consumer ? null : scopeLabel(account);
   return (
     <>
       <ButtonBase onClick={(e) => setAnchor(e.currentTarget)} aria-haspopup="menu" aria-controls={anchor ? menuId : undefined}
@@ -35,7 +36,7 @@ export function AccountMenu() {
         </Avatar>
         <Box sx={{ textAlign: 'left', display: { xs: 'none', sm: 'block' }, maxWidth: 180 }}>
           <Typography variant="subtitle2" noWrap component="p">{account.name}</Typography>
-          <Typography variant="caption" noWrap component="p" sx={{ color: 'text.secondary' }}>{ROLE_LABEL[account.role]}</Typography>
+          <Typography variant="caption" noWrap component="p" sx={{ color: 'text.secondary' }}>{account.role_name}</Typography>
         </Box>
       </ButtonBase>
       <Menu id={menuId} anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}
@@ -44,7 +45,7 @@ export function AccountMenu() {
         <Box sx={{ px: 2, py: 1.25 }}>
           <Typography variant="subtitle2">{account.name}</Typography>
           <Typography variant="caption" component="p" sx={{ color: 'text.secondary' }}>
-            {ROLE_LABEL[account.role]}{scope ? `, ${scope}` : ''}
+            {account.role_name}{scope ? `, ${scope}` : ''}
           </Typography>
           <Typography variant="caption" component="p" noWrap sx={{ color: 'text.secondary' }}>{account.login}</Typography>
         </Box>
@@ -57,8 +58,8 @@ export function AccountMenu() {
           <ListItemIcon><LogoutOutlinedIcon fontSize="small" /></ListItemIcon>
           Sign out
         </MenuItem>
-        {account.role === 'consumer' && <Divider />}
-        {account.role === 'consumer' && (
+        {consumer && <Divider />}
+        {consumer && (
           <MenuItem onClick={() => { setAnchor(null); setDialog('delete'); }} sx={{ color: 'error.main' }}>
             <ListItemIcon sx={{ color: 'inherit' }}><DeleteForeverOutlinedIcon fontSize="small" /></ListItemIcon>
             Delete my account
@@ -66,7 +67,7 @@ export function AccountMenu() {
         )}
       </Menu>
       <ChangePasswordDialog open={dialog === 'password'} onClose={() => setDialog(null)} />
-      {account.role === 'consumer' && <DeleteAccountDialog open={dialog === 'delete'} onClose={() => setDialog(null)} />}
+      {consumer && <DeleteAccountDialog open={dialog === 'delete'} onClose={() => setDialog(null)} />}
     </>
   );
 }

@@ -9,7 +9,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import admin, auth, bills, catalog, complaint_actions, complaints, console, privacy
+from app.api import (
+    access,
+    admin,
+    auth,
+    bills,
+    catalog,
+    complaint_actions,
+    complaints,
+    console,
+    privacy,
+    review,
+    review_decisions,
+)
 from app.channels import web
 from app.channels.whatsapp import router as whatsapp
 from app.config import get_settings
@@ -42,8 +54,9 @@ app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in settings.co
 
 app.middleware("http")(security.protect)
 
-for router in (auth.router, privacy.router, admin.router, catalog.router, bills.router, complaints.router, complaint_actions.router, console.router, web.router,
-               whatsapp.router):
+for router in (auth.router, privacy.router, admin.router, access.router, catalog.router, bills.router,
+               complaints.router, complaint_actions.router, console.router, review.router, review_decisions.router,
+               web.router, whatsapp.router):
     app.include_router(router)
 
 

@@ -1,6 +1,7 @@
 import { Chip, Skeleton, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material';
 
-import { ROLE_LABEL, type Account, type Role } from '@/features/auth';
+import { isConsumer, scopeLabel, type Account } from '@/features/auth';
+import { UNIT_KIND_LABEL } from '@/shared/api/types';
 import { dateTime } from '@/shared/lib/format';
 
 import { AccountRowActions } from './AccountRowActions';
@@ -14,11 +15,19 @@ interface AccountsTableProps {
   onReset: (account: Account) => void;
 }
 
-const ROLE_TONE: Record<Role, 'primary' | 'info' | 'default'> = { admin: 'primary', officer: 'info', consumer: 'default' };
-
-function scope(a: Account): string {
-  if (a.role === 'consumer') return '-';
-  return a.role === 'officer' && a.discom ? a.discom : 'All';
+function Units({ a }: { a: Account }) {
+  if (isConsumer(a)) return <Typography variant="body2" sx={{ color: 'text.secondary' }}>Own bills only</Typography>;
+  if (a.scopes.length === 0) return <Typography variant="body2" sx={{ color: 'warning.dark' }}>No units yet</Typography>;
+  const first = a.scopes[0];
+  const label = scopeLabel(a);
+  return (
+    <>
+      <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{label}</Typography>
+      {a.scopes.length === 1 && first && (
+        <Typography variant="caption" component="p" sx={{ color: 'text.secondary' }}>{UNIT_KIND_LABEL[first.kind]}</Typography>
+      )}
+    </>
+  );
 }
 
 export function AccountsTable({ rows, loadingRows, dimmed, selfId, onEdit, onReset }: AccountsTableProps) {
@@ -29,7 +38,7 @@ export function AccountsTable({ rows, loadingRows, dimmed, selfId, onEdit, onRes
           <TableRow>
             <TableCell>Name</TableCell>
             <TableCell>Role</TableCell>
-            <TableCell>DISCOM</TableCell>
+            <TableCell>Units</TableCell>
             <TableCell>Status</TableCell>
             <TableCell>Last sign in</TableCell>
             <TableCell align="right" aria-label="Actions" />
@@ -48,9 +57,9 @@ export function AccountsTable({ rows, loadingRows, dimmed, selfId, onEdit, onRes
                 <Typography variant="caption" component="p" sx={{ color: 'text.secondary', overflowWrap: 'anywhere' }}>{a.login}</Typography>
               </TableCell>
               <TableCell>
-                <Chip size="small" variant="outlined" color={ROLE_TONE[a.role]} label={ROLE_LABEL[a.role]} />
+                <Chip size="small" variant="outlined" color={isConsumer(a) ? 'default' : 'primary'} label={a.role_name} />
               </TableCell>
-              <TableCell>{scope(a)}</TableCell>
+              <TableCell sx={{ minWidth: 160, maxWidth: 260 }}><Units a={a} /></TableCell>
               <TableCell>
                 <Chip size="small" variant={a.active ? 'filled' : 'outlined'} color={a.active ? 'success' : 'default'}
                   label={a.active ? 'Active' : 'Deactivated'} />

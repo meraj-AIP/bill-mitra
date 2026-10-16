@@ -13,6 +13,8 @@ import { ChargesCheck } from './ChargesCheck';
 import { HistoryChart } from './HistoryChart';
 import { LanguageSelect } from './LanguageSelect';
 import { OutcomeBanner, RetakeHelp } from './OutcomeBanner';
+import { QuietReviewAsk, SpikeBanner } from './ReviewRequest';
+import { ReviewStatus } from './ReviewStatus';
 import { Explanation, Outlook } from './Outlook';
 import { SlabBreakdown } from './SlabBreakdown';
 
@@ -67,6 +69,24 @@ function Analysed({ report, language, onLanguage, reloading }: Pick<BillReportVi
   );
 }
 
+/** An open or finished AE review takes the place of the spike note; the note only offers to start one. */
+function Review({ report, language }: { report: BillReport; language: Language }) {
+  if (report.review) return <ReviewStatus review={report.review} />;
+  const spike = report.analysis?.spike;
+  return spike?.flagged ? <SpikeBanner spike={spike} billId={report.id} language={language} /> : null;
+}
+
+/** Next steps on a checked bill. An unflagged bill with no case still gets a quiet way to ask the AE. */
+function Checked({ report, language, onRetry }: { report: BillReport; language: Language; onRetry: () => void }) {
+  const quiet = report.id && !report.review && !report.analysis?.spike?.flagged;
+  return (
+    <>
+      <Actions onRetry={onRetry} />
+      {quiet && <QuietReviewAsk billId={report.id ?? ''} language={language} />}
+    </>
+  );
+}
+
 const NEEDS_RETAKE = new Set(['not_a_bill', 'retake', 'reading_failed']);
 
 export function BillReportView({ report, language, onLanguage, onRetry, imageUrl, reloading = false }: BillReportViewProps) {
@@ -80,6 +100,7 @@ export function BillReportView({ report, language, onLanguage, onRetry, imageUrl
       <Grid size={{ xs: 12, md: 7 }}>
         <Stack sx={{ gap: 2, opacity: reloading ? 0.6 : 1, transition: 'opacity 200ms' }} aria-busy={reloading}>
           <OutcomeBanner report={report} />
+          <Review report={report} language={language} />
           {report.analysis?.audit.status === 'mismatch' && <ComplainOnWhatsApp />}
           {needsRetake && <RetakeHelp report={report} onRetry={onRetry} />}
           {outcome === 'reading_off' && (
@@ -88,7 +109,7 @@ export function BillReportView({ report, language, onLanguage, onRetry, imageUrl
             </Box>
           )}
           <Analysed report={report} language={language} onLanguage={onLanguage} reloading={reloading} />
-          {outcome === 'checked' && <Actions onRetry={onRetry} />}
+          {outcome === 'checked' && <Checked report={report} language={language} onRetry={onRetry} />}
         </Stack>
       </Grid>
     </Grid>

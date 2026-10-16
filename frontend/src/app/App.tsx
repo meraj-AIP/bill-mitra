@@ -1,9 +1,9 @@
 import { Button, Container, CssBaseline, LinearProgress, ThemeProvider } from '@mui/material';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { lazy, Suspense, type ReactNode } from 'react';
-import { createBrowserRouter, Link, Navigate, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, Link, Navigate, RouterProvider, type RouteObject } from 'react-router-dom';
 
-import { landingFor, LoginPage, PrivacyPage, PublicOnly, RegisterPage, RequireRole, useAuth } from '@/features/auth';
+import { landingFor, LoginPage, PrivacyPage, PublicOnly, RegisterPage, RequirePermission, useAuth, type Permission } from '@/features/auth';
 import { BillPage, DashboardPage } from '@/features/dashboard';
 import { ApiError, onUnauthorized } from '@/shared/api/http';
 import { queryKeys } from '@/shared/api/queryKeys';
@@ -11,7 +11,7 @@ import { EmptyState } from '@/shared/components/States';
 import { theme } from '@/theme';
 
 import { AppShell } from './AppShell';
-import { ADMIN, ASSISTANT, CONSUMER, EVERYONE, STAFF } from './nav';
+import { ASSISTANT, COMPLAINTS, CONSOLE, CONSUMER, HEALTH, navFor, REVIEW } from './nav';
 
 const AssistantPage = lazy(() => import('@/features/assistant').then((m) => ({ default: m.AssistantPage })));
 const ConsolePage = lazy(() => import('@/features/console').then((m) => ({ default: m.ConsolePage })));
@@ -20,6 +20,11 @@ const ComplaintDetailPage = lazy(() => import('@/features/console').then((m) => 
 const AccountsPage = lazy(() => import('@/features/admin').then((m) => ({ default: m.AccountsPage })));
 const AuditPage = lazy(() => import('@/features/admin').then((m) => ({ default: m.AuditPage })));
 const HealthPage = lazy(() => import('@/features/admin').then((m) => ({ default: m.HealthPage })));
+const RolesPage = lazy(() => import('@/features/admin').then((m) => ({ default: m.RolesPage })));
+const UnitsPage = lazy(() => import('@/features/admin').then((m) => ({ default: m.UnitsPage })));
+const PolicyPage = lazy(() => import('@/features/admin').then((m) => ({ default: m.PolicyPage })));
+const ReviewQueuePage = lazy(() => import('@/features/review').then((m) => ({ default: m.ReviewQueuePage })));
+const CasePage = lazy(() => import('@/features/review').then((m) => ({ default: m.CasePage })));
 const HowItWorksPage = lazy(() => import('@/features/explorer').then((m) => ({ default: m.HowItWorksPage })));
 
 const queryClient = new QueryClient({
@@ -41,16 +46,24 @@ function Lazy({ children }: { children: ReactNode }) {
 }
 
 function NotFound() {
-  const { role } = useAuth();
+  const { account } = useAuth();
   return (
     <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
       <EmptyState title="Page not found" hint="The link may be old or mistyped."
-        action={<Button variant="contained" component={Link} to={role ? landingFor(role) : '/login'}>Go to the start page</Button>} />
+        action={<Button variant="contained" component={Link} to={landingFor(account)}>Go to the start page</Button>} />
     </Container>
   );
 }
 
-const lazyRoute = (path: string, page: ReactNode) => ({ path, element: <Lazy>{page}</Lazy> });
+const lazyRoute = (path: string, page: ReactNode): RouteObject => ({ path, element: <Lazy>{page}</Lazy> });
+const gated = (any: readonly Permission[], children: RouteObject[]): RouteObject => ({ element: <RequirePermission any={any} />, children });
+
+/** /admin opens the first admin page this account may use. */
+function AdminHome() {
+  const { account } = useAuth();
+  const first = account ? navFor(account).manage[0]?.to : undefined;
+  return <Navigate to={first ?? landingFor(account)} replace />;
+}
 
 const router = createBrowserRouter([
   { path: 'privacy', element: <PrivacyPage /> },
@@ -62,38 +75,31 @@ const router = createBrowserRouter([
     ],
   },
   {
-    element: <RequireRole roles={EVERYONE} />,
+    element: <RequirePermission />,
     children: [{
       element: <AppShell />,
       children: [
         {
-          element: <RequireRole roles={CONSUMER} />,
+          element: <RequirePermission any={CONSUMER} />,
           children: [
             { index: true, element: <DashboardPage /> },
             { path: 'bills/:id', element: <BillPage /> },
           ],
         },
-        {
-          element: <RequireRole roles={ASSISTANT} />,
-          children: [lazyRoute('assistant', <AssistantPage />)],
-        },
-        {
-          element: <RequireRole roles={STAFF} />,
-          children: [
-            lazyRoute('console', <ConsolePage />),
-            lazyRoute('console/complaints', <ComplaintsInboxPage />),
-            lazyRoute('console/complaints/:ticket', <ComplaintDetailPage />),
-          ],
-        },
-        {
-          element: <RequireRole roles={ADMIN} />,
-          children: [
-            { path: 'admin', element: <Navigate to="/admin/accounts" replace /> },
-            lazyRoute('admin/accounts', <AccountsPage />),
-            lazyRoute('admin/audit', <AuditPage />),
-            lazyRoute('admin/health', <HealthPage />),
-          ],
-        },
+        gated(ASSISTANT, [lazyRoute('assistant', <AssistantPage />)]),
+        gated(CONSOLE, [lazyRoute('console', <ConsolePage />)]),
+        gated(COMPLAINTS, [
+          lazyRoute('console/complaints', <ComplaintsInboxPage />),
+          lazyRoute('console/complaints/:ticket', <ComplaintDetailPage />),
+        ]),
+        gated(REVIEW, [lazyRoute('review', <ReviewQueuePage />), lazyRoute('review/:ticket', <CasePage />)]),
+        { path: 'admin', element: <AdminHome /> },
+        gated(['accounts.manage'], [lazyRoute('admin/accounts', <AccountsPage />)]),
+        gated(['roles.manage'], [lazyRoute('admin/roles', <RolesPage />)]),
+        gated(['units.manage'], [lazyRoute('admin/units', <UnitsPage />)]),
+        gated(['policy.manage'], [lazyRoute('admin/policy', <PolicyPage />)]),
+        gated(['audit.view'], [lazyRoute('admin/audit', <AuditPage />)]),
+        gated(HEALTH, [lazyRoute('admin/health', <HealthPage />)]),
         lazyRoute('how-it-works', <HowItWorksPage />),
         { path: '*', element: <NotFound /> },
       ],

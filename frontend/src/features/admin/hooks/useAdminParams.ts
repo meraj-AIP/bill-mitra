@@ -3,7 +3,6 @@ import { useUrlState } from '@/shared/hooks/useUrlState';
 import type { AccountQuery } from '../api/adminApi';
 import { AUDIT_ACTION_KEYS } from '../model/labels';
 
-const ROLES = ['admin', 'officer', 'consumer'] as const;
 const ACTIVE = ['true', 'false'] as const;
 
 export function useAccountsParams() {
@@ -11,7 +10,7 @@ export function useAccountsParams() {
   const query: AccountQuery = {
     page: url.page,
     pageSize: url.pageSize,
-    role: url.pick('role', ROLES),
+    role: url.text('role').trim(),
     active: url.pick('active', ACTIVE),
     q: url.text('q').trim(),
   };

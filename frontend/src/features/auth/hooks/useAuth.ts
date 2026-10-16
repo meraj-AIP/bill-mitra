@@ -1,4 +1,5 @@
 import { useMe } from '../api/authApi';
+import { can, type Permission } from '../model/permissions';
 
 /** The signed-in account, or null when signed out. undefined while the first check runs. */
 export function useAuth() {
@@ -6,7 +7,7 @@ export function useAuth() {
   const account = me.data;
   return {
     account,
-    role: account?.role ?? null,
+    can: (permission: Permission) => can(account, permission),
     loading: me.isPending,
     error: me.isError ? me.error : null,
     retry: () => void me.refetch(),

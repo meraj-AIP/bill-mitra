@@ -6,13 +6,12 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
-from app.api.complaints import ComplaintDetail, _change_status, _detail, _for_staff
-from app.api.deps import Staff
+from app.api.complaints import ComplaintDetail, Replier, Viewer, _change_status, _detail, _for_staff
 from app.domain import complaint_reply
 from app.domain.complaint_reply import RequestKind, Triage
 from app.flows import complaint as complaint_flow
 from app.services import notify
-from app.store import accounts, repos
+from app.store import accounts
 from app.store import complaints as store
 from app.store.accounts import Account
 from app.store.complaints import OPEN_STATUSES, Status
@@ -51,7 +50,7 @@ class BulkResult(BaseModel):
 
 
 @router.get("/{ticket}/suggestion", response_model=Suggestion)
-async def suggestion(ticket: str, account: Staff) -> Suggestion:
+async def suggestion(ticket: str, account: Viewer) -> Suggestion:
     complaint = _for_staff(account, ticket)
     language = complaint.language or "te"
     found = await complaint_flow.suggest_reply(complaint)
@@ -62,21 +61,17 @@ async def suggestion(ticket: str, account: Staff) -> Suggestion:
 
 
 @router.post("/{ticket}/request", response_model=ComplaintDetail)
-async def request_info(ticket: str, body: InfoRequest, account: Staff) -> ComplaintDetail:
+async def request_info(ticket: str, body: InfoRequest, account: Replier) -> ComplaintDetail:
     complaint = _for_staff(account, ticket)
     if complaint.status not in OPEN_STATUSES:
         raise HTTPException(409, "This complaint is closed. Reopen it before asking the consumer for more.")
-    message = complaint_reply.request_text(body.kind, complaint.language or "te", ticket)
-    outcome = await notify.send(complaint, message)
-    store.add_message(ticket, "officer", account.id, message, outcome.delivery, outcome.note)
-    # The consumer's next photo or message in the chat is filed under this complaint.
-    repos.set_awaiting(complaint.user_id, complaint_flow.INFO_PREFIX + ticket)
+    outcome = await complaint_flow.ask(complaint, body.kind, account.id)
     accounts.audit(account.id, "complaint.request", ticket, f"{body.kind}, delivery {outcome.delivery}")
     return _detail(complaint)
 
 
 @router.post("/{ticket}/messages/{message_id}/retry", response_model=ComplaintDetail)
-async def retry(ticket: str, message_id: int, account: Staff) -> ComplaintDetail:
+async def retry(ticket: str, message_id: int, account: Replier) -> ComplaintDetail:
     complaint = _for_staff(account, ticket)
     found = store.message(ticket, message_id)
     if found is None or found["author_kind"] == "consumer" or found["delivery"] != "failed":
@@ -111,7 +106,7 @@ async def _apply(ticket: str, body: BulkAction, account: Account) -> str | None:
 
 
 @router.post("/bulk", response_model=BulkResult)
-async def bulk(body: BulkAction, account: Staff) -> BulkResult:
+async def bulk(body: BulkAction, account: Replier) -> BulkResult:
     done, skipped = [], []
     for ticket in body.tickets:
         reason = await _apply(ticket, body, account)

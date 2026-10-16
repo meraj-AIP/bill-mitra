@@ -12,11 +12,12 @@ from app.domain.conversation.facts import Facts, rs
 from app.domain.conversation.lang import pack, text
 
 Triage = Literal["overcharge", "bill_correct", "needs_check"]
-RequestKind = Literal["meter_photo", "bill_photo", "details"]
+RequestKind = Literal["meter_photo", "bill_photo", "details", "earlier_bills", "note"]
 
 QUICK_KEYS = ("quick_received", "quick_correction", "quick_visit", "quick_1912")
 REQUEST_KEYS: dict[RequestKind, str] = {"meter_photo": "request_meter", "bill_photo": "request_bill",
-                                        "details": "request_details"}
+                                        "details": "request_details", "earlier_bills": "request_earlier_bills",
+                                        "note": "request_details"}
 
 
 def triage(audit: AuditResult) -> Triage:

@@ -3,16 +3,21 @@ import { useState, type FormEvent } from 'react';
 
 import { MIN_PASSWORD } from '@/features/auth';
 import { isStatus } from '@/shared/api/http';
+import type { UnitRef } from '@/shared/api/types';
 
 import { useCreateAccount, type NewAccount } from '../api/adminApi';
 import { EMAIL_PATTERN, generatePassword } from '../model/labels';
 import { InitialPasswordField } from './InitialPasswordField';
 import { StaffFields } from './StaffFields';
 
-const fresh = (): NewAccount => ({ role: 'officer', login: '', name: '', discom: null, password: generatePassword() });
+type Draft = Omit<NewAccount, 'scopes'> & { scopes: UnitRef[] };
 
-function problemsOf(v: NewAccount) {
+const fresh = (): Draft => ({ role: '', login: '', name: '', scopes: [], password: generatePassword() });
+
+function problemsOf(v: Draft) {
   return {
+    role: v.role ? null : 'Pick a role.',
+    scopes: v.scopes.length > 0 ? null : 'Add at least one unit.',
     login: EMAIL_PATTERN.test(v.login.trim()) ? null : 'Enter a work email address.',
     name: v.name.trim() ? null : 'Enter their name.',
     password: v.password.length >= MIN_PASSWORD ? null : `Use at least ${MIN_PASSWORD} characters.`,
@@ -21,7 +26,7 @@ function problemsOf(v: NewAccount) {
 
 export function CreateAccountDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const create = useCreateAccount();
-  const [values, setValues] = useState<NewAccount>(fresh);
+  const [values, setValues] = useState<Draft>(fresh);
   const [checked, setChecked] = useState(false);
   const problems = problemsOf(values);
   const show = (key: keyof typeof problems) => (checked ? problems[key] : null);
@@ -37,11 +42,11 @@ export function CreateAccountDialog({ open, onClose }: { open: boolean; onClose:
     event.preventDefault();
     setChecked(true);
     if (Object.values(problems).some(Boolean)) return;
-    const body = { ...values, login: values.login.trim(), name: values.name.trim(), discom: values.role === 'admin' ? null : values.discom };
+    const body: NewAccount = { ...values, login: values.login.trim(), name: values.name.trim(), scopes: values.scopes.map((u) => u.unit_id) };
     create.mutate(body, { onSuccess: close });
   };
 
-  const patch = (changes: Partial<NewAccount>) => setValues((v) => ({ ...v, ...changes }));
+  const patch = (changes: Partial<Draft>) => setValues((v) => ({ ...v, ...changes }));
   const error = isStatus(create.error, 409) ? 'An account with this email already exists.' : (create.error?.message ?? null);
 
   return (
@@ -51,7 +56,9 @@ export function CreateAccountDialog({ open, onClose }: { open: boolean; onClose:
         <DialogContent>
           <Stack sx={{ gap: 2, pt: 1 }}>
             {error && <Alert severity="error">{error}</Alert>}
-            <StaffFields role={values.role} discom={values.discom} onRole={(role) => patch({ role })} onDiscom={(discom) => patch({ discom })} />
+            <StaffFields role={values.role} scopes={values.scopes} onRole={(role) => patch({ role })} onScopes={(scopes) => patch({ scopes })}
+              scopeError={show('scopes')} />
+            {show('role') && <Alert severity="warning">{show('role')}</Alert>}
             <TextField label="Work email" type="email" autoComplete="off" value={values.login} fullWidth
               onChange={(e) => patch({ login: e.target.value })} error={Boolean(show('login'))} helperText={show('login') ?? 'They sign in with this.'} />
             <TextField label="Full name" autoComplete="off" value={values.name} fullWidth

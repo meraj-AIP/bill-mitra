@@ -1,15 +1,3 @@
-import type { Role } from '../api/authApi';
-
-export const ROLE_LABEL: Record<Role, string> = {
-  admin: 'Administrator',
-  officer: 'DISCOM officer',
-  consumer: 'Consumer',
-};
-
-export function landingFor(role: Role): string {
-  return role === 'consumer' ? '/' : '/console';
-}
-
 /** Only same-site paths are followed after sign in, so a crafted link cannot send people elsewhere. */
 export function safeNext(next: string | null): string | null {
   if (!next || !next.startsWith('/') || next.startsWith('//') || next.startsWith('/login') || next.startsWith('/register')) {

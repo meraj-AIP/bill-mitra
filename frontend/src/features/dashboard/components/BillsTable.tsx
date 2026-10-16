@@ -33,7 +33,16 @@ function BillRow({ bill }: { bill: BillSummary }) {
       onKeyDown={(e) => {
         if (e.key === 'Enter') open();
       }}>
-      <TableCell sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{monthLabel(bill.bill_month)}</TableCell>
+      <TableCell sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
+        {monthLabel(bill.bill_month)}
+        {bill.revised_amount !== null && (
+          <Chip size="small" color="success" variant="outlined" label="Revised" sx={{ ml: 1 }}
+            title={`Revised to ${rupees(bill.revised_amount)}`} />
+        )}
+        {bill.revised_amount === null && bill.under_review && (
+          <Chip size="small" color="info" variant="outlined" label="Under review" sx={{ ml: 1 }} />
+        )}
+      </TableCell>
       <TableCell>{bill.discom === 'UNKNOWN' ? '' : bill.discom}</TableCell>
       <TableCell align="right">{bill.units === null ? '' : formatCount(bill.units)}</TableCell>
       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{bill.total_payable === null ? '' : rupees(bill.total_payable)}</TableCell>

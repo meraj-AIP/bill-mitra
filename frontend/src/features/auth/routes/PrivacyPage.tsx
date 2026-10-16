@@ -6,14 +6,14 @@ import { ErrorState } from '@/shared/components/States';
 import { usePrivacy } from '../api/authApi';
 import { useAuth } from '../hooks/useAuth';
 import { AuthFrame } from '../components/AuthFrame';
-import { landingFor } from '../model/roles';
+import { landingFor } from '../model/permissions';
 
 /** Public on purpose: people read it before they register. */
 export function PrivacyPage() {
   const notice = usePrivacy();
   const { account } = useAuth();
   const data = notice.data;
-  const back = account ? { to: landingFor(account.role), label: 'Back to Bill Mitra' } : { to: '/register', label: 'Create an account' };
+  const back = account ? { to: landingFor(account), label: 'Back to Bill Mitra' } : { to: '/register', label: 'Create an account' };
 
   return (
     <AuthFrame title="Privacy notice" lead="What Bill Mitra keeps about you, why, and for how long."

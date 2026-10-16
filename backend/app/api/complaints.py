@@ -1,28 +1,27 @@
 """Complaints in the officer console. Consumers raise them and get replies on WhatsApp, not in the web app.
 
-Staff see complaints within their DISCOM. reply_to never leaves the store layer.
+Staff see complaints within their unit scope. reply_to never leaves the store layer.
 """
 
-import csv
-import io
-from collections.abc import Iterator
 from datetime import UTC, datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, StringConstraints, computed_field, model_validator
 
-from app.api.deps import Staff
+from app.api.deps import require_perm, viewer
 from app.config import get_settings
+from app.core import csvsafe
 from app.domain.complaint_reply import Triage
 from app.flows.analysis import analyse
 from app.flows.complaint import LABEL_EN
 from app.services import notify
-from app.store import accounts, repos
+from app.store import accounts, repos, units
 from app.store import complaints as store
 from app.store.accounts import Account
-from app.store.complaints import OPEN_STATUSES, Complaint, Sort, Status
+from app.store.complaints import OPEN_STATUSES, Complaint, Kind, Sort, Status
+from app.store.db import DISCOM_UNITS
 
 router = APIRouter(tags=["complaints"])
 
@@ -31,6 +30,8 @@ Text1000 = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1,
 PageNo = Annotated[int, Query(ge=1)]
 PageSize = Annotated[int, Query(ge=5, le=50)]
 NOT_FOUND = "Complaint not found."
+Viewer = Annotated[Account, Depends(require_perm("complaints.view"))]
+Replier = Annotated[Account, Depends(require_perm("complaints.reply"))]
 
 
 class ComplaintRow(BaseModel):
@@ -45,6 +46,7 @@ class ComplaintRow(BaseModel):
     amount: float | None
     language: str | None
     channel: Literal["whatsapp", "web"] | None
+    kind: Kind = "general"
     triage: Triage
     delivery_failed: bool
     days_open: int
@@ -138,14 +140,18 @@ def _detail(complaint: Complaint) -> ComplaintDetail:
                            whatsapp_ready=get_settings().whatsapp_enabled)
 
 
-def _staff_scope(account: Account) -> str | None:
-    return account.discom if account.role == "officer" else None
+def visible_to(account: Account, complaint: Complaint) -> bool:
+    """Global staff see everything; others the complaints whose unit or section is in their tree, or assigned to
+    them. A complaint from before units existed only carries its DISCOM, so it sits on that DISCOM's unit."""
+    if account.is_global or (complaint.assigned_to and complaint.assigned_to == account.id):
+        return True
+    return units.covers(account.id, complaint.unit_id or DISCOM_UNITS.get(complaint.discom or "")) or \
+        units.covers(account.id, complaint.section_id)
 
 
 def _for_staff(account: Account, ticket: str) -> Complaint:
     complaint = store.get(ticket)
-    scope = _staff_scope(account)
-    if complaint is None or (scope and complaint.discom != scope):
+    if complaint is None or not visible_to(account, complaint):
         raise HTTPException(404, NOT_FOUND)
     return complaint
 
@@ -153,7 +159,10 @@ def _for_staff(account: Account, ticket: str) -> Complaint:
 async def _change_status(complaint: Complaint, new_status: Status, account: Account) -> None:
     if new_status == complaint.status:
         return
-    store.set_status(complaint.ticket, new_status)
+    try:
+        store.set_status(complaint.ticket, new_status)
+    except store.AlreadyOpen as exc:
+        raise HTTPException(409, "Another reading check is already open for this bill. Continue in that one.") from exc
     line, outcome = await notify.status(complaint, new_status)
     store.add_message(complaint.ticket, "system", account.id, line, outcome.delivery, outcome.note)
     accounts.audit(account.id, "complaint.status", complaint.ticket,
@@ -161,56 +170,37 @@ async def _change_status(complaint: Complaint, new_status: Status, account: Acco
 
 
 @router.get("/api/console/complaints", response_model=RowPage)
-async def console_list(account: Staff, page: PageNo = 1, page_size: PageSize = 10, status: Status | None = None,
+async def console_list(account: Viewer, page: PageNo = 1, page_size: PageSize = 10, status: Status | None = None,
                        discom: Discom | None = None, q: Annotated[str | None, Query(max_length=40)] = None,
-                       sort: Sort = "priority", triage: Triage | None = None, failed: bool = False) -> store.Page:
-    scope = _staff_scope(account)
-    if scope and discom and discom != scope:
-        return store.Page(items=[], total=0, page=page, page_size=page_size)
-    return store.page(page, page_size, status=status, discom=scope or discom, q=q, sort=sort, triage=triage,
-                      failed_only=failed, overdue_days=get_settings().complaint_reply_days)
+                       sort: Sort = "priority", triage: Triage | None = None, failed: bool = False,
+                       kind: Kind | None = None) -> store.Page:
+    return store.page(page, page_size, status=status, discom=discom, q=q, sort=sort, triage=triage,
+                      failed_only=failed, overdue_days=get_settings().complaint_reply_days, viewer=viewer(account),
+                      kind=kind)
 
 
 CSV_COLUMNS = ("ticket", "created_at", "updated_at", "status", "discom", "bill_month", "service_masked", "issue",
                "amount", "channel", "days_open")
-FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
-
-
-def _cell(value: Any) -> Any:
-    # A spreadsheet runs a cell that starts like a formula; the quote makes it plain text.
-    return f"'{value}" if isinstance(value, str) and value.startswith(FORMULA_START) else value
-
-
-def _csv(rows: list[dict[str, Any]]) -> Iterator[str]:
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    for line in (CSV_COLUMNS, *([_cell(r[c]) for c in CSV_COLUMNS] for r in rows)):
-        writer.writerow(line)
-        yield buffer.getvalue()
-        buffer.seek(0)
-        buffer.truncate()
 
 
 @router.get("/api/console/complaints.csv")
-async def console_export(account: Staff, status: Status | None = None, discom: Discom | None = None,
+async def console_export(account: Viewer, status: Status | None = None, discom: Discom | None = None,
                          q: Annotated[str | None, Query(max_length=40)] = None,
-                         sort: Literal["newest", "oldest"] = "newest") -> StreamingResponse:
-    scope = _staff_scope(account)
-    rows = [] if scope and discom and discom != scope else store.export(
-        status=status, discom=scope or discom, q=q, newest=sort == "newest")
+                         sort: Literal["newest", "oldest"] = "newest", kind: Kind | None = None) -> StreamingResponse:
+    rows = store.export(status=status, discom=discom, q=q, newest=sort == "newest", viewer=viewer(account), kind=kind)
     accounts.audit(account.id, "complaint.export", None, f"{len(rows)} rows")
     name = f"bill-mitra-complaints-{datetime.now(UTC):%Y%m%d}.csv"
-    return StreamingResponse(_csv(rows), media_type="text/csv; charset=utf-8",
+    return StreamingResponse(csvsafe.stream(CSV_COLUMNS, rows), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @router.get("/api/console/complaints/{ticket}", response_model=ComplaintDetail)
-async def console_detail(ticket: str, account: Staff) -> ComplaintDetail:
+async def console_detail(ticket: str, account: Viewer) -> ComplaintDetail:
     return _detail(_for_staff(account, ticket))
 
 
 @router.post("/api/console/complaints/{ticket}/reply", response_model=ComplaintDetail)
-async def console_reply(ticket: str, body: OfficerReply, account: Staff) -> ComplaintDetail:
+async def console_reply(ticket: str, body: OfficerReply, account: Replier) -> ComplaintDetail:
     complaint = _for_staff(account, ticket)
     outcome = await notify.reply(complaint, body.body)
     store.add_message(ticket, "officer", account.id, body.body, outcome.delivery, outcome.note)
@@ -221,7 +211,7 @@ async def console_reply(ticket: str, body: OfficerReply, account: Staff) -> Comp
 
 
 @router.post("/api/console/complaints/{ticket}/status", response_model=ComplaintDetail)
-async def console_status(ticket: str, body: StatusChange, account: Staff) -> ComplaintDetail:
+async def console_status(ticket: str, body: StatusChange, account: Replier) -> ComplaintDetail:
     complaint = _for_staff(account, ticket)
     await _change_status(complaint, body.status, account)
     return _detail(complaint)
