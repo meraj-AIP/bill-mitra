@@ -7,6 +7,9 @@ filter leaves them out rather than guessing.
 import math
 import sqlite3
 import statistics
+import threading
+import time
+from collections.abc import Callable
 from typing import Any
 
 from app.config import get_settings
@@ -71,7 +74,7 @@ def _week(conn: sqlite3.Connection, discom: str | None) -> dict[str, Any]:
             "failed_deliveries": failed}
 
 
-def health() -> dict[str, Any]:
+def _health() -> dict[str, Any]:
     """Today's signs that something needs fixing, for the admin. Counts only."""
     args = {"since": "-1 days", "discom": None}
     with tx() as conn:
@@ -87,7 +90,7 @@ def health() -> dict[str, Any]:
             "complaints_overdue": overdue, "reply_days": get_settings().complaint_reply_days}
 
 
-def summary(days: int = 30, discom: str | None = None) -> dict[str, Any]:
+def _summary(days: int = 30, discom: str | None = None) -> dict[str, Any]:
     args = {"since": f"-{days} days", "discom": discom, "day": f"-{days - 1} days"}
     with tx() as conn:
         def scalar(sql: str) -> Any:
@@ -107,7 +110,8 @@ def summary(days: int = 30, discom: str | None = None) -> dict[str, Any]:
         daily = conn.execute(
             # Days are India days, so an evening upload is not counted on the next UTC day.
             "SELECT date(ts, '+5 hours', '+30 minutes') d, SUM(type = 'bill_read'), SUM(type = 'question') FROM events "
-            "WHERE ts >= date('now', :day) AND (:discom IS NULL OR discom = :discom) GROUP BY d ORDER BY d",
+            "WHERE type IN ('bill_read', 'question') AND ts >= date('now', :day) "
+            "AND (:discom IS NULL OR discom = :discom) GROUP BY d ORDER BY d",
             args).fetchall()
         sections = conn.execute(
             f"SELECT section, COUNT(*), SUM(audit_status = 'mismatch'), ROUND(AVG(units)) FROM events "
@@ -133,3 +137,48 @@ def summary(days: int = 30, discom: str | None = None) -> dict[str, Any]:
         "week": week,
         "reply_days": get_settings().complaint_reply_days,
     }
+
+
+# Every open console asks for these on a timer, and they aggregate a month of events. Hundreds of staff share one
+# answer for a minute instead of each scanning the tables; counts a minute old are fine for a dashboard.
+CACHE_SECONDS = 60
+_cache: dict[tuple[Any, ...], tuple[float, dict[str, Any]]] = {}
+
+
+_building: set[tuple[Any, ...]] = set()
+
+
+def _refresh(key: tuple[Any, ...], build: Callable[[], dict[str, Any]]) -> None:
+    try:
+        _cache[key] = (time.monotonic(), build())
+    finally:
+        _building.discard(key)
+
+
+def _cached(key: tuple[Any, ...], build: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    """Fresh for a minute. After that the last answer is served at once while one thread builds the next, so no
+    request waits on the full count; only the very first request for a key builds it inline."""
+    now = time.monotonic()
+    hit = _cache.get(key)
+    if hit and now - hit[0] < CACHE_SECONDS:
+        return hit[1]
+    if hit and CACHE_SECONDS > 0:
+        if key not in _building:
+            _building.add(key)
+            threading.Thread(target=_refresh, args=(key, build), daemon=True, name="summary-refresh").start()
+        return hit[1]
+    value = build()
+    _cache[key] = (now, value)
+    return value
+
+
+def summary(days: int = 30, discom: str | None = None) -> dict[str, Any]:
+    return _cached(("summary", days, discom), lambda: _summary(days, discom))
+
+
+def health() -> dict[str, Any]:
+    return _cached(("health",), _health)
+
+
+def forget_cached() -> None:
+    _cache.clear()

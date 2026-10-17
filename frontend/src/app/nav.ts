@@ -27,6 +27,8 @@ export const REVIEW: readonly Permission[] = ['cases.view'];
 export const CONSUMER: readonly Permission[] = ['self.bills'];
 // System health has no permission of its own; the server serves it to account managers.
 export const HEALTH: readonly Permission[] = ['accounts.manage'];
+// Parked failures show tickets and error classes only, so auditors may see them as well as account managers.
+export const OPERATIONS: readonly Permission[] = ['audit.view', 'accounts.manage'];
 // Alerts are for any staff account. self.bills is the one permission only consumers carry, so staff is everything else.
 export const STAFF: readonly Permission[] = PERMISSIONS.filter((p) => p !== 'self.bills');
 
@@ -37,6 +39,7 @@ const MANAGE: Entry[] = [
   { to: '/admin/policy', label: 'Review policy', hint: 'AE limits, spike rules and time to decide', any: ['policy.manage'] },
   { to: '/admin/audit', label: 'Audit log', hint: 'Who changed what, and when', any: ['audit.view'] },
   { to: '/admin/health', label: 'System health', hint: 'Services on or off, and today\'s warnings', any: HEALTH },
+  { to: '/admin/operations', label: 'Operations', hint: 'Queues, and messages that could not be sent or read', any: OPERATIONS },
 ];
 
 const HOW: NavItem = { to: '/how-it-works', label: 'How it works' };

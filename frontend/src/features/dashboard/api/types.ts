@@ -130,7 +130,7 @@ export interface Analysis {
 export interface BillReport {
   id: string | null;
   created_at: string | null;
-  media_url: string;
+  media_url: string | null;
   mime_type: string;
   outcome: Outcome;
   outcome_reason: string | null;
@@ -194,3 +194,15 @@ export interface BillListQuery {
   status: AuditStatus | '';
   sort: 'newest' | 'oldest';
 }
+
+/** A bill read that failed for a passing reason is kept as a job; the server answers 202 with this and the page polls it. */
+export interface ExtractJob {
+  job_id: string;
+  status: 'queued' | 'running' | 'done' | 'failed';
+  /** Set when status is done: the saved bill to open. */
+  bill_id: string | null;
+  /** Set when status is failed: why, in words a consumer can act on. */
+  detail: string | null;
+}
+
+export type UploadOutcome = { kind: 'report'; report: BillReport } | { kind: 'job'; job: ExtractJob };

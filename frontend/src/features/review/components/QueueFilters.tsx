@@ -1,5 +1,6 @@
 import { Autocomplete, FormControlLabel, MenuItem, Stack, Switch, TextField } from '@mui/material';
 
+import { useAuth } from '@/features/auth';
 import { SearchField } from '@/shared/components/SearchField';
 import { formatCount } from '@/shared/lib/format';
 
@@ -28,12 +29,16 @@ function SectionFilter({ params }: { params: Params }) {
 export function QueueFilters({ params, overdueCount }: { params: Params; overdueCount: number | undefined }) {
   const { query } = params;
   const overdueLabel = overdueCount ? `Overdue only (${formatCount(overdueCount)})` : 'Overdue only';
+  // Cases are only ever assigned to people who decide them.
+  const decides = useAuth().can('cases.decide');
   return (
     <Stack direction={{ xs: 'column', md: 'row' }} sx={{ gap: 1.5, flexWrap: 'wrap', alignItems: { md: 'center' } }}>
       <SearchField label="Ticket" placeholder="BM-261016-7KQ2D" value={query.q} onChange={params.setQ} />
       <SectionFilter params={params} />
-      <FormControlLabel label="Assigned to me"
-        control={<Switch size="small" checked={query.mine} onChange={(e) => params.setFlag('mine', e.target.checked)} />} />
+      {decides && (
+        <FormControlLabel label="Assigned to me"
+          control={<Switch size="small" checked={query.mine} onChange={(e) => params.setFlag('mine', e.target.checked)} />} />
+      )}
       <FormControlLabel label={overdueLabel}
         control={<Switch size="small" checked={query.overdue} onChange={(e) => params.setFlag('overdue', e.target.checked)} />} />
       <TextField select size="small" label="Sort" value={query.sort} sx={{ minWidth: 170, ml: { md: 'auto' } }}

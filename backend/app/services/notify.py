@@ -4,14 +4,18 @@ The result is recorded on the message, so the officer always sees whether the co
 """
 
 import logging
+import uuid
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 
-import httpx
-
-from app.channels.whatsapp import client
+from app.channels.whatsapp.mapper import user_key
 from app.config import get_settings
+from app.core.messages import TextOut
 from app.domain.conversation.lang import text
+from app.services import delivery
+from app.store import complaints as complaint_store
+from app.store import outbox
 from app.store.complaints import Complaint, Delivery, Status
 
 log = logging.getLogger(__name__)
@@ -19,17 +23,21 @@ log = logging.getLogger(__name__)
 STATUS_KEYS: dict[str, str] = {"Open": "cstatus_open", "In progress": "cstatus_in_progress",
                                "Resolved": "cstatus_resolved", "Rejected": "cstatus_rejected"}
 NOT_CONNECTED = "WhatsApp is not connected on this server, so the consumer has not received this."
-NO_NUMBER = "No WhatsApp number is stored for this complaint, so the consumer has not received this."
-REJECTED = ("WhatsApp did not accept the message, most likely because the consumer has not written in the last "
-            "24 hours and no approved template is set. The consumer has not received this.")
-TEMPLATE_REJECTED = "WhatsApp did not accept the message or the approved template. The consumer has not received this."
-TEMPLATE_USED = "Sent as the approved template because the consumer has not written in the last 24 hours."
+NO_NUMBER = delivery.NO_NUMBER
+REJECTED = delivery.REJECTED
+TEMPLATE_USED = delivery.TEMPLATE_USED
+FAILED_LATER = "WhatsApp accepted the message but could not deliver it. The consumer has not received this."
+# Meta reports a message sent outside the 24 hour window in a later status, with this error code.
+OUTSIDE_WINDOW = 131047
+CODE_LIFETIME = timedelta(minutes=5)  # matches the code's own expiry in app/flows/usc.py
 
 
 @dataclass(frozen=True)
 class Outcome:
     delivery: Delivery
     note: str | None = None
+    wamid: str | None = None  # Meta's id for the sent message, so its later delivery status can be matched
+    outbox_id: int | None = None  # pass to add_message, so a queued send updates the thread when it goes
 
 
 def reply_channel(complaint: Complaint) -> str:
@@ -46,49 +54,73 @@ def status_label(language: str, status: str) -> str:
 async def reply(complaint: Complaint, body: str) -> Outcome:
     language = complaint.language or "te"
     message = text(language, "complaint_update", ticket=complaint.ticket) + "\n" + body
-    return await _deliver(complaint, message)
+    return await _deliver(complaint, message, None, "staff")
 
 
 async def status(complaint: Complaint, new_status: Status) -> tuple[str, Outcome]:
     """The localised status line (stored in the thread as sent) and how it was delivered."""
     language = complaint.language or "te"
     line = text(language, "complaint_status", ticket=complaint.ticket, status=status_label(language, new_status))
-    return line, await _deliver(complaint, line, new_status)
+    return line, await _deliver(complaint, line, new_status, "status")
 
 
-async def send(complaint: Complaint, message: str, template_status: str | None = None) -> Outcome:
+async def send(complaint: Complaint, message: str, template_status: str | None = None,
+               kind: str = "notice") -> Outcome:
     """Any other message for the consumer, such as a request for a photo or a retry of one that failed."""
-    return await _deliver(complaint, message, template_status)
+    return await _deliver(complaint, message, template_status, kind)
 
 
-async def _deliver(complaint: Complaint, message: str, template_status: str | None = None) -> Outcome:
+def _template(complaint: Complaint, template_status: str | None) -> dict[str, Any] | None:
+    """The approved template, for a consumer outside the 24 hour window. It carries the ticket and status only."""
+    name = get_settings().whatsapp_complaint_template
+    if not name:
+        return None
+    language = complaint.language or "te"
+    label = status_label(language, template_status or complaint.status)
+    return {"name": name, "language": language, "params": [complaint.ticket, label]}
+
+
+def _outcome(row: outbox.Row) -> Outcome:
+    return Outcome(delivery.DELIVERY[row.state], row.note, row.wamid, row.id)
+
+
+async def _deliver(complaint: Complaint, message: str, template_status: str | None, kind: str) -> Outcome:
     if reply_channel(complaint) != "whatsapp":
         return Outcome("stored")
-    settings = get_settings()
-    if not settings.whatsapp_enabled:
+    if not get_settings().whatsapp_enabled:
         return Outcome("failed", NOT_CONNECTED)
     if not complaint.reply_to:
         return Outcome("failed", NO_NUMBER)
-    base: dict[str, Any] = {"messaging_product": "whatsapp", "recipient_type": "individual", "to": complaint.reply_to}
-    try:
-        await client.send(base | {"type": "text", "text": {"body": message[:4096], "preview_url": False}})
-        return Outcome("sent")
-    except httpx.HTTPError:
-        log.warning("complaint %s: free text reply not accepted by WhatsApp", complaint.ticket)
-    if not settings.whatsapp_complaint_template:
-        return Outcome("failed", REJECTED)
     language = complaint.language or "te"
-    label = status_label(language, template_status or complaint.status)
-    params = [{"type": "text", "text": complaint.ticket}, {"type": "text", "text": label}]
-    template = {"name": settings.whatsapp_complaint_template, "language": {"code": language},
-                "components": [{"type": "body", "parameters": params}]}
-    try:
-        await client.send(base | {"type": "template", "template": template})
-        return Outcome("sent", TEMPLATE_USED)
-    except httpx.HTTPError:
-        log.warning("complaint %s: template not accepted by WhatsApp", complaint.ticket)
-        return Outcome("failed", TEMPLATE_REJECTED)
+    row = await delivery.deliver(outbox.NewItem(
+        dedupe_key=f"{kind}:{complaint.ticket}:{uuid.uuid4().hex}", kind=kind, recipient=complaint.user_id,
+        address=complaint.reply_to, message=TextOut(body=message[:4096], language=language).model_dump(),
+        template=_template(complaint, template_status), ticket=complaint.ticket))
+    return _outcome(row)
 
+
+async def delivery_failed(wamid: str, error_code: int | None) -> None:
+    """Meta reported a message as failed after accepting it. Outside the 24 hour window the approved template goes
+    instead; anything else is marked not delivered, so the officer sees it and can send again."""
+    found = complaint_store.by_wamid(wamid)
+    if found is None or found["author_kind"] == "consumer":
+        return
+    complaint = complaint_store.get(found["ticket"])
+    if complaint is None:
+        return
+    template = _template(complaint, None)
+    if error_code == OUTSIDE_WINDOW and template is None:
+        complaint_store.set_delivery(found["id"], "failed", REJECTED)
+        return
+    if error_code == OUTSIDE_WINDOW and complaint.reply_to:
+        row = await delivery.deliver(outbox.NewItem(
+            dedupe_key=f"window:{wamid}", kind="status", recipient=complaint.user_id, address=complaint.reply_to,
+            message=None, template=template, ticket=complaint.ticket, message_id=found["id"]))
+        outcome = _outcome(row)
+        note = TEMPLATE_USED if outcome.delivery == "sent" else outcome.note
+        complaint_store.set_delivery(found["id"], outcome.delivery, note, outcome.wamid)
+        return
+    complaint_store.set_delivery(found["id"], "failed", FAILED_LATER)
 
 
 def can_send_code() -> bool:
@@ -98,17 +130,15 @@ def can_send_code() -> bool:
 
 
 async def send_code(mobile: str, code: str, language: str) -> bool:
-    """Send a one-time code to a 10 digit Indian mobile. The number and the code are never logged."""
+    """Send a one-time code to a 10 digit Indian mobile. The number and the code are never logged, and the number is
+    not stored: the outbox row keeps neither the number nor the code, so a code that fails inline is not retried."""
     if not can_send_code():
         return False
-    params = [{"type": "text", "text": code}]
-    template = {"name": get_settings().whatsapp_code_template, "language": {"code": language},
-                "components": [{"type": "body", "parameters": params},
-                               {"type": "button", "sub_type": "url", "index": "0", "parameters": params}]}
-    try:
-        await client.send({"messaging_product": "whatsapp", "recipient_type": "individual", "to": f"91{mobile}",
-                           "type": "template", "template": template})
-        return True
-    except httpx.HTTPError:
+    address = f"91{mobile}"
+    template = {"name": get_settings().whatsapp_code_template, "language": language, "params": [code], "button": True}
+    row = await delivery.deliver(outbox.NewItem(
+        dedupe_key=f"code:{uuid.uuid4().hex}", kind="code", recipient=user_key(address), address=None, message=None,
+        lifetime=CODE_LIFETIME), address=address, template=template)
+    if row.state != "sent":
         log.warning("one-time code template not accepted by WhatsApp")
-        return False
+    return row.state == "sent"

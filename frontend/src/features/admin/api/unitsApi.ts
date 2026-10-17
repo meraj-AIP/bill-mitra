@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { getJson, postForm, sendJson } from '@/shared/api/http';
 import { queryKeys } from '@/shared/api/queryKeys';
+import { IDEMPOTENT } from '@/shared/api/retry';
 import type { Discom, Unit, UnitKind } from '@/shared/api/types';
 
 export interface NewUnit {
@@ -44,6 +45,7 @@ export function useCreateUnit() {
 export function useUpdateUnit() {
   const onSuccess = useRefreshUnits();
   return useMutation({
+    ...IDEMPOTENT,
     mutationFn: ({ id, changes }: { id: string; changes: UnitChanges }) =>
       sendJson<Unit>(`/api/admin/units/${encodeURIComponent(id)}`, changes, 'PATCH'),
     onSuccess,
@@ -72,6 +74,7 @@ export function useUnmapped() {
 export function useMapUnmapped() {
   const onSuccess = useRefreshUnits();
   return useMutation({
+    ...IDEMPOTENT,
     mutationFn: (body: { name: string; discom: Discom; section_id: string }) => sendJson<void>('/api/admin/units/unmapped/map', body),
     onSuccess,
   });

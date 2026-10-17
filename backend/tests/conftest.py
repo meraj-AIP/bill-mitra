@@ -12,6 +12,7 @@ os.environ["DATA_DIR"] = _TMP
 for key in ("OPENAI_API_KEY", "SARVAM_API_KEY", "SONIOX_API_KEY", "WHATSAPP_TOKEN"):
     os.environ[key] = ""
 os.environ["AUTOMATION_ENABLED"] = "false"  # tests call the jobs directly with a fixed clock
+os.environ["QUEUE_RETRY_ENABLED"] = "false"  # the same for the queue recovery jobs
 
 from app.config import get_settings  # noqa: E402  (settings must see the environment above)
 from app.services import llm, vision  # noqa: E402
@@ -87,5 +88,27 @@ def account_manager() -> str:
 def fresh_rate_limits() -> None:
     """Each test starts with empty request counters, so limits never leak between tests."""
     from app.core import ratelimit
+    from app.store import console
 
     ratelimit._hits.clear()
+    console.forget_cached()  # a test reads the counts it just changed, so no minute-old cached summary
+
+
+@pytest.fixture(autouse=True)
+def retry_waits(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Retries never really sleep in tests: each wait moves a fake clock instead, so budgets still bind. Returns the
+    waits asked for, in order."""
+    from app.core import retry
+    from app.store import db
+
+    waits: list[float] = []
+    now = [0.0]
+
+    async def fake_sleep(seconds: float) -> None:
+        waits.append(seconds)
+        now[0] += seconds
+
+    monkeypatch.setattr(retry, "sleep", fake_sleep)
+    monkeypatch.setattr(retry, "clock", lambda: now[0])
+    monkeypatch.setattr(db, "_sleep", lambda seconds: waits.append(seconds))
+    return waits

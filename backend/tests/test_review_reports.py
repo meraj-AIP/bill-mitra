@@ -191,9 +191,10 @@ def test_connected_billing_records_join_the_pack_and_the_history(sign_in, area, 
 def test_billing_records_failures_are_missing_and_never_log_the_service_number(discom_connected, caplog,
                                                                                monkeypatch):
     caplog.set_level(logging.DEBUG)
-    for reply in (httpx.Response(500, json={}), httpx.Response(200, text="not json"),
-                  httpx.Response(200, json={"rows": []}), httpx.Response(200, json={"months": [{"month": "Sep"}]})):
-        discom_connected.replies.append(reply)
+    down = [httpx.Response(500, json={})] * billing_records.LOOKUP.attempts  # a 5xx is retried, then missing
+    for replies in (down, [httpx.Response(200, text="not json")], [httpx.Response(200, json={"rows": []})],
+                    [httpx.Response(200, json={"months": [{"month": "Sep"}]})]):
+        discom_connected.replies.extend(replies)
         assert asyncio.run(billing_records.fetch(PLACEHOLDER_USC)) == billing_records.Records("missing")
     assert PLACEHOLDER_USC not in caplog.text and "test-token-not-real" not in caplog.text
     monkeypatch.setattr(get_settings(), "billing_records_token", "")

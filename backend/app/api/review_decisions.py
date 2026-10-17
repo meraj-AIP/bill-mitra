@@ -105,6 +105,14 @@ async def _settled(complaint: Complaint, decision_id: int, actor_id: str, bill_m
     complaint_store.set_status(complaint.ticket, "In progress" if decision["revision"] else "Resolved")
 
 
+CLOSED_CASE = "This case is closed, so its decisions can no longer change."
+
+
+def _open_case(complaint: Complaint) -> None:
+    if complaint.status not in OPEN_STATUSES:
+        raise HTTPException(409, CLOSED_CASE)
+
+
 def _decision(account: Account, decision_id: int) -> tuple[dict[str, Any], Complaint]:
     found = store.decision(decision_id)
     if found is None:
@@ -167,6 +175,7 @@ async def approve(decision_id: int, body: ApproveBody, account: Approver) -> Cas
     found, complaint = _decision(account, decision_id)
     if found["proposed_by"]["id"] == account.id:
         raise HTTPException(403, OWN)
+    _open_case(complaint)
     if not store.approve(decision_id, account.id, body.note):
         raise HTTPException(409, "This decision is not waiting for approval.")
     accounts.audit(account.id, "decision.approve", complaint.ticket, f"decision {decision_id}",
@@ -180,6 +189,7 @@ async def reject(decision_id: int, body: RejectBody, account: Approver) -> CaseD
     found, complaint = _decision(account, decision_id)
     if found["proposed_by"]["id"] == account.id:
         raise HTTPException(403, "Withdraw your own decision instead of rejecting it.")
+    _open_case(complaint)
     if not store.reject(decision_id, account.id, body.note):
         raise HTTPException(409, "This decision is not waiting for approval.")
     accounts.audit(account.id, "decision.reject", complaint.ticket, f"decision {decision_id}",
@@ -196,6 +206,8 @@ async def withdraw(decision_id: int,
         raise HTTPException(403, "Only the proposer or an approver can withdraw a decision.")
     if found["applied_at"]:
         raise HTTPException(409, "This revision is already applied in the billing system.")
+    # Checked before anything is written: reopening a closed case here could clash with a newer check on the bill.
+    _open_case(complaint)
     # The consumer was already told about an approved revision, so they are told it no longer stands.
     announced = found["status"] == "approved" and bool(found["revision"])
     if not store.withdraw(decision_id):
@@ -216,6 +228,7 @@ async def applied(decision_id: int, body: AppliedBody,
     found, complaint = _decision(account, decision_id)
     if found["proposed_by"]["id"] == account.id:
         raise HTTPException(403, OWN)
+    _open_case(complaint)
     if not store.mark_applied(decision_id, account.id, body.billing_ref):
         raise HTTPException(409, "Only an approved revision that is not yet applied can be marked applied.")
     complaint_store.set_status(complaint.ticket, "Resolved")

@@ -14,11 +14,14 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.config import get_settings
+from app.core import retry
 
 log = logging.getLogger(__name__)
 
 TIMEOUT_S = 10.0
 MONTHS = 12
+# The evidence pack records "missing" when this gives up, and the case still goes ahead.
+LOOKUP = retry.Policy(attempts=3, base_s=0.5, max_s=4.0, budget_s=20.0)
 Status = Literal["included", "missing", "not_connected"]
 
 
@@ -64,10 +67,12 @@ async def fetch(service_number: str | None) -> Records:
     headers = {"Authorization": f"Bearer {settings.billing_records_token}", "Accept": "application/json"}
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
-            response = await client.get(url, params={"months": MONTHS}, headers=headers)
-            response.raise_for_status()
+            async def once() -> httpx.Response:
+                return (await client.get(url, params={"months": MONTHS}, headers=headers)).raise_for_status()
+
+            response = await retry.call(once, "billing records", LOOKUP)
             body = _Response.model_validate(response.json())
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, *retry.TRANSPORT) as exc:
         log.warning("billing records request failed: %s", type(exc).__name__)
         return Records("missing")
     except (ValueError, ValidationError):  # not JSON, or not the agreed shape

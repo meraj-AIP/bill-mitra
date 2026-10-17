@@ -1,14 +1,20 @@
 """SQLite storage for the pilot. The repository functions are the only SQL in the app,
 so moving to Postgres means replacing this module, not the flows."""
 
+import fcntl
 import json
+import logging
 import sqlite3
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 
 from app.config import get_settings
 from app.domain import rbac
+
+log = logging.getLogger(__name__)
 
 _ACCOUNTS_DDL = """CREATE TABLE IF NOT EXISTS accounts (
     id TEXT PRIMARY KEY, role TEXT NOT NULL, login TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
@@ -142,7 +148,7 @@ _COMPLAINT_COLUMNS = {"channel": "TEXT", "reply_to": "TEXT", "updated_at": "TEXT
 _INTAKE_COLUMNS = {"type": "TEXT", "priority": "TEXT", "due_at": "TEXT", "source": "TEXT", "raised_by": "TEXT",
                    "service_number_hash": "TEXT", "contact_hash": "TEXT", "description": "TEXT", "ownership": "TEXT",
                    "demo": "INTEGER NOT NULL DEFAULT 0"}
-_MESSAGE_COLUMNS = {"media_id": "TEXT"}
+_MESSAGE_COLUMNS = {"media_id": "TEXT", "wa_message_id": "TEXT"}
 _EVENT_COLUMNS = {"ms": "INTEGER"}
 _ACCOUNT_COLUMNS = {"consent_version": "TEXT", "consented_at": "TEXT"}
 _AUDIT_COLUMNS = {"unit_id": "TEXT"}
@@ -165,6 +171,8 @@ _AUTOMATION_DDL = (
 
 
 # A correction the rules found for a case on their own (app/flows/misread.py). The AE still decides.
+_ASSIST_DDL = ("CREATE TABLE IF NOT EXISTS assist_briefs (ticket TEXT NOT NULL, kind TEXT NOT NULL, "
+               "fingerprint TEXT NOT NULL, payload TEXT NOT NULL, generated_at TEXT NOT NULL, PRIMARY KEY (ticket, kind))")
 _SUGGESTIONS_DDL = ("CREATE TABLE IF NOT EXISTS case_suggestions (ticket TEXT PRIMARY KEY, kind TEXT NOT NULL, "
                     "corrected_present_reading INTEGER, source_bill_id TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
 
@@ -225,6 +233,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for statement in _AUTOMATION_DDL:
         conn.execute(statement)
     conn.execute(_SUGGESTIONS_DDL)
+    conn.execute(_ASSIST_DDL)
     for statement in (*_INTAKE_DDL, *_INTAKE_BACKFILL):
         conn.execute(statement)
     if first_intake:
@@ -291,6 +300,29 @@ def _rebuild_accounts(conn: sqlite3.Connection) -> None:
     conn.execute("ALTER TABLE accounts_v2 RENAME TO accounts")
 
 
+# Indexes for the queries that ran as full scans on a month of target volume (see docs/infrastructure.md). Created
+# after _migrate, because several columns are added there to older databases.
+_PERF_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts)",
+    "CREATE INDEX IF NOT EXISTS idx_events_type_discom ON events(type, discom, ts)",
+    "CREATE INDEX IF NOT EXISTS idx_complaints_status ON complaints(status, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_complaints_discom ON complaints(discom, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_complaints_kind ON complaints(kind, status, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_complaints_holder ON complaints(assigned_to, status)",
+    "CREATE INDEX IF NOT EXISTS idx_complaints_bill ON complaints(bill_id)",
+    "CREATE INDEX IF NOT EXISTS idx_complaints_updated ON complaints(status, updated_at)",
+    "CREATE INDEX IF NOT EXISTS idx_messages_author ON complaint_messages(ticket, author_kind, id)",
+    "CREATE INDEX IF NOT EXISTS idx_messages_delivery ON complaint_messages(delivery, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_messages_wamid ON complaint_messages(wa_message_id) WHERE wa_message_id IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_messages_media ON complaint_messages(media_id) WHERE media_id IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_bills_media ON bills(media_id) WHERE media_id IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_audit_target ON audit_log(target)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_unit ON audit_log(unit_id, id)",
+    "CREATE INDEX IF NOT EXISTS idx_chat_ts ON chat_messages(ts)",
+    "CREATE INDEX IF NOT EXISTS idx_seen_ts ON whatsapp_seen(ts)",
+)
+
+
 def _upgrade(conn: sqlite3.Connection) -> None:
     # One transaction, so a failed rebuild leaves the old table exactly as it was.
     conn.execute("BEGIN IMMEDIATE")
@@ -301,6 +333,13 @@ def _upgrade(conn: sqlite3.Connection) -> None:
         # column is added to older databases by _migrate.
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_one_open_case ON complaints(bill_id) "
                      "WHERE kind = 'wrong_reading' AND status IN ('Open', 'In progress')")
+        for statement in _PERF_INDEXES:
+            conn.execute(statement)
+        # Here, not at the top: these modules import this one.
+        from app.store import extract_jobs, outbox, wa_queue
+
+        for queue in (wa_queue, outbox, extract_jobs):
+            queue.ensure(conn)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -309,31 +348,97 @@ def _upgrade(conn: sqlite3.Connection) -> None:
 
 _lock = threading.Lock()
 _conn: sqlite3.Connection | None = None
+# How long one statement waits for another process's write lock, and how long tx() keeps asking for it.
+BUSY_TIMEOUT_MS = 1000
+LOCKED_BUDGET_S = 5.0
+_sleep = time.sleep
+
+
+@contextmanager
+def _migration_lock() -> Iterator[None]:
+    """Several uvicorn workers start at once on a fresh database; they take turns building the schema, and the later
+    ones find the work done. The lock goes with the file handle, so a worker that dies releases it."""
+    with open(get_settings().data_dir / "migrate.lock", "w") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def connection() -> sqlite3.Connection:
     global _conn
     if _conn is None:
         path = get_settings().data_dir / "billmitra.db"
-        _conn = sqlite3.connect(path, check_same_thread=False)
-        _conn.row_factory = sqlite3.Row
-        _conn.execute("PRAGMA journal_mode=WAL")
-        _conn.executescript(_SCHEMA)
-        _migrate(_conn)
-        _upgrade(_conn)
+        conn = sqlite3.connect(path, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        # Wait briefly for a lock (tx() retries beyond that), commit without an fsync per statement (safe with WAL: a
+        # crash can lose the last commit, never corrupt), and keep hot pages in memory.
+        conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+        try:
+            with _migration_lock():
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=NORMAL")
+                conn.execute("PRAGMA temp_store=MEMORY")
+                conn.execute("PRAGMA cache_size=-65536")
+                conn.executescript(_SCHEMA)
+                _migrate(conn)
+                _upgrade(conn)
+        except BaseException:
+            conn.close()
+            raise
+        _conn = conn
     return _conn
+
+
+def _locked(exc: sqlite3.OperationalError) -> bool:
+    message = str(exc).lower()
+    return "locked" in message or "busy" in message
+
+
+def _begin(conn: sqlite3.Connection) -> None:
+    """Take the write lock up front, so a transaction never fails half way on another worker's lock. Retried with a
+    short backoff for LOCKED_BUDGET_S; nothing has run yet, so a retry is always safe."""
+    deadline = time.monotonic() + LOCKED_BUDGET_S
+    delay = 0.05
+    for attempt in range(1, 1000):
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            return
+        except sqlite3.OperationalError as exc:
+            if not _locked(exc) or time.monotonic() + delay > deadline:
+                raise
+            log.info("retry sqlite begin: attempt %d, database locked", attempt)
+            _sleep(delay)
+            delay = min(delay * 2, 0.5)
+    raise sqlite3.OperationalError("database is locked")
+
+
+def ts(moment: datetime | None = None) -> str:
+    """The same text form as SQLite's CURRENT_TIMESTAMP (UTC), so the two compare as strings."""
+    return (moment or datetime.now(UTC)).astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
 
 @contextmanager
 def tx() -> Iterator[sqlite3.Connection]:
     with _lock:
         conn = connection()
+        _begin(conn)
         try:
             yield conn
             conn.commit()
         except Exception:
             conn.rollback()
             raise
+
+
+def maintain() -> None:
+    """Daily: fold the write-ahead log back into the database file and refresh the query planner's statistics.
+    Outside tx(): a checkpoint cannot run inside an open transaction."""
+    with _lock:
+        conn = connection()
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.execute("PRAGMA optimize")
 
 
 def purge_mock_data() -> None:

@@ -2,7 +2,7 @@ import { Checkbox, Chip, Link as MuiLink, Skeleton, Stack, Table, TableBody, Tab
 import { Link, useNavigate } from 'react-router-dom';
 
 import { CHANNEL_LABEL, DemoChip, DueChip, PriorityChip, SOURCE_LABEL, StatusChip, TRIAGE, type ComplaintRow } from '@/features/complaints';
-import { dateTime, monthLabel, rupees } from '@/shared/lib/format';
+import { dateTime, rupees } from '@/shared/lib/format';
 
 interface ComplaintsTableProps {
   rows: ComplaintRow[] | undefined;
@@ -12,52 +12,18 @@ interface ComplaintsTableProps {
   selection?: { selected: Set<string>; onToggle: (ticket: string) => void; onToggleAll: (tickets: string[]) => void };
 }
 
-/** The server decides what is overdue, from the reply time promised to consumers. */
-function Flags({ c }: { c: ComplaintRow }) {
-  const triage = TRIAGE[c.triage];
+/** The status, plus only the most urgent flag: a reply that did not arrive, then overdue, then an overcharge. */
+function StatusCell({ c }: { c: ComplaintRow }) {
+  const flag = c.delivery_failed ? <Chip size="small" color="error" label="Reply not delivered" />
+    : c.overdue ? <DueChip c={c} />
+      : c.triage === 'overcharge' ? <Chip size="small" variant="outlined" color={TRIAGE.overcharge.tone} label={TRIAGE.overcharge.label} /> : null;
+  const holder = c.waiting_on === 'consumer' ? 'Waiting on consumer' : c.assignee_name ? `With ${c.assignee_name}` : null;
   return (
     <Stack sx={{ gap: 0.5, alignItems: 'flex-start' }}>
       <StatusChip status={c.status} />
-      <DueChip c={c} />
-      <Chip size="small" variant="outlined" color={triage.tone} label={triage.label} title={triage.hint} />
-      {c.delivery_failed && <Chip size="small" color="error" label="Reply not delivered" />}
+      {flag}
+      {holder && <Typography variant="caption" sx={{ color: 'text.secondary' }} noWrap>{holder}</Typography>}
     </Stack>
-  );
-}
-
-/** Who holds it and whether the consumer owes an answer, under the ticket so they show first on a phone. */
-function HolderChips({ c }: { c: ComplaintRow }) {
-  if (!c.assignee_name && c.waiting_on !== 'consumer') return null;
-  return (
-    <Stack sx={{ gap: 0.5, mt: 0.5, alignItems: 'flex-start' }}>
-      {c.assignee_name && (
-        <Chip size="small" variant="outlined" label={`With ${c.assignee_name}`} title={`With ${c.assignee_name}`}
-          sx={{ maxWidth: 160, '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' } }} />
-      )}
-      {c.waiting_on === 'consumer' && <Chip size="small" color="info" label="Waiting on consumer" />}
-    </Stack>
-  );
-}
-
-/** Type, priority, source and place: the columns the complaints contract added. */
-function DetailCells({ c }: { c: ComplaintRow }) {
-  return (
-    <>
-      <TableCell sx={{ minWidth: 220, maxWidth: 340 }}>
-        {c.type_label && <Typography variant="subtitle2" component="p">{c.type_label}</Typography>}
-        <Typography variant="body2" sx={{ color: c.type_label ? 'text.secondary' : 'text.primary', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-          {c.issue}
-        </Typography>
-      </TableCell>
-      <TableCell>{c.priority ? <PriorityChip priority={c.priority} /> : '-'}</TableCell>
-      <TableCell sx={{ minWidth: 120 }}>
-        <Typography variant="body2">{source(c)}</Typography>
-      </TableCell>
-      <TableCell sx={{ whiteSpace: 'nowrap' }}>
-        {c.discom ?? 'Unknown'}
-        <Typography variant="caption" component="p" sx={{ color: 'text.secondary' }}>{c.section ?? monthLabel(c.bill_month)}</Typography>
-      </TableCell>
-    </>
   );
 }
 
@@ -73,7 +39,7 @@ export function complaintPath(ticket: string): string {
 /** Rows open the complaint on click; the ticket is also a real link so keyboards and new tabs work. */
 export function ComplaintsTable({ rows, loadingRows, dimmed = false, selection }: ComplaintsTableProps) {
   const navigate = useNavigate();
-  const columns = selection ? 9 : 8;
+  const columns = selection ? 6 : 5;
   const tickets = rows?.map((r) => r.ticket) ?? [];
   const allOn = tickets.length > 0 && tickets.every((t) => selection?.selected.has(t));
   return (
@@ -88,12 +54,9 @@ export function ComplaintsTable({ rows, loadingRows, dimmed = false, selection }
               </TableCell>
             )}
             <TableCell>Ticket</TableCell>
+            <TableCell>Issue</TableCell>
             <TableCell>Status</TableCell>
-            <TableCell>Type and issue</TableCell>
             <TableCell>Priority</TableCell>
-            <TableCell>Source</TableCell>
-            <TableCell>DISCOM</TableCell>
-            <TableCell align="right">Amount</TableCell>
             <TableCell>Last activity</TableCell>
           </TableRow>
         </TableHead>
@@ -115,13 +78,19 @@ export function ComplaintsTable({ rows, loadingRows, dimmed = false, selection }
                   sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
                   {c.ticket}
                 </MuiLink>
-                <Typography variant="caption" component="p" sx={{ color: 'text.secondary' }}>{dateTime(c.created_at)}</Typography>
+                <Typography variant="caption" component="p" sx={{ color: 'text.secondary' }}>
+                  {dateTime(c.created_at)}, {source(c)}{c.discom ? `, ${c.discom}` : ''}
+                </Typography>
                 {c.demo && <DemoChip />}
-                <HolderChips c={c} />
               </TableCell>
-              <TableCell><Flags c={c} /></TableCell>
-              <DetailCells c={c} />
-              <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{c.amount ? rupees(c.amount) : '-'}</TableCell>
+              <TableCell sx={{ minWidth: 220, maxWidth: 380 }}>
+                <Typography variant="subtitle2" component="p">{c.type_label ?? 'Complaint'}</Typography>
+                <Typography variant="body2" sx={{ color: 'text.secondary', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                  {c.amount ? `${rupees(c.amount)}. ` : ''}{c.issue}
+                </Typography>
+              </TableCell>
+              <TableCell><StatusCell c={c} /></TableCell>
+              <TableCell>{c.priority ? <PriorityChip priority={c.priority} /> : '-'}</TableCell>
               <TableCell sx={{ whiteSpace: 'nowrap' }}>
                 {c.last_message_at ? dateTime(c.last_message_at) : 'No messages'}
                 <Typography variant="caption" component="p" sx={{ color: 'text.secondary' }}>

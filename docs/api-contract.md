@@ -60,8 +60,23 @@ STOP in the chat and `POST /api/web/reset` also delete unshared photos. A sweep 
 | `POST /api/admin/accounts/{id}/reset-password` | `accounts.manage` | `{ password }` | 204, ends that account's sessions |
 | `GET /api/admin/audit` | `audit.view` | `page, page_size, action?` | `Page<{ id, ts, actor_id, actor_name, action, target, detail }>` newest first, limited to entries in the caller's scope |
 | `GET /api/admin/health` | `accounts.manage` | | provider modes plus today's warning counts |
+| `GET /api/admin/operations` | `audit.view` or `accounts.manage` | `page, page_size (5..100), kind? (inbound, outbound or extract), sort=newest or oldest` | `ParkedPage`: failures the queues gave up on. A scoped account sees only outbound rows of complaints in its scope; rows without a ticket need a global account |
+| `POST /api/admin/operations/{kind}/{id}/retry` | `audit.view` or `accounts.manage` | | 204, back in its queue and due now. 404 when not parked or not in scope, 409 when it has no number left to send to (a one-time code, a WhatsApp bill read). Audited `operations.retry` |
+| `POST /api/admin/operations/{kind}/{id}/dismiss` | `audit.view` or `accounts.manage` | | 204; the number and message it held are dropped. 404 when not parked or not in scope. Audited `operations.dismiss` |
 
 Consumers register themselves; staff are created here. Only a `roles.manage` holder can change an account that holds `roles.manage`, `units.manage` or `policy.manage`.
+
+```ts
+// Ids are per queue, hence kind in every path. Never a message body or a number.
+interface ParkedPage { items: Parked[]; total: number; page: number; page_size: number }
+interface Parked { id: string; kind: 'inbound' | 'outbound' | 'extract'; ticket: string | null; attempts: number;
+  last_error: string | null;   // exception class and HTTP status only, e.g. "HTTPStatusError 503"
+  created_at: string; failed_at: string | null }
+```
+
+A parked inbound turn raises the alert `inbound_failed` (perm `audit.view`, no message text). An outbound complaint
+message that fails after queuing raises `delivery_failed` for the complaint's holder, or for its unit with perm
+`complaints.reply` when nobody holds it. See docs/reliability-contract.md and docs/reliability-audit.md.
 
 ## Roles
 
@@ -116,7 +131,8 @@ interface Policy { discom: 'TGSPDCL' | 'TGNPDCL'; ae_limit: number | null; custo
 
 | Method and path | Permission | Body / query | Returns |
 | --- | --- | --- | --- |
-| `POST /api/bills` | `self.bills` or `chat.preview` | multipart `file`, `language?` | `BillReport` |
+| `POST /api/bills` | `self.bills` or `chat.preview` | multipart `file`, `language?` | `BillReport`; or 202 `ReadJob` when the reader is down for now (provider down, timeout, rate limit). The photo is kept and read again after 1, 5 and 15 minutes |
+| `GET /api/bills/jobs/{job_id}` | `self.bills` or `chat.preview`, owner | | `ReadJob`, 404 if not yours. When `done` with a `bill_id`, the bill is in `GET /api/bills` and `GET /api/bills/{id}` |
 | `GET /api/bills` | `self.bills` or `chat.preview` | `page, page_size, audit_status?, sort=newest or oldest` | `Page<BillRow>`, own bills only |
 | `GET /api/bills/{id}` | `self.bills` or `chat.preview`, owner | `language?` | `BillReport`, 404 if not yours |
 | `POST /api/bills/{bill_id}/review-request` | `self.bills`, owner | `{ note? (max 500) }`, `language?` | `ReviewSummary`. 409 if a case is already open for the bill |
@@ -143,6 +159,12 @@ interface ReviewSummary { ticket: string;
 The consumer side never names who reviews. `office` is the DISCOM.
 
 ```ts
+interface ReadJob { job_id: string; status: 'queued' | 'running' | 'done' | 'failed';
+  bill_id: string | null;   // set when done and the bill was saved
+  detail: string | null }   // plain words while waiting; why, when done without a bill (not a bill, retake) or failed
+```
+
+```ts
 interface UscStarted { status: 'accepted'; message: string; expires_in_seconds: number;   // 300
   code_required: boolean }   // false only on a development server with OWNERSHIP_CHECK=false
 ```
@@ -154,7 +176,7 @@ stored for that number and no code is needed; `APP_ENV=production` refuses to st
 
 ## Web chat and other signed in routes
 
-- `GET /api/health`, `GET /api/tariffs`, `GET /api/tariffs/calculate`, the WhatsApp webhook: public. Health also returns `whatsapp_number` (from `WHATSAPP_DISPLAY_NUMBER`, or null) so the dashboard can link to the chat.
+- `GET /api/health`, `GET /api/tariffs`, `GET /api/tariffs/calculate`, the WhatsApp webhook: public. Health also returns `whatsapp_number` (from `WHATSAPP_DISPLAY_NUMBER`, or null) so the dashboard can link to the chat, and `queues: { inbox: { queued, failed }, outbox: { queued, failed }, extract: { queued, failed }, oldest_queued_s: number | null }` (counts only).
 - `POST /api/web/upload`, `POST /api/web/messages`, `POST /api/web/reset`: `self.bills` or `chat.preview`. `reset` takes no body.
 - `GET /api/web/history?before=<id>&limit=<1..100>`: same permission. The saved conversation, newest page first and items oldest first: `{ items: [{ id, at, sender: 'user' or 'bot', body }], has_more }`. A user body is `{ kind, text?, reply_id?, media_id?, mime_type?, transcript? }`; a bot body is the WhatsApp-shaped message. Every channel's turns are saved; STOP, `POST /api/web/reset`, account deletion and the retention sweep erase them. The WhatsApp number is never part of a saved message.
 - `GET /api/media/{id}`: any signed in account (an `<img>` sends the cookie).
@@ -205,8 +227,9 @@ interface ComplaintMessage {
   body: string; created_at: string;
   media_url: string | null;    // /api/console/complaints/{ticket}/media/{id}: staff in scope only
   media_type: string | null;   // e.g. image/jpeg, application/pdf
-  delivery: 'sent' | 'failed' | 'stored';   // sent on WhatsApp / could not be sent / shown in the web app
-  delivery_note: string | null;             // plain reason when failed, e.g. WhatsApp not connected
+  delivery: 'sent' | 'queued' | 'failed' | 'stored';   // sent on WhatsApp / WhatsApp did not answer, retried for up to
+                                                       // 24 hours / could not be sent / shown in the web app
+  delivery_note: string | null;             // plain reason when queued or failed, e.g. WhatsApp not connected
 }
 interface ComplaintDetail extends ComplaintRow {
   bill: { bill_month: string | null; units: number | null; total_payable: number | null;
@@ -304,6 +327,11 @@ interface ConsumerComplaintDetail extends ConsumerComplaint {
 No staff name, assignee or role ever appears in the consumer view.
 
 WhatsApp only allows free text within 24 hours of the consumer's last message. Outside that window the reply is sent with the approved template in `WHATSAPP_COMPLAINT_TEMPLATE` when set; otherwise delivery is `failed` with that reason, and the officer sees it.
+
+Every message to a consumer goes through the outbox. When WhatsApp does not answer after three quick tries, delivery
+is `queued` and the message is retried after 1, 5, 15 and 60 minutes, then every 3 hours, for up to 24 hours; the
+thread updates to `sent` or `failed` as it changes. A queued message cannot be sent again from the thread (only a
+`failed` one can), so the consumer never gets two copies.
 
 ## Bill review (staff)
 

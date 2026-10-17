@@ -194,8 +194,8 @@ async def tell_consumer(complaint: Complaint, actor_id: str | None, bill_month: 
     language = complaint.language or "te"
     message = text(language, key, ticket=complaint.ticket, month=case_bills.month_name(language, bill_month),
                    office=office(language, complaint.discom), **values)
-    outcome = await notify.send(complaint, message)
-    complaints.add_message(complaint.ticket, "system", actor_id, message, outcome.delivery, outcome.note)
+    outcome = await notify.send(complaint, message, kind="reminder" if key == "request_reminder" else "notice")
+    complaints.add_message(complaint.ticket, "system", actor_id, message, outcome.delivery, outcome.note, wamid=outcome.wamid, outbox_id=outcome.outbox_id)
 
 
 async def tell_decision(complaint: Complaint, actor_id: str, bill_month: str | None, decision: dict[str, Any]) -> None:

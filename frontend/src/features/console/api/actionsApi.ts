@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ComplaintDetail, ComplaintStatus, Triage } from '@/features/complaints';
 import { getJson, sendJson } from '@/shared/api/http';
 import { queryKeys } from '@/shared/api/queryKeys';
+import { IDEMPOTENT } from '@/shared/api/retry';
 
 import { useApplyDetail } from './consoleApi';
 
@@ -41,6 +42,7 @@ export function useReplyOptions(ticket: string) {
 
 export function useDraftOption(ticket: string) {
   return useMutation({
+    ...IDEMPOTENT,
     mutationFn: (optionKey: string) => sendJson<Draft>(`${path(ticket)}/draft`, { option_key: optionKey }),
   });
 }

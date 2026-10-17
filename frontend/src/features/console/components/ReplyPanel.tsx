@@ -16,9 +16,8 @@ function Destination({ complaint }: { complaint: ComplaintDetail }) {
   const whatsapp = complaint.reply_channel === 'whatsapp';
   if (whatsapp && !complaint.whatsapp_ready) {
     return (
-      <Alert severity="warning">
-        Replies to this complaint go to the consumer on WhatsApp, but WhatsApp is not connected on this server. Your
-        reply will be saved and marked as not delivered. Use Send again once WhatsApp is set up.
+      <Alert severity="warning" sx={{ py: 0.25 }}>
+        WhatsApp is not connected here. Replies are saved as not delivered; send them again once it is set up.
       </Alert>
     );
   }
@@ -27,12 +26,12 @@ function Destination({ complaint }: { complaint: ComplaintDetail }) {
       {whatsapp ? <ChatOutlinedIcon fontSize="small" /> : <WebOutlinedIcon fontSize="small" />}
       <Typography variant="body2">
         {whatsapp
-          ? 'Your reply goes to the consumer on WhatsApp. Outside 24 hours of their last message it is sent as the approved template.'
+          ? 'Goes to the consumer on WhatsApp (as the approved template after 24 hours).'
           : complaint.source === 'consumer_web'
-            ? 'Your reply shows on the consumer\'s complaint page in the Bill Mitra app.'
+            ? 'Shows on the consumer\'s complaint page in the app.'
             : complaint.source === 'consumer_chat'
-              ? 'This complaint came from the web chat preview. Your reply is saved here only; the consumer does not receive it.'
-              : 'There is no way to reach this consumer yet, so your reply is saved on the complaint only.'}
+              ? 'From the web chat preview: saved here only, the consumer does not receive it.'
+              : 'No way to reach this consumer yet: saved on the complaint only.'}
       </Typography>
     </Stack>
   );
@@ -110,14 +109,14 @@ export function ReplyPanel({ complaint, preset }: { complaint: ComplaintDetail; 
       )}
       <ReplyBox key={loaded.n} stacked initial={loaded.text} label="Reply to the consumer"
         placeholder="Pick a reply above or write in plain words. The consumer may read this on a phone."
-        pending={reply.isPending} error={reply.error?.message ?? null} onSend={send}
-        extra={
+        state={reply} onSend={send}
+        extra={complaint.kind === 'wrong_reading' ? undefined : (
           <TextField select size="small" label="Then set status" value={status} fullWidth
             onChange={(e) => setStatus(e.target.value as ComplaintStatus | '')}>
             <MenuItem value="">Keep as {complaint.status}</MenuItem>
             {COMPLAINT_STATUSES.filter((x) => x !== complaint.status).map((x) => <MenuItem key={x} value={x}>{x}</MenuItem>)}
           </TextField>
-        } />
+        )} />
     </Stack>
   );
 }

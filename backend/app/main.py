@@ -24,6 +24,7 @@ from app.api import (
     complaints,
     console,
     consumer_complaints,
+    operations,
     privacy,
     review,
     review_decisions,
@@ -32,12 +33,16 @@ from app.channels import web
 from app.channels.whatsapp import router as whatsapp
 from app.config import get_settings
 from app.core import security
-from app.services import scheduler
+from app.services import http, scheduler
 from app.store import accounts, demo_accounts
 from app.store import privacy as retention
 from app.store.db import connection, purge_mock_data
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+# httpx logs every outbound request at INFO: about 20 lines per WhatsApp conversation, with URLs. Failures are still
+# logged by the callers, without the URL.
+for noisy in ("httpx", "httpcore"):
+    logging.getLogger(noisy).setLevel(logging.WARNING)
 
 settings = get_settings()
 
@@ -50,10 +55,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     purge_mock_data()
     retention.sweep()
     scheduler.start()
+    whatsapp.resume()
     try:
         yield
     finally:
         await scheduler.stop()
+        await http.close_all()
 
 
 app = FastAPI(title="Bill Mitra", version="0.1.0", lifespan=lifespan,
@@ -69,12 +76,20 @@ app.middleware("http")(security.protect)
 for router in (auth.router, privacy.router, admin.router, alerts.router, access.router, catalog.router, bills.router,
                bills_by_usc.router, complaints.router, complaint_actions.router, complaint_handoff.router,
                complaint_raise.router, assist.router, consumer_complaints.router, console.router, review.router,
-               review_decisions.router, web.router, whatsapp.router):
+               review_decisions.router, operations.router, web.router, whatsapp.router):
     app.include_router(router)
 
 
 if settings.frontend_dist.exists():
-    app.mount("/assets", StaticFiles(directory=settings.frontend_dist / "assets"), name="assets")
+    class HashedAssets(StaticFiles):
+        """Vite names every built asset by its content hash, so a browser may keep it for a year."""
+
+        def file_response(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            response = super().file_response(*args, **kwargs)
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            return response
+
+    app.mount("/assets", HashedAssets(directory=settings.frontend_dist / "assets"), name="assets")
 
     @app.get("/{path:path}", include_in_schema=False)
     async def spa(path: str) -> FileResponse:
@@ -83,4 +98,5 @@ if settings.frontend_dist.exists():
         candidate = (settings.frontend_dist / path).resolve()
         if path and candidate.is_file() and settings.frontend_dist.resolve() in candidate.parents:
             return FileResponse(candidate)
-        return FileResponse(settings.frontend_dist / "index.html")
+        # index.html names the current asset hashes, so it is always checked again; the assets themselves are not.
+        return FileResponse(settings.frontend_dist / "index.html", headers={"Cache-Control": "no-cache"})

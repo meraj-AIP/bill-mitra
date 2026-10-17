@@ -153,7 +153,7 @@ async def create(body: ConsumerRaise, account: Owner, language: Language = "te")
 
 
 @router.get("/api/complaints", response_model=ConsumerPage)
-async def mine(account: Owner, page: Annotated[int, Query(ge=1)] = 1,
+async def mine(account: Owner, page: Annotated[int, Query(ge=1, le=1000)] = 1,
                page_size: Annotated[int, Query(ge=5, le=50)] = 10, language: Language = "te",
                status: State | None = None) -> ConsumerPage:
     rows, total = store.page(account.user_id, page, page_size, status)

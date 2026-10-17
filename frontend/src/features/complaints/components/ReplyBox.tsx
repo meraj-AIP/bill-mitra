@@ -1,6 +1,8 @@
 import SendOutlinedIcon from '@mui/icons-material/SendOutlined';
-import { Alert, Button, CircularProgress, Stack, TextField, Typography } from '@mui/material';
+import { Button, CircularProgress, Stack, TextField, Typography } from '@mui/material';
 import { useId, useState, type FormEvent, type ReactNode } from 'react';
+
+import { SendStatus, type SendState } from '@/shared/components/SendStatus';
 
 import { REPLY_LIMIT } from '../api/types';
 
@@ -10,8 +12,8 @@ const INLINE = { direction: { xs: 'column', sm: 'row' }, sx: { gap: 1.5, alignIt
 interface ReplyBoxProps {
   label: string;
   placeholder: string;
-  pending: boolean;
-  error: string | null;
+  /** The send mutation: offline, retrying and failed states show above the box. */
+  state: SendState;
   /** Resolves when the message is saved; the box clears then. */
   onSend: (body: string) => Promise<unknown>;
   /** Extra controls shown beside the Send button, such as a status change. */
@@ -24,26 +26,27 @@ interface ReplyBoxProps {
   stacked?: boolean;
 }
 
-export function ReplyBox({ label, placeholder, pending, error, onSend, extra, allowEmpty = false, initial = '', stacked }: ReplyBoxProps) {
+export function ReplyBox({ label, placeholder, state, onSend, extra, allowEmpty = false, initial = '', stacked }: ReplyBoxProps) {
   const [body, setBody] = useState(initial);
   const counterId = useId();
   const length = body.trim().length;
   const over = body.length > REPLY_LIMIT;
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
+  const pending = state.isPending;
+  const submit = async (event?: FormEvent) => {
+    event?.preventDefault();
     if (over || (!allowEmpty && length === 0)) return;
     try {
       await onSend(body.trim());
       setBody('');
     } catch {
-      // The mutation error is shown through the error prop.
+      // SendStatus shows the failure; the text stays in the box for Try again.
     }
   };
 
   return (
     <Stack component="form" onSubmit={(e) => void submit(e)} sx={{ gap: 1.5 }}>
-      {error && <Alert severity="error">{error}</Alert>}
+      <SendStatus state={state} onTryAgain={() => void submit()} />
       <TextField label={label} placeholder={placeholder} multiline minRows={3} maxRows={10} fullWidth value={body}
         onChange={(e) => setBody(e.target.value)} error={over}
         onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void submit(e); }}

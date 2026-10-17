@@ -25,7 +25,7 @@ export function DemoLogins({ onPick }: { onPick: (login: string) => void }) {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         slotProps={{ paper: { variant: 'outlined', sx: { mt: 0.5, width: 300, maxWidth: 'calc(100vw - 32px)' } } }}>
         <Typography variant="caption" component="p" sx={{ color: 'text.secondary', px: 2, pt: 1.5, pb: 0.5 }}>
-          For demos. Pick a role to fill its login, then type the demo password.
+          Pick a role to fill its login, then type the password.
         </Typography>
         <List dense disablePadding sx={{ pb: 0.5 }}>
           {data.map((d) => (

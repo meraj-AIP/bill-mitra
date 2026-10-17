@@ -1,10 +1,8 @@
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import InboxOutlinedIcon from '@mui/icons-material/InboxOutlined';
 import { Box, Button, Container, Stack } from '@mui/material';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 
 import { can, scopeLabel, spansDiscoms, useAuth } from '@/features/auth';
 import { ListPanel } from '@/shared/components/ListPanel';
@@ -28,6 +26,8 @@ export function ComplaintsInboxPage() {
   const scopedTo = spansDiscoms(account) ? null : scopeLabel(account);
   const { filtered } = params;
   const canCreate = can(account, 'complaints.create');
+  // Bulk actions reply and change status, so read-only accounts get neither the checkboxes nor the bar.
+  const canBulk = can(account, 'complaints.reply');
   const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const toggle = (ticket: string) => setSelected((now) => {
@@ -51,14 +51,10 @@ export function ComplaintsInboxPage() {
     <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
       <Stack sx={{ gap: 3 }}>
         <Box>
-          <Button component={Link} to="/console" startIcon={<ArrowBackIcon />} size="small" sx={{ ml: -1, mb: 1 }}>Console</Button>
-          <PageHeader eyebrow={scopedTo ? `${scopedTo} complaints` : 'All DISCOMs'} title="Complaints inbox"
-            lead="Every complaint raised in Bill Mitra. Open one to see the bill, the charges check and the conversation, and to reply."
+          <PageHeader {...(scopedTo ? { eyebrow: scopedTo } : {})} title="Complaints"
             actions={
               <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
-                <Button variant="outlined" href={exportUrl(query)} download startIcon={<FileDownloadOutlinedIcon />}>
-                  Export CSV
-                </Button>
+                <Button href={exportUrl(query)} download startIcon={<FileDownloadOutlinedIcon />}>Export</Button>
                 {canCreate && (
                   <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => setCreating(true)}>New complaint</Button>
                 )}
@@ -66,12 +62,12 @@ export function ComplaintsInboxPage() {
             } />
         </Box>
         <InboxFilters query={query} showDiscom={!scopedTo} onFilter={params.setFilter} onFailed={params.setFailed} onSort={params.setSort}
-          mine={params.mine} onMine={params.setMine} />
-        <BulkBar tickets={[...selected]} onDone={() => setSelected(new Set())} />
+          mine={params.mine} onMine={params.setMine} canHold={canBulk} />
+        {canBulk && <BulkBar tickets={[...selected]} onDone={() => setSelected(new Set())} />}
         <ListPanel result={result} page={query.page} pageSize={query.pageSize} onPage={params.setPage} onPageSize={params.setPageSize}
           empty={empty}>
           {(rows, dimmed) => <ComplaintsTable rows={rows} loadingRows={query.pageSize} dimmed={dimmed}
-            selection={{ selected, onToggle: toggle, onToggleAll: toggleAll }} />}
+            {...(canBulk ? { selection: { selected, onToggle: toggle, onToggleAll: toggleAll } } : {})} />}
         </ListPanel>
       </Stack>
       {canCreate && (

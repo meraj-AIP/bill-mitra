@@ -1,18 +1,19 @@
 import { Button, Container, CssBaseline, LinearProgress, ThemeProvider } from '@mui/material';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { lazy, Suspense, type ReactNode } from 'react';
 import { createBrowserRouter, Link, Navigate, RouterProvider, type RouteObject } from 'react-router-dom';
 
 import { AlertsPage } from '@/features/alerts';
 import { landingFor, LoginPage, PrivacyPage, PublicOnly, RegisterPage, RequirePermission, useAuth, type Permission } from '@/features/auth';
 import { BillPage, DashboardPage } from '@/features/dashboard';
-import { ApiError, onUnauthorized } from '@/shared/api/http';
+import { NetworkError, onUnauthorized } from '@/shared/api/http';
 import { queryKeys } from '@/shared/api/queryKeys';
+import { retryDelay, retryQuery, retryUnsent } from '@/shared/api/retry';
 import { EmptyState } from '@/shared/components/States';
 import { theme } from '@/theme';
 
 import { AppShell } from './AppShell';
-import { ASSISTANT, COMPLAINTS, CONSOLE, CONSUMER, HEALTH, navFor, REVIEW, STAFF } from './nav';
+import { ASSISTANT, COMPLAINTS, CONSOLE, CONSUMER, HEALTH, navFor, OPERATIONS, REVIEW, STAFF } from './nav';
 
 const AssistantPage = lazy(() => import('@/features/assistant').then((m) => ({ default: m.AssistantPage })));
 const ConsolePage = lazy(() => import('@/features/console').then((m) => ({ default: m.ConsolePage })));
@@ -21,6 +22,7 @@ const ComplaintDetailPage = lazy(() => import('@/features/console').then((m) => 
 const AccountsPage = lazy(() => import('@/features/admin').then((m) => ({ default: m.AccountsPage })));
 const AuditPage = lazy(() => import('@/features/admin').then((m) => ({ default: m.AuditPage })));
 const HealthPage = lazy(() => import('@/features/admin').then((m) => ({ default: m.HealthPage })));
+const OperationsPage = lazy(() => import('@/features/admin').then((m) => ({ default: m.OperationsPage })));
 const RolesPage = lazy(() => import('@/features/admin').then((m) => ({ default: m.RolesPage })));
 const UnitsPage = lazy(() => import('@/features/admin').then((m) => ({ default: m.UnitsPage })));
 const PolicyPage = lazy(() => import('@/features/admin').then((m) => ({ default: m.PolicyPage })));
@@ -31,14 +33,18 @@ const MyComplaintPage = lazy(() => import('@/features/my-complaints').then((m) =
 const RaiseComplaintPage = lazy(() => import('@/features/my-complaints').then((m) => ({ default: m.RaiseComplaintPage })));
 const HowItWorksPage = lazy(() => import('@/features/explorer').then((m) => ({ default: m.HowItWorksPage })));
 
-const queryClient = new QueryClient({
+const queryClient: QueryClient = new QueryClient({
   defaultOptions: {
-    queries: {
-      // A 4xx will not change on retry; only server and network failures get a second try.
-      retry: (count, error) => count < 1 && !(error instanceof ApiError && error.status < 500),
-      refetchOnWindowFocus: false,
-    },
+    queries: { retry: retryQuery, retryDelay, refetchOnWindowFocus: true, refetchOnReconnect: true },
+    // Mutations retry only a request that never left the browser. Routes safe to repeat opt in with IDEMPOTENT.
+    mutations: { retry: retryUnsent, retryDelay },
   },
+  mutationCache: new MutationCache({
+    // A lost answer means the action may have happened, so reload what is on screen before anyone sends it again.
+    onError: (error) => {
+      if (error instanceof NetworkError && error.sent) void queryClient.invalidateQueries();
+    },
+  }),
 });
 
 // Any 401 outside /api/auth means the session ended. Clearing the cached account lets RequireRole
@@ -108,6 +114,7 @@ const router = createBrowserRouter([
         gated(['policy.manage'], [lazyRoute('admin/policy', <PolicyPage />)]),
         gated(['audit.view'], [lazyRoute('admin/audit', <AuditPage />)]),
         gated(HEALTH, [lazyRoute('admin/health', <HealthPage />)]),
+        gated(OPERATIONS, [lazyRoute('admin/operations', <OperationsPage />)]),
         lazyRoute('how-it-works', <HowItWorksPage />),
         { path: '*', element: <NotFound /> },
       ],

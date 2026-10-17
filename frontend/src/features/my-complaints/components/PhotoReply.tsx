@@ -1,8 +1,9 @@
 import AddAPhotoOutlinedIcon from '@mui/icons-material/AddAPhotoOutlined';
 import SendOutlinedIcon from '@mui/icons-material/SendOutlined';
-import { Alert, Box, Button, CircularProgress, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, LinearProgress, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useRef, useState, type ChangeEvent } from 'react';
 
+import { SendStatus } from '@/shared/components/SendStatus';
 import { useFilePreview } from '@/shared/hooks/useFilePreview';
 
 import { useSendPhoto } from '../api/myComplaintsApi';
@@ -39,7 +40,8 @@ export function PhotoReply({ ticket }: { ticket: string }) {
   const [file, setFile] = useState<File | null>(null);
   const [caption, setCaption] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
-  const send = useSendPhoto(ticket);
+  const [progress, setProgress] = useState(0);
+  const send = useSendPhoto(ticket, setProgress);
 
   const choose = () => input.current?.click();
   const picked = (event: ChangeEvent<HTMLInputElement>) => {
@@ -57,6 +59,7 @@ export function PhotoReply({ ticket }: { ticket: string }) {
   const remove = () => { setFile(null); setCaption(''); clear(); send.reset(); };
   const submit = () => {
     if (!file || caption.length > CAPTION_LIMIT) return;
+    setProgress(0);
     send.mutate({ file, body: caption.trim() }, { onSuccess: remove });
   };
 
@@ -78,7 +81,10 @@ export function PhotoReply({ ticket }: { ticket: string }) {
             <Preview key={preview.url} url={preview.url} name={preview.name} />
             <TextField size="small" label="Add a line (optional)" value={caption} onChange={(e) => setCaption(e.target.value)}
               error={caption.length > CAPTION_LIMIT} helperText={`${caption.length} of ${CAPTION_LIMIT} characters`} />
-            {send.error && <Alert severity="error">{send.error.message}</Alert>}
+            {send.isPending && !send.isPaused && (
+              <LinearProgress variant="determinate" value={Math.round(progress * 100)} aria-label="Photo upload progress" />
+            )}
+            <SendStatus state={send} onTryAgain={submit} />
             <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1 }}>
               <Button variant="contained" onClick={submit} disabled={send.isPending || caption.length > CAPTION_LIMIT}
                 startIcon={send.isPending ? <CircularProgress size={16} color="inherit" aria-hidden /> : <SendOutlinedIcon />}>

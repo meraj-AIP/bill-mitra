@@ -1,8 +1,9 @@
-import { Alert, Box, Button, CircularProgress, Stack, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, Stack, Typography } from '@mui/material';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { DescriptionField } from '@/features/complaints';
+import { SendStatus } from '@/shared/components/SendStatus';
 
 import { useRaiseComplaint } from '../api/myComplaintsApi';
 import { toRequest, type Draft } from '../model/draft';
@@ -44,8 +45,8 @@ export function RaiseForm({ initialBill }: { initialBill: string | null }) {
   const set = <K extends keyof Draft>(key: K) => (value: Draft[K]) => setDraft((d) => ({ ...d, [key]: value }));
   const noType = tried && !draft.type;
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
+  const submit = (event?: FormEvent) => {
+    event?.preventDefault();
     setTried(true);
     const body = toRequest(draft);
     if (body) raise.mutate(body, { onSuccess: (c) => navigate(`/complaints/${encodeURIComponent(c.ticket)}`) });
@@ -65,7 +66,7 @@ export function RaiseForm({ initialBill }: { initialBill: string | null }) {
         <DescriptionField label="Describe the problem" value={draft.description} onChange={set('description')} showEmpty={tried}
           placeholder="For example: my bill doubled this month but my usage is the same." />
       </Step>
-      {raise.isError && <Alert severity="error">{raise.error.message}</Alert>}
+      <SendStatus state={raise} onTryAgain={() => submit()} />
       <SendButton pending={raise.isPending} />
     </Stack>
   );

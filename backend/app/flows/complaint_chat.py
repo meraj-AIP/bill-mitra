@@ -157,6 +157,11 @@ def _description(draft: Draft) -> str:
 
 
 async def _send(turn: Turn, draft: Draft) -> None:
+    if not draft.get("discom"):
+        # The DISCOM tap can be lost (a dropped connection); ask again instead of failing the whole complaint.
+        chat_drafts.save(turn.state.user_id, draft)
+        await turn.buttons(turn.t("cflow_pick_discom"), [(f"cdis:{d}", key) for d, key in DISCOMS])
+        return
     type_code = str(draft["type"])
     description = _description(draft)
     stored = _own_bill(turn) if draft.get("bill_id") else None

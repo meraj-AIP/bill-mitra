@@ -35,7 +35,7 @@ router = APIRouter(tags=["complaints"])
 
 Discom = Literal["TGSPDCL", "TGNPDCL"]
 Text1000 = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
-PageNo = Annotated[int, Query(ge=1)]
+PageNo = Annotated[int, Query(ge=1, le=1000)]  # deeper than this, search or filter
 PageSize = Annotated[int, Query(ge=5, le=50)]
 NOT_FOUND = "Complaint not found."
 Viewer = Annotated[Account, Depends(require_perm("complaints.view"))]
@@ -201,15 +201,21 @@ def _for_staff(account: Account, ticket: str) -> Complaint:
     return complaint
 
 
+READING_CHECK = "A reading check is decided in its review case, not from the complaint."
+
+
 async def _change_status(complaint: Complaint, new_status: Status, account: Account) -> None:
     if new_status == complaint.status:
         return
+    # Only a decision closes or reopens a reading check; a console status change would strand its case.
+    if complaint.kind == "wrong_reading":
+        raise HTTPException(409, READING_CHECK)
     try:
         store.set_status(complaint.ticket, new_status)
     except store.AlreadyOpen as exc:
         raise HTTPException(409, "Another reading check is already open for this bill. Continue in that one.") from exc
     line, outcome = await notify.status(complaint, new_status)
-    store.add_message(complaint.ticket, "system", account.id, line, outcome.delivery, outcome.note)
+    store.add_message(complaint.ticket, "system", account.id, line, outcome.delivery, outcome.note, wamid=outcome.wamid, outbox_id=outcome.outbox_id)
     accounts.audit(account.id, "complaint.status", complaint.ticket,
                    f"{complaint.status} to {new_status}, delivery {outcome.delivery}")
 
@@ -257,7 +263,7 @@ async def console_detail(ticket: str, account: Viewer) -> ComplaintDetail:
 async def console_reply(ticket: str, body: OfficerReply, account: Replier) -> ComplaintDetail:
     complaint = _for_staff(account, ticket)
     outcome = await notify.reply(complaint, body.body)
-    store.add_message(ticket, "officer", account.id, body.body, outcome.delivery, outcome.note)
+    store.add_message(ticket, "officer", account.id, body.body, outcome.delivery, outcome.note, wamid=outcome.wamid, outbox_id=outcome.outbox_id)
     asks = body.asks if body.asks and complaint.status in OPEN_STATUSES else None
     if asks:
         complaint_flow.expect_answer(complaint, asks, account.id)

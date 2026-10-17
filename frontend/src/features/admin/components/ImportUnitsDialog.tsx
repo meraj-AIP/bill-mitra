@@ -3,6 +3,7 @@ import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from '@mui/material';
 import { useId, useState } from 'react';
 
+import { SendStatus } from '@/shared/components/SendStatus';
 import { formatCount } from '@/shared/lib/format';
 
 import { CSV_COLUMNS, CSV_TEMPLATE, useImportUnits, type ImportResult } from '../api/unitsApi';
@@ -50,7 +51,7 @@ export function ImportUnitsDialog({ onClose }: { onClose: () => void }) {
             </Button>
           </Stack>
           {file && <Typography variant="body2">Selected: <b>{file.name}</b></Typography>}
-          {upload.error && <Alert severity="error">{upload.error.message}</Alert>}
+          <SendStatus state={upload} onTryAgain={file ? () => upload.mutate(file) : undefined} />
           {upload.data && <Result result={upload.data} />}
         </Stack>
       </DialogContent>

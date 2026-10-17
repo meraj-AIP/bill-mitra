@@ -25,7 +25,7 @@ Status = Literal["Open", "In progress", "Resolved", "Rejected"]
 OPEN_STATUSES = ("Open", "In progress")
 AuthorKind = Literal["consumer", "officer", "system"]
 Kind = Literal["general", "wrong_reading"]
-Delivery = Literal["sent", "failed", "stored"]
+Delivery = Literal["sent", "queued", "failed", "stored"]  # queued: in the outbox, retried
 
 
 class Complaint(BaseModel):
@@ -267,6 +267,9 @@ def _filter(status: str | None, discom: str | None, q: str | None, owner: str | 
     extra = more or Filters()
     if failed_only:
         where.append(f"{_OPEN} AND {_FAILED}")
+    if extra.holder:
+        # "With me" is work in hand: a closed complaint keeps its holder but is no longer anyone's to do.
+        where.append(_OPEN)
     for column, value in (("c.status", status), ("c.discom", discom), ("c.user_id", owner), (_TRIAGE, triage),
                           ("c.kind", kind), ("c.type", extra.type), ("c.priority", extra.priority),
                           ("c.source", extra.source), ("c.assigned_to", extra.holder),
@@ -295,7 +298,10 @@ def page(page_no: int, page_size: int, *, status: str | None = None, discom: str
     order_params: list[Any] = []
     if sort == "priority":
         # Needs you first: open, then overdue, then urgent types, then overcharges by size, then the oldest.
-        order = (f"{_OPEN} DESC, ({_OPEN} AND c.created_at < datetime('now', ?)) DESC, {_PRIORITY_RANK}, "
+        # Overdue means past the due time the type set; only complaints without one fall back to the days rule.
+        overdue = ("CASE WHEN c.due_at IS NOT NULL THEN datetime(c.due_at) < datetime('now') "
+                   "ELSE c.created_at < datetime('now', ?) END")
+        order = (f"{_OPEN} DESC, ({_OPEN} AND {overdue}) DESC, {_PRIORITY_RANK}, "
                  f"{_TRIAGE_RANK}, c.amount DESC, c.created_at ASC, c.ticket ASC")
         order_params = [f"-{overdue_days} days"]
     else:
@@ -303,9 +309,13 @@ def page(page_no: int, page_size: int, *, status: str | None = None, discom: str
         order = f"c.created_at {direction}, c.ticket {direction}"
     with tx() as conn:
         total = conn.execute(f"SELECT COUNT(*) FROM complaints c{clause}", params).fetchone()[0]
-        rows = conn.execute(f"{_ROW}{clause} ORDER BY {order} LIMIT ? OFFSET ?",
-                            [*params, *order_params, page_size, (page_no - 1) * page_size]).fetchall()
-    return Page(items=[dict(r) for r in rows], total=total, page=page_no, page_size=page_size)
+        # Choose the page's tickets on the bare table first; the row's per-message lookups then run for those few
+        # tickets only, instead of for every complaint the sort has to look at.
+        tickets = [r[0] for r in conn.execute(f"SELECT c.ticket FROM complaints c{clause} ORDER BY {order} LIMIT ? OFFSET ?",
+                                              [*params, *order_params, page_size, (page_no - 1) * page_size])]
+        found = {r["ticket"]: dict(r) for r in conn.execute(
+            f"{_ROW} WHERE c.ticket IN ({', '.join('?' * len(tickets))})", tickets)} if tickets else {}
+    return Page(items=[found[t] for t in tickets if t in found], total=total, page=page_no, page_size=page_size)
 
 
 def export(*, status: str | None = None, discom: str | None = None, q: str | None = None,
@@ -339,16 +349,20 @@ def get(ticket: str) -> Complaint | None:
 
 
 def add_message(ticket: str, author_kind: AuthorKind, author_id: str | None, body: str, delivery: Delivery,
-                delivery_note: str | None = None, media_id: str | None = None) -> int | None:
-    """The new message id. A consumer message only reaches an open complaint (None otherwise) and tells its holder."""
+                delivery_note: str | None = None, media_id: str | None = None, wamid: str | None = None,
+                outbox_id: int | None = None) -> int | None:
+    """The new message id. A consumer message only reaches an open complaint (None otherwise) and tells its holder.
+    `outbox_id` links the outbox row delivering it, so a later retry updates this message's delivery."""
     with tx() as conn:
         if author_kind == "consumer" and not conn.execute(
                 f"SELECT 1 FROM complaints c WHERE c.ticket = ? AND {_OPEN}", (ticket,)).fetchone():
             return None
         cursor = conn.execute("INSERT INTO complaint_messages (ticket, author_kind, author_id, body, delivery, "
-                              "delivery_note, media_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                              (ticket, author_kind, author_id, body, delivery, delivery_note, media_id))
+                              "delivery_note, media_id, wa_message_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                              (ticket, author_kind, author_id, body, delivery, delivery_note, media_id, wamid))
         conn.execute("UPDATE complaints SET updated_at = CURRENT_TIMESTAMP WHERE ticket = ?", (ticket,))
+        if outbox_id:
+            conn.execute("UPDATE outbox SET message_id = ? WHERE id = ?", (cursor.lastrowid, outbox_id))
     if author_kind == "consumer":
         handoffs.consumer_replied(ticket, bool(media_id))
     return cursor.lastrowid
@@ -361,10 +375,21 @@ def message(ticket: str, message_id: int) -> dict[str, Any] | None:
     return dict(found) if found else None
 
 
-def set_delivery(message_id: int, delivery: Delivery, note: str | None) -> None:
+def set_delivery(message_id: int, delivery: Delivery, note: str | None, wamid: str | None = None,
+                 outbox_id: int | None = None) -> None:
     with tx() as conn:
-        conn.execute("UPDATE complaint_messages SET delivery = ?, delivery_note = ? WHERE id = ?",
-                     (delivery, note, message_id))
+        conn.execute("UPDATE complaint_messages SET delivery = ?, delivery_note = ?, "
+                     "wa_message_id = COALESCE(?, wa_message_id) WHERE id = ?", (delivery, note, wamid, message_id))
+        if outbox_id:
+            conn.execute("UPDATE outbox SET message_id = ? WHERE id = ?", (message_id, outbox_id))
+
+
+def by_wamid(wamid: str) -> dict[str, Any] | None:
+    """The message WhatsApp gave this id to, so a delivery status reported later lands on it."""
+    with tx() as conn:
+        found = conn.execute("SELECT id, ticket, author_kind, delivery FROM complaint_messages "
+                             "WHERE wa_message_id = ? ORDER BY id DESC LIMIT 1", (wamid,)).fetchone()
+    return dict(found) if found else None
 
 
 def messages(ticket: str) -> list[dict[str, Any]]:

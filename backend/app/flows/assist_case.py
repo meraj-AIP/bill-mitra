@@ -15,9 +15,9 @@ from app.domain.conversation.lang import text
 from app.domain.review import Spike
 from app.flows import drafts
 from app.flows.analysis import Analysis
-from app.flows.assist import SUMMARY_MAX, Question, consumer_words, figures, line, questions
+from app.flows.assist import SUMMARY_MAX, Question, consumer_words, figures, line, once, questions
 from app.services import llm
-from app.store import complaints
+from app.store import assist_cache, complaints
 from app.store import review as review_store
 from app.store import suggestions as suggestion_store
 from app.store.complaints import OPEN_STATUSES, Complaint
@@ -115,3 +115,26 @@ async def for_case(complaint: Complaint, a: Analysis, spike: Spike) -> CaseAssis
     chosen = pick or rules.suggested
     return CaseAssist(summary=summary, conflicts=found, questions=questions(reply.get("questions"), ok) or rules.questions,
                       suggested=chosen, why=why or SUGGESTED_WHY[chosen], worded_by="ai")
+
+
+class CaseBrief(CaseAssist):
+    generated_at: str
+
+
+async def brief(complaint: Complaint, a: Analysis, spike: Spike, refresh: bool = False) -> tuple[CaseBrief, bool]:
+    """The case's shared brief: one per state of the case, the same for every reader."""
+    ticket = complaint.ticket
+
+    def stale() -> bool:
+        found = assist_cache.get(ticket, "case")
+        return refresh or found is None or found["fingerprint"] != assist_cache.fingerprint(ticket)
+
+    async def make() -> bool:
+        fp = assist_cache.fingerprint(ticket)
+        assist_cache.put(ticket, "case", fp, (await for_case(complaint, a, spike)).model_dump())
+        return True
+
+    made = bool(await once(f"case:{ticket}", stale, make)) if stale() else False
+    stored = assist_cache.get(ticket, "case")
+    assert stored is not None
+    return CaseBrief(**stored["payload"], generated_at=stored["generated_at"]), made

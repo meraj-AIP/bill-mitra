@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     whatsapp_complaint_template: str = ""  # approved template for replies outside the 24 hour window
     # Told to consumers when they complain, and the point after which the console marks a complaint overdue.
     complaint_reply_days: int = Field(default=7, ge=1)
+    # WhatsApp turns handled at once per worker. Each turn mostly waits on providers, so this bounds memory and
+    # provider load in a burst instead of CPU.
+    whatsapp_turn_concurrency: int = Field(default=32, ge=1, le=500)
     # The public Bill Mitra WhatsApp number, digits with country code, for the web "Raise on WhatsApp" link.
     whatsapp_display_number: str = Field(default="", pattern=r"^(\d{10,15})?$")
 
@@ -74,6 +77,9 @@ class Settings(BaseSettings):
     digest_hour_ist: int = Field(default=8, ge=0, le=23)
     pattern_window_days: int = Field(default=90, ge=1)
     pattern_min_cases: int = Field(default=3, ge=2)
+    # Queue recovery (app/flows/recovery.py): retried inbound turns, queued sends and bill reads, the stuck sweep.
+    queue_retry_enabled: bool = True
+    queue_interval_seconds: int = Field(default=30, ge=5)
 
     # development (default) or production. In production the ownership check cannot be switched off.
     app_env: Literal["development", "production"] = "development"

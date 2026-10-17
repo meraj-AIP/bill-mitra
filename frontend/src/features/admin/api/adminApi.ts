@@ -3,6 +3,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import type { Account } from '@/features/auth';
 import { getJson, postForm, sendJson } from '@/shared/api/http';
 import { queryKeys } from '@/shared/api/queryKeys';
+import { IDEMPOTENT } from '@/shared/api/retry';
 import type { Page } from '@/shared/api/types';
 
 export interface AccountQuery {
@@ -71,6 +72,7 @@ export function useCreateAccount() {
 export function useUpdateAccount() {
   const onSuccess = useRefreshAccounts();
   return useMutation({
+    ...IDEMPOTENT,
     mutationFn: ({ id, changes }: { id: string; changes: AccountChanges }) =>
       sendJson<Account>(`/api/admin/accounts/${encodeURIComponent(id)}`, changes, 'PATCH'),
     onSuccess,
@@ -80,6 +82,7 @@ export function useUpdateAccount() {
 export function useResetPassword() {
   const onSuccess = useRefreshAccounts();
   return useMutation({
+    ...IDEMPOTENT,
     mutationFn: ({ id, password }: { id: string; password: string }) =>
       sendJson<void>(`/api/admin/accounts/${encodeURIComponent(id)}/reset-password`, { password }),
     onSuccess,

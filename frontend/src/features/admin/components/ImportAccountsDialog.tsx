@@ -3,6 +3,7 @@ import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from '@mui/material';
 import { useId, useState } from 'react';
 
+import { SendStatus } from '@/shared/components/SendStatus';
 import { formatCount } from '@/shared/lib/format';
 
 import { useImportAccounts, type AccountImportResult } from '../api/adminApi';
@@ -81,7 +82,7 @@ export function ImportAccountsDialog({ onClose }: { onClose: () => void }) {
       <DialogContent>
         <Stack sx={{ gap: 2 }}>
           {!holdsPasswords && <ChooseFile file={file} onFile={(f) => { setFile(f); upload.reset(); }} />}
-          {upload.error && <Alert severity="error">{upload.error.message}</Alert>}
+          <SendStatus state={upload} onTryAgain={file ? () => upload.mutate(file) : undefined} />
           {result && <Results result={result} />}
         </Stack>
       </DialogContent>

@@ -7,6 +7,16 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The server could not be reached. sent is false only when we know the whole request never left the browser
+ * (offline before sending, or an upload that broke off part way), so a retry cannot repeat an action.
+ */
+export class NetworkError extends Error {
+  constructor(readonly sent: boolean) {
+    super(sent ? 'The connection dropped before the server answered.' : 'Could not reach the server. Check your connection.');
+  }
+}
+
 let unauthorized: () => void = () => undefined;
 
 /** The app registers one handler that sends a signed-out user to the login page. */
@@ -33,11 +43,22 @@ async function readError(response: Response): Promise<ApiError> {
   return new ApiError(message, response.status);
 }
 
-async function request(url: string, init: RequestInit): Promise<Response> {
-  const response = await fetch(url, { ...init, credentials: 'same-origin' });
-  if (response.ok) return response;
+function checkStatus(url: string, status: number): void {
   // Under /api/auth a 401 is an answer (wrong password, not signed in), not an expired session.
-  if (response.status === 401 && !url.startsWith('/api/auth/')) unauthorized();
+  if (status === 401 && !url.startsWith('/api/auth/')) unauthorized();
+}
+
+async function request(url: string, init: RequestInit): Promise<Response> {
+  if (!navigator.onLine) throw new NetworkError(false);
+  let response: Response;
+  try {
+    response = await fetch(url, { ...init, credentials: 'same-origin' });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
+    throw new NetworkError(true);
+  }
+  if (response.ok) return response;
+  checkStatus(url, response.status);
   throw await readError(response);
 }
 
@@ -62,9 +83,43 @@ export async function postJson(url: string, body?: unknown): Promise<Response> {
   return request(url, jsonInit('POST', body));
 }
 
-export async function postForm<T>(url: string, form: FormData): Promise<T> {
-  const response = await request(url, { method: 'POST', body: form });
-  return (await response.json()) as T;
+export interface Sent<T> {
+  status: number;
+  data: T;
+}
+
+/**
+ * POST a form with XMLHttpRequest, because fetch cannot report upload progress. It also tells a body that never
+ * fully arrived (safe to send again) from a lost answer (the server may have acted on it).
+ */
+export function uploadForm<T>(url: string, form: FormData, onProgress?: (fraction: number) => void): Promise<Sent<T>> {
+  if (!navigator.onLine) return Promise.reject(new NetworkError(false));
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let uploaded = false;
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress?.(e.loaded / e.total); };
+    xhr.upload.onload = () => { uploaded = true; onProgress?.(1); };
+    xhr.onerror = () => reject(new NetworkError(uploaded));
+    xhr.ontimeout = xhr.onerror;
+    xhr.onload = () => {
+      const empty = [204, 205, 304].includes(xhr.status);
+      const response = new Response(empty ? null : xhr.responseText, { status: xhr.status });
+      if (response.ok) {
+        if (empty) return resolve({ status: xhr.status, data: undefined as T });
+        void response.json().then((data: T) => resolve({ status: xhr.status, data }), reject);
+        return;
+      }
+      checkStatus(url, xhr.status);
+      void readError(response).then(reject);
+    };
+    xhr.open('POST', url);
+    xhr.withCredentials = true;
+    xhr.send(form);
+  });
+}
+
+export async function postForm<T>(url: string, form: FormData, onProgress?: (fraction: number) => void): Promise<T> {
+  return (await uploadForm<T>(url, form, onProgress)).data;
 }
 
 /** Read a newline-delimited JSON stream, calling onLine for each parsed object as it arrives. */

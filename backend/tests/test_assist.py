@@ -60,7 +60,7 @@ def test_complaint_assist_without_a_model_is_the_rules_shape_and_audited_without
     client = officer(sign_in)
     options = [o["key"] for o in client.get(f"/api/console/complaints/{ticket}/options").json()["options"]]
     body = client.post(f"/api/console/complaints/{ticket}/assist").json()
-    assert set(body) == {"summary", "missing", "questions", "next_action", "worded_by"}
+    assert set(body) == {"summary", "missing", "questions", "next_action", "worded_by", "generated_at"}
     assert body["worded_by"] == "rules" and "140" in body["summary"]  # the engine's overcharge
     assert body["next_action"]["kind"] == "reply_option" and body["next_action"]["key"] == options[0]
     assert body["questions"] == [{"text": text("en", "assist_q_high_bill"), "why": body["questions"][0]["why"]}]
@@ -129,7 +129,7 @@ def test_case_assist_lists_the_engine_conflicts_and_keeps_the_choice_in_the_fixe
     url = f"/api/review/cases/{ticket}/assist"
 
     rules = ae.post(url).json()
-    assert set(rules) == {"summary", "conflicts", "questions", "suggested", "why", "worded_by"}
+    assert set(rules) == {"summary", "conflicts", "questions", "suggested", "why", "worded_by", "generated_at"}
     assert rules["worded_by"] == "rules" and rules["suggested"] == "ask_consumer"  # a spike, nothing from them yet
     assert rules["conflicts"] == ["480 units billed against a usual 136.5 over 4 months."]
     assert rules["questions"][0]["text"] == text("en", "assist_q_wrong_reading")
@@ -170,3 +170,20 @@ def test_a_hand_over_suggestion_names_the_section_ae_only_when_there_is_one(sign
     queued = unplaced.post("/api/console/complaints", json=STAFF_BODY).json()
     action = unplaced.post(f"/api/console/complaints/{queued['ticket']}/assist").json()["next_action"]
     assert action["kind"] == "assign" and action["account_id"] is None  # no section, no suggested holder
+
+
+def test_one_brief_per_complaint_shared_by_every_reader_until_it_changes(reader, sign_in, model):
+    ticket = chat_complaint(reader, "web")
+    first, second = officer(sign_in), officer(sign_in)
+    url = f"/api/console/complaints/{ticket}/assist"
+    a = first.get(url).json()
+    b = second.get(url).json()
+    assert len(model.seen) == 1 and a["generated_at"] == b["generated_at"] and a["summary"] == b["summary"]
+    assert assist_rows(ticket) == ["worded by rules"]  # audited once, when it was written
+    first.post(f"/api/console/complaints/{ticket}/reply", json={"body": "Checking your bill now."})
+    second.get(url)
+    assert len(model.seen) == 2  # the complaint moved on, so the next reader gets a fresh brief
+    second.get(url)
+    assert len(model.seen) == 2
+    first.post(url)  # Refresh writes a new one on purpose
+    assert len(model.seen) == 3 and len(assist_rows(ticket)) == 3

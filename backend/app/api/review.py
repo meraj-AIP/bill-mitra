@@ -189,8 +189,8 @@ def _can(account: Account, complaint: Complaint, row: dict[str, Any], decisions:
     not_mine = live is not None and live["proposed_by"]["id"] != account.id
     return Can(
         decide=account.can("cases.decide") and is_open and has_bill and row["state"] in DECIDABLE,
-        approve=account.can("cases.approve") and row["state"] == "awaiting_approval" and not_mine,
-        mark_applied=account.can("cases.mark_applied") and row["state"] == "decided" and not_mine
+        approve=account.can("cases.approve") and is_open and row["state"] == "awaiting_approval" and not_mine,
+        mark_applied=account.can("cases.mark_applied") and is_open and row["state"] == "decided" and not_mine
         and live is not None and live["revision"] is not None,
         request_info=account.can("cases.request_info") and is_open,
         reassign=account.can("cases.reassign") and is_open,
@@ -221,7 +221,7 @@ def detail(account: Account, complaint: Complaint) -> CaseDetail:
 
 
 @router.get("/cases", response_model=CasePage)
-async def list_cases(account: Viewer, page: Annotated[int, Query(ge=1)] = 1,
+async def list_cases(account: Viewer, page: Annotated[int, Query(ge=1, le=1000)] = 1,
                      page_size: Annotated[int, Query(ge=5, le=50)] = 10, state: store.State | None = None,
                      mine: bool = False, overdue: bool | None = None,
                      section_id: Annotated[str | None, Query(max_length=40)] = None,

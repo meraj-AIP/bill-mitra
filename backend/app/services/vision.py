@@ -18,6 +18,7 @@ from pillow_heif import register_heif_opener
 from pydantic import BaseModel, ValidationError
 
 from app.config import get_settings
+from app.core import retry
 from app.domain import capture
 from app.domain.bill import ExtractedBill
 from app.services.openai_client import ProviderError, chat_json
@@ -30,6 +31,8 @@ MAX_PDF_PAGES = 3  # a bill plus its terms page; anything longer is not a single
 # A phone photo is under 50 MP; a larger "image" is a decompression bomb, not a bill.
 Image.MAX_IMAGE_PIXELS = 60_000_000
 register_heif_opener()  # iPhone photos arrive as HEIC
+# Per call (classify, read, reread). A read still failing after this is queued as an extract job by the caller.
+READ = retry.Policy(attempts=3, base_s=2.0, max_s=20.0, budget_s=60.0)
 
 DocumentKind = Literal["electricity_bill", "meter", "other_bill", "other"]
 
@@ -211,7 +214,7 @@ def _clean(raw: dict[str, Any]) -> dict[str, Any]:
 async def classify(jpeg: bytes) -> Classification:
     model = get_settings().openai_vision_model
     raw = await chat_json(model, CLASSIFY, _content([jpeg], "low", "What is this?"), temperature=0,
-                          max_tokens=200)
+                          max_tokens=200, policy=READ)
     try:
         return Classification.model_validate(raw)
     except ValidationError as exc:
@@ -237,7 +240,7 @@ async def extract(jpeg: bytes, seen: Classification, failed_check: str | None = 
         # Name the check, never the expected numbers, so the model cannot bend a value to fit the sum.
         hint += RECHECK.format(check=failed_check.lower())
     raw = await chat_json(model, EXTRACT, _content(parts, "high", hint + " Read it."), temperature=0,
-                          max_tokens=3000 if failed_check else 1600)
+                          max_tokens=3000 if failed_check else 1600, policy=READ)
     raw.pop("transcript", None)
     try:
         return ExtractedBill.model_validate(_clean(raw))

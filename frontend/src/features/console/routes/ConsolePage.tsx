@@ -30,7 +30,7 @@ export function ConsolePage() {
     <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
       <Stack sx={{ gap: 3 }}>
         <PageHeader eyebrow="For DISCOM staff" title="Department console"
-          lead="Bills read and checked, questions asked and complaints raised. Updates every 15 seconds."
+          lead="Bills read and checked, questions asked and complaints raised. Updates every two minutes."
           actions={can('complaints.view') ? <Button variant="outlined" component={Link} to="/console/complaints">Complaints inbox</Button> : null} />
         {summary.isError && <ErrorState message="Could not load the console." onRetry={() => void summary.refetch()} />}
         <SummaryFilters filters={params.filters} canPickDiscom={canPickDiscom} scopeNote={scopeNote}

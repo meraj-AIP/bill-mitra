@@ -59,3 +59,11 @@ def page(user_id: str, before: int | None, limit: int) -> ChatPage:
                             "ORDER BY id DESC LIMIT ?", (user_id, before, before, limit + 1)).fetchall()
     newest_first = [ChatItem(id=r["id"], at=r["ts"], sender=r["sender"], body=json.loads(r["body"])) for r in rows]
     return ChatPage(items=list(reversed(newest_first[:limit])), has_more=len(rows) > limit)
+
+
+def last_inbound(user_id: str) -> str | None:
+    """When the person last wrote, so a send can tell whether WhatsApp's 24 hour window is still open."""
+    with tx() as conn:
+        row = conn.execute("SELECT MAX(ts) FROM chat_messages WHERE user_id = ? AND sender = 'user'",
+                           (user_id,)).fetchone()
+    return row[0] if row else None

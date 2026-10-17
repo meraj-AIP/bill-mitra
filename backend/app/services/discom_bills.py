@@ -16,12 +16,15 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.config import get_settings
+from app.core import retry
 from app.core.hashing import INDIAN_MOBILE, mobile_hash
 from app.domain.bill import ExtractedBill
 from app.store import repos
 
 log = logging.getLogger(__name__)
 TIMEOUT_S = 10.0
+# The consumer is waiting in the chat or on the page, so the budget is short.
+LOOKUP = retry.Policy(attempts=3, base_s=0.5, max_s=3.0, budget_s=10.0)
 
 
 class _HideLookups(logging.Filter):
@@ -64,12 +67,15 @@ async def _get(discom: str, service_number: str, what: str) -> dict[str, Any] | 
     headers = {"Authorization": f"Bearer {settings.discom_bills_token}", "Accept": "application/json"}
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
-            response = await client.get(url, params={"discom": discom}, headers=headers)
+            async def once() -> httpx.Response:
+                response = await client.get(url, params={"discom": discom}, headers=headers)
+                return response if response.status_code == 404 else response.raise_for_status()
+
+            response = await retry.call(once, f"DISCOM {what}", LOOKUP)
             if response.status_code == 404:
                 return None
-            response.raise_for_status()
             body = response.json()
-    except (httpx.HTTPError, ValueError) as exc:
+    except (httpx.HTTPError, *retry.TRANSPORT, ValueError) as exc:
         log.warning("DISCOM %s lookup failed: %s", what, type(exc).__name__)
         return None
     return body if isinstance(body, dict) else None

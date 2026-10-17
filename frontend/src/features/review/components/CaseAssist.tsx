@@ -1,7 +1,7 @@
 import { AssistCard, type AssistView } from '@/shared/components/AssistCard';
 import { revealSection } from '@/shared/lib/reveal';
 
-import { useAskConsumer, useCaseAssist, type CaseAssist as Assist } from '../api/reviewApi';
+import { useAskConsumer, useCaseAssist, useRefreshCaseAssist, type CaseAssist as Assist } from '../api/reviewApi';
 import type { CaseDetail } from '../api/types';
 import { OPEN_FOR_DECISION } from '../model/decision';
 import { CASE_SECTION } from '../model/labels';
@@ -21,6 +21,7 @@ function actionFor(c: CaseDetail, { suggested, why }: Assist): AssistView['actio
 
 export function CaseAssist({ c }: { c: CaseDetail }) {
   const assist = useCaseAssist(c.ticket);
+  const refresh = useRefreshCaseAssist(c.ticket);
   const ask = useAskConsumer(c.ticket);
   const data = assist.data;
   const view: AssistView | null = data ? {
@@ -31,8 +32,8 @@ export function CaseAssist({ c }: { c: CaseDetail }) {
     wordedBy: data.worded_by ?? 'rules',
   } : null;
   return (
-    <AssistCard subject="this case" view={view} pending={assist.isPending} error={assist.error?.message ?? null}
-      onAsk={() => assist.mutate()}
+    <AssistCard subject="this case" view={view} pending={assist.isFetching || refresh.isPending} error={(assist.error ?? refresh.error)?.message ?? null}
+      onAsk={() => refresh.mutate()}
       onSendQuestion={c.can.request_info ? (text) => ask.mutateAsync({ kind: 'note', note: text }) : null} />
   );
 }

@@ -37,8 +37,8 @@ async def _deliver(complaint: Complaint, message: str, turn: Turn | None) -> str
         delivery = "sent" if notify.reply_channel(complaint) == "whatsapp" else "stored"
         complaints.add_message(complaint.ticket, "system", None, message, delivery)
         return delivery
-    outcome = await notify.send(complaint, message)
-    complaints.add_message(complaint.ticket, "system", None, message, outcome.delivery, outcome.note)
+    outcome = await notify.send(complaint, message, kind="request")
+    complaints.add_message(complaint.ticket, "system", None, message, outcome.delivery, outcome.note, wamid=outcome.wamid, outbox_id=outcome.outbox_id)
     return outcome.delivery
 
 

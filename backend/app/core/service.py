@@ -96,32 +96,54 @@ async def _dispatch(turn: Turn, inbound: Inbound) -> None:
         await question.handle_text(turn, inbound.text)
 
 
-def _recording(emit: Emit, inbound: Inbound) -> Emit:
-    """Keep the conversation as the person saw it, so it reads back on any device after sign in."""
-    asked = chat.record_in(inbound)
+def _recording(emit: Emit, inbound: Inbound, record_in: bool = True) -> Emit:
+    """Keep the conversation as the person saw it, so it reads back on any device after sign in. A retried turn or a
+    queued bill read does not store the person's message a second time."""
+    asked = chat.record_in(inbound) if record_in else None
 
     async def recorded(event: Event) -> None:
         if event.kind == "message" and event.message is not None:
             chat.record_out(inbound.user_id, event.message.model_dump(exclude_none=True))
-        elif event.kind == "transcript" and event.text:
+        elif event.kind == "transcript" and event.text and asked:
             chat.add_transcript(asked, event.text)
         await emit(event)
 
     return recorded
 
 
-async def handle(inbound: Inbound, emit: Emit, language: str | None = None) -> None:
+async def handle(inbound: Inbound, emit: Emit, language: str | None = None, *, retryable: bool = False,
+                 first_try: bool = True) -> None:
+    """`retryable`: the caller queues the turn again on failure (the WhatsApp inbox), so an error is raised instead of
+    answered, and the state is left as it was before the turn."""
     state = repos.get_user(inbound.user_id, inbound.channel)
     if language:
         state.language = language
-    turn = Turn(inbound=inbound, state=state, tracer=Tracer(_recording(emit, inbound)))
+    turn = Turn(inbound=inbound, state=state, tracer=Tracer(_recording(emit, inbound, record_in=first_try)))
     try:
         if state.created and inbound.channel == "whatsapp":
             await _privacy_notice(turn, inbound)
         await _dispatch(turn, inbound)
     except Exception:
+        if retryable:
+            raise
         log.exception("conversation turn failed")
         await turn.tracer.message(TextOut(body=ERROR_TEXT.get(state.language, ERROR_TEXT["en"]),
                                           language=state.language))
-    finally:
-        repos.save_user(turn.state)
+    repos.save_user(turn.state)
+
+
+async def resume_document(inbound: Inbound, emit: Emit, last_try: bool) -> str:
+    """A bill read that failed for a passing reason, run again by its extract job (app/flows/extract.py). Before the
+    last try a provider failure is raised, so the job is retried; on the last try the consumer is asked to type the
+    units, as on any failed read. Returns the read's outcome."""
+    state = repos.get_user(inbound.user_id, inbound.channel)
+    turn = Turn(inbound=inbound, state=state, tracer=Tracer(_recording(emit, inbound, record_in=False)),
+                read_failure="fallback" if last_try else "raise")
+    data = media.load(inbound.media_id or "")
+    if not data:
+        await turn.say_key("need_bill")
+        result = "reading_failed"
+    else:
+        result = await bill_flow.handle_document(turn, data, inbound.mime_type or "image/jpeg", inbound.media_id)
+    repos.save_user(turn.state)
+    return result

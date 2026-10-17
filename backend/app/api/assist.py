@@ -1,4 +1,5 @@
-"""AI assist for staff, on a button press only: never on page load. Audited with no text in the detail."""
+"""AI assist for staff: one shared brief per complaint or case, kept until the case changes. Opening the page reads
+it (GET); Refresh writes a new one (POST). A model call is audited only when a brief is written, with no text."""
 
 from typing import Annotated
 
@@ -16,21 +17,41 @@ router = APIRouter(tags=["assist"])
 CaseViewer = Annotated[Account, Depends(require_perm("cases.view"))]
 
 
-@router.post("/api/console/complaints/{ticket}/assist", response_model=assist.ComplaintAssist)
-async def complaint_assist(ticket: str, account: Replier) -> assist.ComplaintAssist:
+async def _complaint(ticket: str, account: Account, refresh: bool) -> assist.ComplaintBrief:
     complaint = _for_staff(account, ticket)
-    found = await assist.for_complaint(account, complaint)
-    accounts.audit(account.id, "assist.complaint", ticket, f"worded by {found.worded_by}", unit_id=complaint.unit_id)
+    found, made = await assist.brief(account, complaint, refresh)
+    if made:
+        accounts.audit(account.id, "assist.complaint", ticket, f"worded by {found.worded_by}", unit_id=complaint.unit_id)
     return found
 
 
-@router.post("/api/review/cases/{ticket}/assist", response_model=assist_case.CaseAssist)
-async def case_assist(ticket: str, account: CaseViewer) -> assist_case.CaseAssist:
+async def _case(ticket: str, account: Account, refresh: bool) -> assist_case.CaseBrief:
     complaint = find_case(account, ticket)
     found = case_analysis(complaint)
     if found is None:
         raise HTTPException(409, "The bill for this case is no longer available.")
     a = found[0]
-    result = await assist_case.for_case(complaint, a, cases.spike_for(a))
-    accounts.audit(account.id, "assist.case", ticket, f"worded by {result.worded_by}", unit_id=complaint.unit_id)
+    result, made = await assist_case.brief(complaint, a, cases.spike_for(a), refresh)
+    if made:
+        accounts.audit(account.id, "assist.case", ticket, f"worded by {result.worded_by}", unit_id=complaint.unit_id)
     return result
+
+
+@router.get("/api/console/complaints/{ticket}/assist", response_model=assist.ComplaintBrief)
+async def complaint_brief(ticket: str, account: Replier) -> assist.ComplaintBrief:
+    return await _complaint(ticket, account, refresh=False)
+
+
+@router.post("/api/console/complaints/{ticket}/assist", response_model=assist.ComplaintBrief)
+async def complaint_refresh(ticket: str, account: Replier) -> assist.ComplaintBrief:
+    return await _complaint(ticket, account, refresh=True)
+
+
+@router.get("/api/review/cases/{ticket}/assist", response_model=assist_case.CaseBrief)
+async def case_brief(ticket: str, account: CaseViewer) -> assist_case.CaseBrief:
+    return await _case(ticket, account, refresh=False)
+
+
+@router.post("/api/review/cases/{ticket}/assist", response_model=assist_case.CaseBrief)
+async def case_refresh(ticket: str, account: CaseViewer) -> assist_case.CaseBrief:
+    return await _case(ticket, account, refresh=True)

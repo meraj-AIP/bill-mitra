@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { getJson, isStatus, postForm, sendJson } from '@/shared/api/http';
+import { getJson, postForm, sendJson } from '@/shared/api/http';
 import { shrinkImage } from '@/shared/lib/image';
 import { queryKeys } from '@/shared/api/queryKeys';
 import type { Page } from '@/shared/api/types';
@@ -26,8 +26,7 @@ export function useMyComplaint(ticket: string) {
     queryKey: queryKeys.myComplaint(ticket),
     queryFn: ({ signal }) => getJson<MyComplaintDetail>(`${path(ticket)}?${LANG}`, signal),
     // A reply from Bill Mitra should show without a reload.
-    refetchInterval: 30_000,
-    retry: (count, error) => count < 1 && !isStatus(error, 404),
+    refetchInterval: 60_000,
   });
 }
 
@@ -55,8 +54,11 @@ export function useReplyToComplaint(ticket: string) {
   });
 }
 
-/** A photo answer, shrunk on the phone first. The optional line goes with it as its caption. */
-export function useSendPhoto(ticket: string) {
+/**
+ * A photo answer, shrunk on the phone first. The optional line goes with it as its caption. The client default
+ * resends only a photo that never fully arrived, so a lost answer never posts the same photo twice.
+ */
+export function useSendPhoto(ticket: string, onProgress: (fraction: number) => void) {
   const store = useStore();
   return useMutation({
     mutationFn: async ({ file, body }: { file: File; body: string }) => {
@@ -64,7 +66,7 @@ export function useSendPhoto(ticket: string) {
       const image = await shrinkImage(file);
       form.append('file', image, file.name);
       if (body) form.append('caption', body);
-      return postForm<MyComplaintDetail>(`${path(ticket)}/photo?${LANG}`, form);
+      return postForm<MyComplaintDetail>(`${path(ticket)}/photo?${LANG}`, form, onProgress);
     },
     onSuccess: store,
   });

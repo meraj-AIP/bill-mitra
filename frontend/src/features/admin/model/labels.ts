@@ -52,3 +52,9 @@ export function generatePassword(length = 14): string {
 }
 
 export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export const PARKED_KIND_LABEL: Record<string, string> = {
+  inbound: 'Incoming message',
+  outbound: 'Outgoing message',
+  extract: 'Bill read',
+};

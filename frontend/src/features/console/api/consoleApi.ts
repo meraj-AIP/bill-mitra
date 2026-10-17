@@ -1,7 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { ComplaintDetail, ComplaintRow, ComplaintStatus, Priority, Source, Triage } from '@/features/complaints';
-import { getJson, isStatus, sendJson } from '@/shared/api/http';
+import { getJson, sendJson } from '@/shared/api/http';
 import { queryKeys } from '@/shared/api/queryKeys';
 import type { Discom, Page } from '@/shared/api/types';
 
@@ -50,7 +50,7 @@ export function useSummary(enabled = true, filters: SummaryFilters = { days: 30,
     enabled,
     queryFn: ({ signal }) => getJson<Summary>(`/api/console/summary?${params.toString()}`, signal),
     placeholderData: keepPreviousData,
-    refetchInterval: 15_000,
+    refetchInterval: 120_000, // the server shares one summary per minute; faster polling only adds load
   });
 }
 
@@ -103,7 +103,7 @@ export function useInbox(query: InboxQuery) {
     queryKey: queryKeys.consoleComplaintList(query),
     queryFn: ({ signal }) => getJson<Page<ComplaintRow>>(`/api/console/complaints?${params.toString()}`, signal),
     placeholderData: keepPreviousData,
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
   });
 }
 
@@ -113,8 +113,7 @@ export function useConsoleComplaint(ticket: string) {
   return useQuery({
     queryKey: queryKeys.consoleComplaint(ticket),
     queryFn: ({ signal }) => getJson<ComplaintDetail>(path(ticket), signal),
-    refetchInterval: 20_000,
-    retry: (count, error) => count < 1 && !isStatus(error, 404),
+    refetchInterval: 60_000, // replies and changes made here update it at once; this catches others' changes
   });
 }
 

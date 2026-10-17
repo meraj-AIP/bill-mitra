@@ -23,6 +23,24 @@ def user_key(wa_id: str) -> str:
     return "wa:" + hashlib.sha256(wa_id.encode()).hexdigest()[:20]
 
 
+@dataclass(frozen=True)
+class DeliveryFailure:
+    wamid: str
+    error_code: int | None
+
+
+def parse_failures(payload: dict[str, Any]) -> list[DeliveryFailure]:
+    """Messages Meta accepted but later could not deliver. Sent, delivered and read statuses need no action."""
+    out: list[DeliveryFailure] = []
+    for entry in payload.get("entry", []):
+        for change in entry.get("changes", []):
+            for st in change.get("value", {}).get("statuses", []):
+                if st.get("status") == "failed" and isinstance(st.get("id"), str):
+                    code = next((e.get("code") for e in st.get("errors") or [] if isinstance(e.get("code"), int)), None)
+                    out.append(DeliveryFailure(st["id"], code))
+    return out
+
+
 def parse_webhook(payload: dict[str, Any]) -> list[IncomingWhatsApp]:
     out: list[IncomingWhatsApp] = []
     for entry in payload.get("entry", []):
@@ -48,6 +66,9 @@ def _parse_message(msg: dict[str, Any]) -> IncomingWhatsApp | None:
         return IncomingWhatsApp(sender, mid, "button_reply", reply_id=reply.get("id"))
     if kind == "button":
         return IncomingWhatsApp(sender, mid, "button_reply", reply_id=msg.get("button", {}).get("payload"))
+    if sender and mid and kind not in ("reaction", "system"):
+        # Video, sticker, location, contacts: answered with what Bill Mitra can take, never left unanswered.
+        return IncomingWhatsApp(sender, mid, "unsupported")
     return None
 
 

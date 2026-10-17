@@ -1,14 +1,17 @@
 import { Autocomplete, Box, TextField, Typography } from '@mui/material';
+import { useQuery } from '@tanstack/react-query';
 import { useState, type HTMLAttributes, type Key } from 'react';
 
 import { UNIT_KIND_LABEL, type Unit, type UnitKind, type UnitRef } from '@/shared/api/types';
-import { useUnits } from '@/shared/api/units';
+import { unitsQuery } from '@/shared/api/units';
 import { useDebounced } from '@/shared/hooks/useDebounced';
 
-function emptyText(q: string, failed: boolean): string {
+function emptyText(typed: string, waiting: boolean, failed: boolean): string {
   // A 403 means this account may not search units, so say so instead of claiming no match.
-  if (failed) return 'Section search is not open to your account. Leave it empty.';
-  return q.length < 2 ? 'Type two or more letters' : 'No unit by that name';
+  if (failed) return 'Unit search is not open to your account.';
+  if (typed.length === 1) return 'Type one more letter';
+  if (waiting) return 'Searching';
+  return typed ? 'No unit by that name' : 'No units in your area yet';
 }
 
 const toRef = (u: Unit): UnitRef => ({ unit_id: u.id, name: u.name, kind: u.kind });
@@ -40,13 +43,24 @@ function Option({ unit, discom }: { unit: UnitRef; discom: string | undefined })
   );
 }
 
-/** Searches units on the server as the person types; nothing is loaded until two letters are in. */
+function useUnitSearch(typed: string, kind: UnitKind | undefined, disabled: boolean, discom: string | undefined) {
+  const q = useDebounced(typed, 300);
+  const search = useQuery({ ...unitsQuery({ q, kind: kind ?? '' }), enabled: (q.length === 0 || q.length >= 2) && !disabled });
+  // Between a keystroke and the debounced search the old results do not match the text, so none are shown.
+  const current = typed === q && typed.length !== 1;
+  const found = current ? (search.data ?? []).filter((u) => !discom || u.discom === discom) : [];
+  return { found, waiting: !current || search.isFetching, failed: search.isError };
+}
+
+/**
+ * Opens on the top of the units this account covers, then searches the server as the person types (two letters or
+ * more). Results from an earlier search are never shown for a newer one, so the list always matches the text.
+ */
 export function UnitPicker(props: MultiProps | SingleProps) {
   const { label, helperText, error = false, kind, size = 'medium', disabled = false, discom } = props;
   const [text, setText] = useState('');
-  const q = useDebounced(text.trim(), 300);
-  const search = useUnits({ q, kind: kind ?? '' }, q.length >= 2 && !disabled);
-  const found = (search.data ?? []).filter((u) => !discom || u.discom === discom);
+  const typed = text.trim();
+  const { found, waiting, failed } = useUnitSearch(typed, kind, disabled, discom);
   const discomOf = new Map(found.map((u) => [u.id, u.discom]));
   const options = found.map(toRef);
   const common = {
@@ -56,9 +70,11 @@ export function UnitPicker(props: MultiProps | SingleProps) {
     filterOptions: (o: UnitRef[]) => o,
     isOptionEqualToValue: sameUnit,
     getOptionLabel: (o: UnitRef) => o.name,
-    loading: search.isFetching,
-    onInputChange: (_e: unknown, v: string) => setText(v),
-    noOptionsText: emptyText(q, search.isError),
+    loading: waiting && typed.length !== 1,
+    openOnFocus: true,
+    // A pick in the multi select clears the text, which brings the starting list back for the next pick.
+    onInputChange: (_e: unknown, v: string, reason: string) => setText(reason === 'reset' && props.multiple ? '' : v),
+    noOptionsText: emptyText(typed, waiting, failed),
     renderOption: (attrs: HTMLAttributes<HTMLLIElement> & { key: Key }, o: UnitRef) => {
       const { key, ...rest } = attrs;
       return <li key={key} {...rest}><Option unit={o} discom={discomOf.get(o.unit_id)} /></li>;

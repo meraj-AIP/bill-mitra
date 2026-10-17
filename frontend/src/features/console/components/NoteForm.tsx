@@ -1,7 +1,8 @@
-import { Alert, Button, CircularProgress, MenuItem, Stack, TextField } from '@mui/material';
+import { Button, CircularProgress, MenuItem, Stack, TextField } from '@mui/material';
 import { useState, type FormEvent } from 'react';
 
 import type { Person } from '@/features/complaints';
+import { SendStatus, type SendState } from '@/shared/components/SendStatus';
 
 import { HANDOFF_NOTE } from '../api/actionsApi';
 
@@ -11,8 +12,7 @@ interface NoteFormProps {
   initialPerson?: string;
   noteLabel: string;
   submitLabel: string;
-  pending: boolean;
-  error: string | null;
+  state: SendState;
   onSubmit: (note: string, personId: string) => void;
   onCancel: () => void;
 }
@@ -27,7 +27,7 @@ function PersonPicker({ people, value, onChange, missing }: { people: Person[]; 
 }
 
 /** A required note, and a person when one is needed. The server checks the same limits. */
-export function NoteForm({ people, initialPerson = '', noteLabel, submitLabel, pending, error, onSubmit, onCancel }: NoteFormProps) {
+export function NoteForm({ people, initialPerson = '', noteLabel, submitLabel, state, onSubmit, onCancel }: NoteFormProps) {
   const [person, setPerson] = useState(initialPerson);
   const [note, setNote] = useState('');
   const [tried, setTried] = useState(false);
@@ -35,8 +35,9 @@ export function NoteForm({ people, initialPerson = '', noteLabel, submitLabel, p
   const noteOk = length >= HANDOFF_NOTE.min && note.length <= HANDOFF_NOTE.max;
   const personOk = !people || Boolean(person);
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
+  const pending = state.isPending;
+  const submit = (event?: FormEvent) => {
+    event?.preventDefault();
     setTried(true);
     if (noteOk && personOk) onSubmit(note.trim(), person);
   };
@@ -48,7 +49,7 @@ export function NoteForm({ people, initialPerson = '', noteLabel, submitLabel, p
       <TextField size="small" label={noteLabel} value={note} required multiline minRows={2} maxRows={6} fullWidth
         onChange={(e) => setNote(e.target.value)} error={short || note.length > HANDOFF_NOTE.max}
         helperText={short ? `Write at least ${HANDOFF_NOTE.min} characters so the next person knows why.` : `${note.length} of ${HANDOFF_NOTE.max} characters`} />
-      {error && <Alert severity="error">{error}</Alert>}
+      <SendStatus state={state} onTryAgain={() => submit()} />
       <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
         <Button type="submit" variant="contained" disabled={pending}
           startIcon={pending ? <CircularProgress size={14} color="inherit" aria-hidden /> : null}>

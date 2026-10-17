@@ -2,15 +2,16 @@
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, Path, Query, UploadFile
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import ChatUser, require_perm
 from app.core.ratelimit import per_ip
 from app.core.uploads import DOCUMENTS, read_checked
-from app.flows import case_bills, cases, report
+from app.flows import case_bills, cases, extract, report
 from app.flows.analysis import analyse
-from app.store import case_evidence, complaints, media, repos
+from app.store import case_evidence, complaints, extract_jobs, media, repos
 from app.store.accounts import Account
 from app.store.units import Conflict
 
@@ -23,17 +24,30 @@ Language = Literal["te", "en", "hi", "ur"]
 UPLOAD_LIMIT = Depends(per_ip("bill-upload", 20))
 
 
-@router.post("", response_model=report.BillReport, dependencies=[UPLOAD_LIMIT])
+@router.post("", response_model=report.BillReport, dependencies=[UPLOAD_LIMIT],
+             responses={202: {"model": extract.ReadJob, "description": "The reader is down for now; poll the job."}})
 async def upload(file: UploadFile, account: ChatUser, language: Annotated[Language, Form()] = "te"
-                 ) -> report.BillReport:
+                 ) -> report.BillReport | JSONResponse:
     data, mime = await read_checked(file, DOCUMENTS)
-    return await report.check_upload(account.user_id, data, mime, media.save(data, mime), language)
+    found = await report.check_upload(account.user_id, data, mime, media.save(data, mime), language)
+    if isinstance(found, report.BillReport):
+        return found
+    return JSONResponse(extract.view(found).model_dump(), status_code=202)
+
+
+@router.get("/jobs/{job_id}", response_model=extract.ReadJob)
+async def read_job(job_id: Annotated[str, Path(max_length=40)], account: ChatUser) -> extract.ReadJob:
+    """A queued read, for the page to poll. Only the account that uploaded the bill sees it."""
+    found = extract_jobs.get_own(account.user_id, job_id)
+    if found is None:
+        raise HTTPException(404, "No such read.")
+    return extract.view(found)
 
 
 @router.get("", response_model=repos.BillPage)
 async def list_bills(
     account: ChatUser,
-    page: int = Query(1, ge=1),
+    page: int = Query(1, ge=1, le=1000),
     page_size: int = Query(10, ge=5, le=50),
     audit_status: Literal["verified", "mismatch", "partial", "not_checkable", "calculated"] | None = None,
     sort: Literal["newest", "oldest"] = "newest",

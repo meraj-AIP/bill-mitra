@@ -1,6 +1,7 @@
 import CheckIcon from '@mui/icons-material/Check';
 import { Box, CircularProgress, LinearProgress, Paper, Stack, Typography } from '@mui/material';
 
+import type { Sending } from '../hooks/useBillUpload';
 import { useElapsed } from '../hooks/useElapsed';
 import { READING_STAGES } from '../model/labels';
 
@@ -10,8 +11,23 @@ function StageMark({ state }: { state: 'done' | 'active' | 'waiting' }) {
   return <Box sx={{ width: 10, height: 10, borderRadius: '50%', border: 1.5, borderColor: 'grey.400', m: '4px' }} />;
 }
 
-/** Stages follow elapsed time, not real progress, so there is no percentage to make up. */
-export function ReadingProgress() {
+/** Upload progress is real, so it gets a percentage. Offline and retrying say so instead. */
+function SendingLine({ sending }: { sending: Sending }) {
+  const percent = Math.round(sending.progress * 100);
+  const text = sending.paused ? 'You are offline. Your bill will be sent when the connection is back.'
+    : sending.retrying ? 'The connection dropped. Trying again.'
+      : `Sending your bill, ${percent}%`;
+  return (
+    <Box sx={{ mt: 2, mb: 2.5 }}>
+      <Typography variant="body2" sx={{ color: sending.paused || sending.retrying ? 'warning.dark' : 'text.secondary' }}>{text}</Typography>
+      <LinearProgress variant="determinate" value={percent} sx={{ mt: 1 }} aria-label="Upload progress" />
+    </Box>
+  );
+}
+
+/** Reading stages follow elapsed time, not real progress, so there is no percentage to make up. */
+export function ReadingProgress({ sending }: { sending: Sending | null }) {
+  const uploading = sending !== null && (sending.progress < 1 || sending.paused || sending.retrying);
   const seconds = useElapsed();
   const active = READING_STAGES.findLastIndex((s) => seconds >= s.from);
   return (
@@ -22,7 +38,7 @@ export function ReadingProgress() {
       <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5 }}>
         This usually takes 10 to 40 seconds. Please keep this page open.
       </Typography>
-      <LinearProgress sx={{ my: 2.5 }} aria-hidden />
+      {sending && uploading ? <SendingLine sending={sending} /> : <LinearProgress sx={{ my: 2.5 }} aria-hidden />}
       <Stack component="ol" sx={{ gap: 1.5, m: 0, p: 0, listStyle: 'none' }}>
         {READING_STAGES.map((stage, i) => {
           const state = i < active ? 'done' : i === active ? 'active' : 'waiting';

@@ -15,7 +15,7 @@ from app.store.units import covered_sql
 
 Kind = Literal["misread_found", "case_overdue", "case_escalated", "digest", "applied_auto", "pattern_section",
                "request_reminded", "request_lapsed", "complaint_assigned", "consumer_replied", "case_assigned",
-               "decision_returned"]
+               "decision_returned", "inbound_failed", "delivery_failed"]
 
 # Named parameters :me (account id), :perms (JSON list of its permissions), :everywhere (1 for a global account).
 _VISIBLE = ("(a.account_id = :me OR (a.account_id IS NULL AND a.perm IN (SELECT value FROM json_each(:perms)) "

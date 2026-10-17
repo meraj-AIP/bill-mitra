@@ -83,8 +83,8 @@ async def _ask_for_bill(ticket: str, in_chat: bool) -> None:
     if in_chat:
         complaints.add_message(ticket, "system", None, message, "sent")
         return
-    outcome = await notify.send(complaint, message)
-    complaints.add_message(ticket, "system", None, message, outcome.delivery, outcome.note)
+    outcome = await notify.send(complaint, message, kind="request")
+    complaints.add_message(ticket, "system", None, message, outcome.delivery, outcome.note, wamid=outcome.wamid, outbox_id=outcome.outbox_id)
     repos.set_awaiting(complaint.user_id, "info:" + ticket)
 
 

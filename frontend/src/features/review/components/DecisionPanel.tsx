@@ -2,6 +2,7 @@ import GavelOutlinedIcon from '@mui/icons-material/GavelOutlined';
 import { Alert, Box, Button, CircularProgress, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import { useState, type FormEvent } from 'react';
 
+import { SendStatus } from '@/shared/components/SendStatus';
 import { useDebounced } from '@/shared/hooks/useDebounced';
 
 import { useDecide, usePreview } from '../api/reviewApi';
@@ -85,8 +86,8 @@ export function DecisionPanel({ c, initial }: { c: CaseDetail; initial: Decision
   // The engine's answer for the reading on screen is needed before a corrected reading can be sent.
   const waiting = draft.kind === 'corrected_reading' && (!fresh || preview.isFetching);
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
+  const submit = (event?: FormEvent) => {
+    event?.preventDefault();
     setChecked(true);
     if (waiting || Object.values(problems).some(Boolean)) return;
     decide.mutate(toBody(draft), { onSuccess: () => { setDraft(emptyDraft()); setChecked(false); } });
@@ -103,7 +104,7 @@ export function DecisionPanel({ c, initial }: { c: CaseDetail; initial: Decision
         <EvidencePicker options={withCited(evidenceOptions(c), initial.evidence)} value={draft.evidence} onChange={(evidence) => patch({ evidence })} error={show('evidence')} />
         <DecisionSummary kind={draft.kind} outcome={outcome} c={c} />
         <Blocking items={blocking} />
-        {decide.error && <Alert severity="error">{decide.error.message}</Alert>}
+        <SendStatus state={decide} onTryAgain={() => submit()} />
         <SubmitRow pending={decide.isPending} disabled={waiting && preview.isFetching} needsApproval={outcome.needsApproval} />
       </Stack>
     </Panel>

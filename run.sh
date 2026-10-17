@@ -48,7 +48,7 @@ case "$MODE" in
     fi
     echo "Bill Mitra on http://localhost:$PORT"
     cd "$ROOT/backend"
-    exec "$VENV/bin/uvicorn" app.main:app --host 0.0.0.0 --port "$PORT"
+    exec "$VENV/bin/uvicorn" app.main:app --host 0.0.0.0 --port "$PORT" --no-access-log --proxy-headers
     ;;
   dev)
     setup_backend

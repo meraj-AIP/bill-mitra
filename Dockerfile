@@ -33,4 +33,6 @@ EXPOSE 8000
 # python is already in the image, so the check needs no curl
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Behind nginx: client addresses come from X-Forwarded-For (rate limits need them), and nginx keeps the access log.
+# The port must only be reachable through the proxy, or a client could forge that header.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log", "--proxy-headers", "--forwarded-allow-ips", "*"]

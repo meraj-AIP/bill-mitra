@@ -23,7 +23,7 @@ from app.flows.complaint import LABEL_EN
 from app.flows.misread import Misread
 from app.services import vision
 from app.services.openai_client import ProviderError
-from app.store import complaints, media, repos
+from app.store import complaints, extract_jobs, media, repos
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ REASONS: dict[str, str] = {
 class BillReport(BaseModel):
     id: str | None
     created_at: str | None
-    media_url: str
+    media_url: str | None  # None when no photo was stored, for example a bill fetched by its USC
     mime_type: str
     outcome: Outcome
     outcome_reason: str | None
@@ -96,15 +96,33 @@ def _reason(result: Outcome, reading: vision.Reading | None, report: capture.Cap
     return None
 
 
-async def check_upload(user_id: str, data: bytes, mime: str, media_id: str, language: str) -> BillReport:
-    reading: vision.Reading | None = None
+async def read(data: bytes, mime: str) -> vision.Reading | None:
+    """None when reading is off or failed for good. A passing provider failure is raised, so it can be queued."""
+    if not get_settings().vision_live:
+        return None
+    try:
+        return await vision.read_document(data, mime)
+    except ProviderError as exc:
+        if exc.transient:
+            raise
+        log.warning("dashboard read failed: %s", exc)
+        return None
+
+
+async def check_upload(user_id: str, data: bytes, mime: str, media_id: str,
+                       language: str) -> BillReport | extract_jobs.Job:
+    """The report, or the extract job that will read the bill again when the reader is down for now."""
     started = time.perf_counter()
-    if get_settings().vision_live:
-        try:
-            reading = await vision.read_document(data, mime)
-        except ProviderError as exc:
-            log.warning("dashboard read failed: %s", exc)
-    ms = read_ms(started)
+    try:
+        reading = await read(data, mime)
+    except ProviderError as exc:
+        log.warning("dashboard read queued: %s", exc)
+        return extract_jobs.create(user_id, "dashboard", media_id, mime, language, None, str(exc))
+    return finish_upload(user_id, reading, mime, media_id, language, read_ms(started))
+
+
+def finish_upload(user_id: str, reading: vision.Reading | None, mime: str, media_id: str, language: str,
+                  ms: int | None) -> BillReport:
     report = capture.report(reading.bill) if reading and reading.bill else None
     result = outcome(reading, report)
     log_read("dashboard", language, result, reading, ms)
@@ -121,7 +139,8 @@ async def check_upload(user_id: str, data: bytes, mime: str, media_id: str, lang
         repos.log_event("dashboard", "bill_read", language=language, audit_status=a.audit.status,
                         units=a.comp.units, amount=a.comp.net, discom=reading.bill.discom, section=reading.bill.section)
     return BillReport(
-        id=bill_id, created_at=created.created_at if created else None, media_url=f"/api/media/{media_id}",
+        id=bill_id, created_at=created.created_at if created else None,
+        media_url=f"/api/media/{media_id}" if media_id else None,
         mime_type=mime, outcome=result_out, outcome_reason=_reason(result, reading, report),
         classification=reading.classification.model_dump() if reading else None, bill=_bill_out(reading),
         capture=report, analysis=analysis, final=final, misread=found)
@@ -150,7 +169,7 @@ def load(user_id: str, bill_id: str, language: str) -> BillReport | None:
     reading = vision.Reading(classification=vision.Classification(document_type="electricity_bill",
                                                                   discom=stored.bill.discom), bill=stored.bill)
     return BillReport(
-        id=stored.id, created_at=stored.created_at, media_url=f"/api/media/{media_id}",
+        id=stored.id, created_at=stored.created_at, media_url=f"/api/media/{media_id}" if media_id else None,
         mime_type=media.mime_for(media_id) if media_id else "image/jpeg", outcome="checked", outcome_reason=None,
         classification=reading.classification.model_dump(), bill=_bill_out(reading),
         capture=capture.report(stored.bill), analysis=_analysis(a, language),

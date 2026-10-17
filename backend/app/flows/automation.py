@@ -6,7 +6,9 @@ with no actor, so the case timeline shows it as System. Nothing here decides or 
 a decision is marking a revision applied when the DISCOM billing records show the revised amount.
 """
 
+import asyncio
 from collections.abc import Awaitable, Callable
+from dataclasses import asdict
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -14,7 +16,7 @@ from app.config import get_settings
 from app.domain.conversation.facts import rs
 from app.flows import case_bills, cases
 from app.services import billing_records
-from app.store import accounts, complaints, units
+from app.store import accounts, complaints, db, privacy, units
 from app.store import automation as store
 from app.store.alerts import raise_alert
 
@@ -82,7 +84,7 @@ async def run_lapses(now: datetime) -> int:
 
 def _overdue(now: datetime) -> int:
     done = 0
-    for case in store.undecided_past(_ts(now), 1):
+    for case in store.undecided_past(_ts(now), 1, unalerted="case_overdue"):
         if raise_alert("case_overdue", case["section_id"] or case["unit_id"], "Case overdue",
                        f"Case {case['ticket']} has waited {case['days_open']} days for a decision (target "
                        f"{case['sla']} days).", "cases.decide", f"case_overdue:{case['ticket']}", ticket=case["ticket"]):
@@ -120,12 +122,16 @@ async def run_digest(now: datetime) -> int:
         return 0
     done = 0
     for account_id in store.deciders():
+        key = f"digest:{account_id}:{local.date()}"
+        # The job runs every 15 minutes; once today's digest is out, skip the counting entirely.
+        if store.alerted(key):
+            continue
         counts = store.digest_counts(account_id, _ts(now))
         if not counts["awaiting"]:
             continue
         body = (f"Waiting for a decision: {counts['awaiting']}. Due today: {counts['due_today']}. "
                 f"Overdue: {counts['overdue']}.")
-        if raise_alert("digest", None, "Daily summary", body, None, f"digest:{account_id}:{local.date()}",
+        if raise_alert("digest", None, "Daily summary", body, None, key,
                        account_id=account_id):
             accounts.audit(None, "alert.digest", account_id, body)
             done += 1
@@ -176,7 +182,22 @@ async def run_patterns(now: datetime) -> int:
     return done
 
 
+_swept: set[str] = set()
+
+
+async def run_retention(now: datetime) -> int:
+    """The retention sweep, once a day. Startup sweeps too, so a server that rarely restarts still forgets on time."""
+    day = now.astimezone(IST).date().isoformat()
+    if day in _swept:
+        return 0
+    _swept.clear()
+    _swept.add(day)
+    result = await asyncio.to_thread(privacy.sweep)
+    await asyncio.to_thread(db.maintain)
+    return sum(asdict(result).values())
+
+
 # Lapses first: a request already past the lapse point is closed, not reminded and closed in the same run.
 JOBS: tuple[tuple[str, Callable[[datetime], Awaitable[int]]], ...] = (
     ("lapses", run_lapses), ("reminders", run_reminders), ("overdue", run_overdue), ("digest", run_digest),
-    ("auto_applied", run_auto_applied), ("patterns", run_patterns))
+    ("auto_applied", run_auto_applied), ("patterns", run_patterns), ("retention", run_retention))

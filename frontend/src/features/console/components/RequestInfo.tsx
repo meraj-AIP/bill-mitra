@@ -28,6 +28,20 @@ function AskOutcome({ done, error }: { done: boolean; error: string | null }) {
   return done ? <Typography variant="caption" sx={{ color: 'success.dark' }}>Asked. Their answer will appear in the conversation.</Typography> : null;
 }
 
+function NothingToAsk({ complaint }: { complaint: ComplaintDetail }) {
+  const waiting = (complaint.requests ?? []).some((r) => r.status === 'open');
+  return (
+    <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+      {waiting ? 'We are waiting for the consumer to answer what was asked.' : 'Nothing more fits this complaint. Use a reply to ask in your own words.'}
+    </Typography>
+  );
+}
+
+function NotConnected({ complaint }: { complaint: ComplaintDetail }) {
+  if (complaint.reply_channel !== 'whatsapp' || complaint.whatsapp_ready) return null;
+  return <Typography variant="caption" sx={{ color: 'warning.dark' }}>WhatsApp is not connected here, so the request is saved as not delivered.</Typography>;
+}
+
 /** Ask the consumer for something that fits this complaint. Their next photo or message is filed under it. */
 export function RequestInfo({ complaint, preset }: { complaint: ComplaintDetail; preset: Focus | null }) {
   const ask = useRequestInfo(complaint.ticket);
@@ -41,11 +55,12 @@ export function RequestInfo({ complaint, preset }: { complaint: ComplaintDetail;
   if (options.isPending) return <Skeleton variant="rounded" height={72} />;
   const requests = options.data?.requests ?? [];
   if (requests.length === 0) {
-    return <Typography variant="body2" sx={{ color: 'text.secondary' }}>We are waiting for the consumer to answer what was asked.</Typography>;
+    return <NothingToAsk complaint={complaint} />;
   }
   const chosen = requests.find((r) => r.kind === kind) ?? null;
   return (
     <Stack sx={{ gap: 1 }}>
+      <NotConnected complaint={complaint} />
       <OptionCards label="What to ask the consumer for" selected={chosen?.kind ?? null} onSelect={setKind}
         disabled={ask.isPending} items={requests.map((r) => ({ id: r.kind, label: r.label, why: r.why }))} />
       {chosen && <RequestPreview request={chosen} pending={ask.isPending} onSend={() => ask.mutate(chosen.kind, { onSuccess: () => setKind(null) })} />}

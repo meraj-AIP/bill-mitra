@@ -13,13 +13,13 @@ from app.store.db import tx
 
 DEMO: tuple[tuple[str, str, str], ...] = (
     # The owner's own admin login. It is a real account, so ensure() lists it but never resets its password.
-    ("admin", "admin@aiplanet.com", "Demo Admin"),
-    ("officer", "demo.officer@aiplanet.com", "Demo DISCOM Officer"),
-    ("section_ae", "demo.sectionae@aiplanet.com", "Demo Section AE"),
-    ("call_centre", "demo.callcentre@aiplanet.com", "Demo Call Centre Agent"),
-    ("billing_approver", "demo.approver@aiplanet.com", "Demo Billing Approver"),
-    ("auditor", "demo.auditor@aiplanet.com", "Demo Auditor"),
-    ("consumer", "6000000001", "Demo Consumer"),
+    ("admin", "admin@aiplanet.com", "Admin"),
+    ("officer", "demo.officer@aiplanet.com", "DISCOM Officer"),
+    ("section_ae", "demo.sectionae@aiplanet.com", "Section AE"),
+    ("call_centre", "demo.callcentre@aiplanet.com", "Call Centre Agent"),
+    ("billing_approver", "demo.approver@aiplanet.com", "Billing Approver"),
+    ("auditor", "demo.auditor@aiplanet.com", "Auditor"),
+    ("consumer", "6000000001", "Consumer"),
 )
 
 
@@ -52,7 +52,7 @@ def ensure() -> None:
         account_id, seeded = found
         if not seeded:
             continue  # a real account already uses this login; never put it on the shared password
-        accounts.update(account_id, role=role, active=True)
+        accounts.update(account_id, name=name, role=role, active=True)
         accounts.set_password(account_id, password)
 
 

@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 
 import { getJson, sendJson } from '@/shared/api/http';
 import { queryKeys } from '@/shared/api/queryKeys';
+import { IDEMPOTENT } from '@/shared/api/retry';
 
 import type { AlertPage, AlertQuery } from './types';
 
@@ -44,10 +45,10 @@ function useRefresh() {
 
 export function useMarkRead() {
   const onSuccess = useRefresh();
-  return useMutation({ mutationFn: (id: number) => sendJson<void>(`/api/alerts/${id}/read`), onSuccess });
+  return useMutation({ ...IDEMPOTENT, mutationFn: (id: number) => sendJson<void>(`/api/alerts/${id}/read`), onSuccess });
 }
 
 export function useMarkAllRead() {
   const onSuccess = useRefresh();
-  return useMutation({ mutationFn: () => sendJson<void>('/api/alerts/read-all'), onSuccess });
+  return useMutation({ ...IDEMPOTENT, mutationFn: () => sendJson<void>('/api/alerts/read-all'), onSuccess });
 }

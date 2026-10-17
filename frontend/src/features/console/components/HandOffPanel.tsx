@@ -50,14 +50,14 @@ function Controls({ complaint, people, sendBackTo, preset }: ControlsProps) {
   if (mode?.kind === 'hand_over') {
     return (
       <NoteForm key="hand_over" people={people} initialPerson={mode.person} noteLabel="Note for the next person" submitLabel="Hand over"
-        pending={assign.isPending} error={assign.error?.message ?? null} onCancel={close}
+        state={assign} onCancel={close}
         onSubmit={(note, person) => assign.mutate({ account_id: person, note }, { onSuccess: close })} />
     );
   }
   if (mode?.kind === 'send_back' && sendBackTo) {
     return (
       <NoteForm key="send_back" noteLabel={`Why it goes back to ${sendBackTo}`} submitLabel="Send back"
-        pending={sendBack.isPending} error={sendBack.error?.message ?? null} onCancel={close}
+        state={sendBack} onCancel={close}
         onSubmit={(note) => sendBack.mutate(note, { onSuccess: close })} />
     );
   }
@@ -90,6 +90,9 @@ export function HandOffPanel({ complaint, preset }: { complaint: ComplaintDetail
     <Stack sx={{ gap: 1.5 }}>
       <Holder complaint={complaint} />
       {!open && <Typography variant="caption" sx={{ color: 'text.secondary' }}>Closed complaints stay with whoever closed them.</Typography>}
+      {open && complaint.kind === 'wrong_reading' && (
+        <Typography variant="caption" sx={{ color: 'text.secondary' }}>A reading check is reassigned from its review case.</Typography>
+      )}
       {open && (people.length > 0 || sendBackTo) && <Controls complaint={complaint} people={people} sendBackTo={sendBackTo} preset={preset} />}
     </Stack>
   );

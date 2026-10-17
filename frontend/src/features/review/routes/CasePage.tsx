@@ -1,4 +1,5 @@
-import { Alert, Box, Button, Container, Grid, Paper, Stack, Typography } from '@mui/material';
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
+import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Container, Grid, Paper, Stack, Typography } from '@mui/material';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
@@ -32,8 +33,23 @@ const WAITING: Partial<Record<CaseDetail['state'], string>> = {
   applied: 'Closed. The revision is in the official bill and the consumer has been told.',
 };
 
-// Printing this page prints the evidence pack alone.
+// Printing this page prints the evidence pack alone; on screen it sits folded away in the workspace.
 const SCREEN_ONLY = { '@media print': { display: 'none' } };
+const PRINT_ONLY = { display: 'none', '@media print': { display: 'block' } };
+
+/** The full pack is there when needed, without pushing the bill and the decision down the page. */
+function EvidenceFold({ c }: { c: CaseDetail }) {
+  return (
+    <Accordion variant="outlined" disableGutters slotProps={{ transition: { unmountOnExit: true } }}>
+      <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />}>
+        <Typography variant="subtitle1" component="span">Evidence pack</Typography>
+      </AccordionSummary>
+      <AccordionDetails sx={{ p: 0 }}>
+        <EvidencePackPanel c={c} />
+      </AccordionDetails>
+    </Accordion>
+  );
+}
 
 function Bill({ c }: { c: CaseDetail }) {
   if (!c.media_url) {
@@ -71,6 +87,7 @@ function Workspace({ c }: { c: CaseDetail }) {
           <Bill c={c} />
           <ReadingsPanel c={c} />
           <TimelinePanel c={c} />
+          <EvidenceFold c={c} />
         </Stack>
       </Grid>
       <Grid size={{ xs: 12, md: 7 }}>
@@ -121,7 +138,7 @@ export function CasePage() {
         <Gallery c={c}>
           <Stack sx={{ gap: 3 }}>
             <Box sx={SCREEN_ONLY}><CaseHeader c={c} /></Box>
-            <EvidencePackPanel c={c} />
+            <Box sx={PRINT_ONLY}><EvidencePackPanel c={c} /></Box>
             <Box sx={SCREEN_ONLY}><Workspace c={c} /></Box>
           </Stack>
         </Gallery>

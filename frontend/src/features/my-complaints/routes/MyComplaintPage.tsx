@@ -54,8 +54,8 @@ function Detail({ c }: { c: MyComplaintDetail }) {
             {asked && (
               <Stack sx={{ mt: 3, pt: 2.5, borderTop: 1, borderColor: 'divider', gap: 1.5 }}>
                 <Alert severity="warning">We asked you something above. Please answer here so we can carry on.</Alert>
-                <ReplyBox label="Your answer" placeholder="Write your answer here." pending={reply.isPending}
-                  error={reply.error?.message ?? null} onSend={(body) => reply.mutateAsync(body)} />
+                <ReplyBox label="Your answer" placeholder="Write your answer here." state={reply}
+                  onSend={(body) => reply.mutateAsync(body)} />
                 <Divider sx={{ typography: 'caption', color: 'text.secondary' }}>or send a photo</Divider>
                 <PhotoReply ticket={c.ticket} />
               </Stack>

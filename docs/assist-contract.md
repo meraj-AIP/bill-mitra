@@ -32,7 +32,7 @@ model (not in CI, needs a key). Synthetic messages only.
 
 ## 2. AI assist for staff (backend B)
 
-On demand only (a button), never on page load. The model sees facts and the consumer's words (as untrusted data) and
+One shared brief per complaint and per case (owner decision, 18 Oct 2026): GET reads it, generating it once when there is none or the complaint changed since (a message, status, holder, request or decision, tracked by a fingerprint in `assist_briefs`); POST is Refresh and writes a new one. Every reader gets the same summary, missing list and questions; only `next_action` is fitted to the reader's own rights. Audited only when a brief is written. Responses add `generated_at`. The model sees facts and the consumer's words (as untrusted data) and
 may only choose from fixed sets plus write short questions; numbers in its text must be ones the facts already hold.
 
 - Complaint: `POST /api/console/complaints/{ticket}/assist` (perm `complaints.reply`) returns

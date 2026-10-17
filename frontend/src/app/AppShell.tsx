@@ -5,6 +5,7 @@ import { Link, Outlet, useLocation } from 'react-router-dom';
 import { AlertsBell } from '@/features/alerts';
 import { AccountMenu, isConsumer, landingFor, useAuth } from '@/features/auth';
 import { ModeStatus } from '@/shared/components/ModeStatus';
+import { OfflineBanner } from '@/shared/components/OfflineBanner';
 
 import { ManageMenu } from './ManageMenu';
 import { currentTab, navFor, type Nav } from './nav';
@@ -98,6 +99,7 @@ export function AppShell() {
           </Stack>
           {nav && <Sections nav={nav} pathname={pathname} />}
         </Container>
+        <OfflineBanner />
       </AppBar>
       <Box component="main" id="main" tabIndex={-1} sx={{ flex: 1, outline: 'none' }}>
         <Outlet />

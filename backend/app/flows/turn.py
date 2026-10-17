@@ -1,6 +1,7 @@
 """One inbound message and everything needed to answer it."""
 
 from dataclasses import dataclass
+from typing import Literal
 
 from app.core.messages import AudioOut, Button, ButtonsOut, ImageOut, Inbound, TextOut
 from app.core.trace import Tracer
@@ -16,6 +17,9 @@ class Turn:
     state: UserState
     tracer: Tracer
     voice_reply: bool = False  # answer with a voice note too (bill explanations, voice questions)
+    # What a bill read that fails for a passing reason does: queue an extract job (WhatsApp), raise so the job is
+    # retried, or ask for the units as before (web chat, a job's last try).
+    read_failure: Literal["defer", "raise", "fallback"] = "defer"
 
     @property
     def lang(self) -> str:

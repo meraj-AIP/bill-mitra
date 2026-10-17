@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { getJson, sendJson } from '@/shared/api/http';
 import { queryKeys } from '@/shared/api/queryKeys';
+import { IDEMPOTENT } from '@/shared/api/retry';
 
 export interface Role {
   slug: string;
@@ -56,6 +57,7 @@ export function useCreateRole() {
 export function useUpdateRole() {
   const onSuccess = useRefreshRoles();
   return useMutation({
+    ...IDEMPOTENT,
     mutationFn: ({ slug, changes }: { slug: string; changes: Partial<RoleDraft> }) =>
       sendJson<Role>(`/api/admin/roles/${encodeURIComponent(slug)}`, changes, 'PATCH'),
     onSuccess,
@@ -74,6 +76,7 @@ export function useDeleteRole() {
 export function useResetRole() {
   const onSuccess = useRefreshRoles();
   return useMutation({
+    ...IDEMPOTENT,
     mutationFn: (slug: string) => sendJson<Role>(`/api/admin/roles/${encodeURIComponent(slug)}/reset`, undefined, 'POST'),
     onSuccess,
   });

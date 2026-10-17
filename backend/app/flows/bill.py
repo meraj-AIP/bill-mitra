@@ -13,7 +13,7 @@ from app.flows.analysis import Analysis, analyse
 from app.flows.turn import Turn
 from app.services import charts, llm, vision
 from app.services.openai_client import ProviderError
-from app.store import media, repos
+from app.store import extract_jobs, media, repos
 
 LANG_NAMES = {"te": "Telugu", "en": "English", "hi": "Hindi", "ur": "Urdu"}
 MIN_TREND_MONTHS = 3
@@ -55,6 +55,9 @@ async def read(turn: Turn, data: bytes, mime: str) -> vision.Reading | None:
         try:
             reading = await vision.read_document(data, mime)
         except ProviderError as exc:
+            if exc.transient and _read_failure(turn) != "fallback":
+                step.skip(f"Vision provider unavailable ({exc}); the bill will be read again shortly")
+                raise
             step.skip(f"Vision provider failed ({exc}); asked the consumer to type the units")
             return None
         seen, bill = reading.classification, reading.bill
@@ -79,12 +82,31 @@ def _gate_note(report: capture.CaptureReport) -> str:
     return f"Captured {report.captured} of {report.expected} fields; checks {checks}; {verdict}"
 
 
-async def handle_document(turn: Turn, data: bytes, mime: str, media_id: str | None) -> None:
+def _read_failure(turn: Turn) -> str:
+    """Only WhatsApp queues a read for later; the web chat answers in the same request, as before."""
+    if turn.read_failure == "defer" and (turn.inbound.channel != "whatsapp" or not turn.inbound.media_id):
+        return "fallback"
+    return turn.read_failure
+
+
+async def _defer(turn: Turn, mime: str, media_id: str, error: str) -> None:
+    """Keep the photo and read it again shortly (app/flows/extract.py); the consumer hears this once."""
+    extract_jobs.create(turn.state.user_id, "whatsapp", media_id, mime, turn.lang, turn.inbound.reply_to, error)
+    await turn.say_key("reading_later")
+
+
+async def handle_document(turn: Turn, data: bytes, mime: str, media_id: str | None) -> Outcome:
     async with turn.tracer.step("Receive the message", "channel") as step:
         kind = "PDF" if mime == "application/pdf" else "photo"
         step.note(f"{kind}, {len(data) // 1024} KB, via {turn.inbound.channel}")
     started = time.perf_counter()
-    reading = await read(turn, data, mime)
+    try:
+        reading = await read(turn, data, mime)
+    except ProviderError as exc:
+        if turn.read_failure == "raise" or media_id is None:
+            raise
+        await _defer(turn, mime, media_id, str(exc))
+        return "reading_failed"
     ms = read_ms(started)
     report = capture.report(reading.bill) if reading and reading.bill else None
     result = outcome(reading, report)
@@ -103,6 +125,7 @@ async def handle_document(turn: Turn, data: bytes, mime: str, media_id: str | No
         await _ask_units(turn, "not_add_up" if failed else "poor_quality")
     elif reading and reading.bill:
         await handle_bill(turn, reading.bill, media_id)
+    return result
 
 
 def _check_note(a: Analysis) -> str:
@@ -152,6 +175,9 @@ async def handle_bill(turn: Turn, bill: ExtractedBill, media_id: str | None, sou
     if not await turn.speak(spoken):
         suffix = f"\n{turn.t('voice_unavailable')}" if turn.lang == "ur" else ""
         await turn.say(spoken + suffix)
+    elif turn.inbound.channel == "whatsapp":
+        # The web shows a voice note's words under it; WhatsApp cannot, so the same words follow as text.
+        await turn.say(spoken)
     options = ([("report_bill", "btn_report"), ("why", "btn_why"), ("next", "btn_next")]
                if a.audit.status == "mismatch" else [("why", "btn_why"), ("next", "btn_next"), ("save", "btn_save")])
     await turn.buttons(composer.summary_card(a.facts, turn.lang), options)

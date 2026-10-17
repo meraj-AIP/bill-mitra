@@ -41,6 +41,9 @@ def _chain(complaint: Complaint) -> list[str]:
 
 def _allowed(account: Account, person: dict[str, Any]) -> bool:
     held = person["permissions"]
+    # Whoever receives a complaint must be able to answer it, or it sits with someone who cannot act.
+    if "complaints.reply" not in held:
+        return False
     if account.can("accounts.manage"):
         return True
     if account.can("cases.decide"):
@@ -85,7 +88,7 @@ def assign(account: Account, complaint: Complaint, to: str, note: str) -> None:
 
 def can_return(account: Account, complaint: Complaint, row: dict[str, Any]) -> bool:
     return (complaint.kind == "general" and complaint.status in OPEN_STATUSES and complaint.assigned_to == account.id
-            and bool(row.get("handed_by")) and row["handed_by"] != account.id)
+            and account.can("complaints.reply") and bool(row.get("handed_by")) and row["handed_by"] != account.id)
 
 
 def send_back(account: Account, complaint: Complaint, note: str) -> None:

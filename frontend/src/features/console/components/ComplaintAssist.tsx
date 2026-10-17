@@ -3,7 +3,7 @@ import { COMPLAINT_STATUSES, type ComplaintDetail, type ComplaintStatus } from '
 import { AssistCard, type AssistView } from '@/shared/components/AssistCard';
 
 import { useAskQuestion, useReplyOptions, type ReplyOptions } from '../api/actionsApi';
-import { useComplaintAssist, type ComplaintAssist as Assist, type NextAction } from '../api/assistApi';
+import { useComplaintAssist, useRefreshAssist, type ComplaintAssist as Assist, type NextAction } from '../api/assistApi';
 import { useSetStatus } from '../api/consoleApi';
 import { reveal, type FocusTarget } from '../model/focus';
 
@@ -14,6 +14,8 @@ const isOpen = (c: ComplaintDetail) => c.status === 'Open' || c.status === 'In p
 interface Step { label: string; target: FocusTarget; status?: ComplaintStatus }
 
 function statusStep(key: string, complaint: ComplaintDetail): Step | null {
+  // A reading check's status follows its case decision, so the assist never offers to set it.
+  if (complaint.kind === 'wrong_reading') return null;
   const status = statusFor(key);
   return status && status !== complaint.status ? { label: `Set status to ${status}`, target: 'status', status } : null;
 }
@@ -47,7 +49,7 @@ interface Props {
 }
 
 /** The suggested step as a button: it loads, opens or sets what the suggestion names. */
-function useNextStep(complaint: ComplaintDetail, next: NextAction | null, canReply: boolean, onFocus: Props['onFocus']): AssistView['action'] {
+export function useNextStep(complaint: ComplaintDetail, next: NextAction | null, canReply: boolean, onFocus: Props['onFocus']): AssistView['action'] {
   const options = useReplyOptions(complaint.ticket);
   const setStatus = useSetStatus(complaint.ticket);
   // Hand over has its own check on the server; the other steps need the reply permission.
@@ -67,13 +69,14 @@ function useNextStep(complaint: ComplaintDetail, next: NextAction | null, canRep
 
 export function ComplaintAssist({ complaint, onFocus }: Props) {
   const { can } = useAuth();
-  const assist = useComplaintAssist(complaint.ticket);
+  const assist = useComplaintAssist(complaint, true);
+  const refresh = useRefreshAssist(complaint.ticket);
   const question = useAskQuestion(complaint.ticket);
   const canReply = can('complaints.reply');
   const action = useNextStep(complaint, assist.data?.next_action ?? null, canReply, onFocus);
   return (
-    <AssistCard subject="this complaint" view={assist.data ? toView(assist.data, action) : null} pending={assist.isPending}
-      error={assist.error?.message ?? null} onAsk={() => assist.mutate()}
+    <AssistCard subject="this complaint" view={assist.data ? toView(assist.data, action) : null} pending={assist.isFetching || refresh.isPending}
+      error={(assist.error ?? refresh.error)?.message ?? null} onAsk={() => refresh.mutate()}
       onSendQuestion={canReply && isOpen(complaint) ? (text) => question.mutateAsync(text) : null} />
   );
 }

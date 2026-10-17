@@ -93,12 +93,16 @@ const NEEDS_RETAKE = new Set(['not_a_bill', 'retake', 'reading_failed']);
 export function BillReportView({ report, language, onLanguage, onRetry, imageUrl, reloading = false }: BillReportViewProps) {
   const { outcome } = report;
   const needsRetake = NEEDS_RETAKE.has(outcome);
+  // A bill fetched by its USC has no photo: the report then takes the full width instead of a broken image.
+  const src = imageUrl ?? report.media_url;
   return (
     <Grid container spacing={{ xs: 2, md: 3 }} sx={{ alignItems: 'flex-start' }}>
-      <Grid size={{ xs: 12, md: 5 }} sx={{ position: { md: 'sticky' }, top: { md: 144 } }}>
-        <BillImage src={imageUrl ?? report.media_url} isPdf={report.mime_type === 'application/pdf'} />
-      </Grid>
-      <Grid size={{ xs: 12, md: 7 }}>
+      {src && (
+        <Grid size={{ xs: 12, md: 5 }} sx={{ position: { md: 'sticky' }, top: { md: 144 } }}>
+          <BillImage src={src} isPdf={report.mime_type === 'application/pdf'} />
+        </Grid>
+      )}
+      <Grid size={{ xs: 12, md: src ? 7 : 12 }}>
         <Stack sx={{ gap: 2, opacity: reloading ? 0.6 : 1, transition: 'opacity 200ms' }} aria-busy={reloading}>
           <OutcomeBanner report={report} />
           <Review report={report} language={language} />

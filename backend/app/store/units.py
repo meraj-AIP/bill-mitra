@@ -88,6 +88,11 @@ def get(unit_id: str) -> Unit | None:
         return _get(conn, unit_id)
 
 
+# Top of the tree first, so a browse list reads from DISCOM down to section.
+_LEVEL = ("CASE u.kind WHEN 'discom' THEN 0 WHEN 'circle' THEN 1 WHEN 'division' THEN 2 WHEN 'ero' THEN 3 "
+          "WHEN 'subdivision' THEN 4 ELSE 5 END")
+
+
 def search(*, parent_id: str | None, q: str | None, kind: str | None, viewer: str | None) -> list[Unit]:
     """Children of a unit, or the DISCOMs when no parent is given. A text or kind filter searches every level.
     `viewer` limits the answer to what that account covers; None means everything."""
@@ -105,13 +110,15 @@ def search(*, parent_id: str | None, q: str | None, kind: str | None, viewer: st
     elif parent_id:
         where.append("u.parent_id = ?")
         params.append(parent_id)
-    else:
+    elif not viewer:
         where.append("u.kind = 'discom'")
+    # With nothing typed, a scoped account starts from the top of what it covers: a circle admin sees its circle
+    # first, not an empty list of DISCOMs it does not cover.
     if viewer:
         where.append(f"u.id IN {covered_sql()}")
         params += [viewer, viewer]
     with tx() as conn:
-        rows = conn.execute(f"{_UNIT} WHERE {' AND '.join(where)} ORDER BY u.kind = 'discom' DESC, u.name LIMIT ?",
+        rows = conn.execute(f"{_UNIT} WHERE {' AND '.join(where) or '1 = 1'} ORDER BY {_LEVEL}, u.name LIMIT ?",
                             [*params, LIST_LIMIT]).fetchall()
     return [_unit(r) for r in rows]
 

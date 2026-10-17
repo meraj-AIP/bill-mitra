@@ -11,12 +11,15 @@ import threading
 import httpx
 
 from app.config import get_settings
+from app.core import retry
 from app.domain.conversation.lang import VOICE_CODES
 from app.store import media
 
 log = logging.getLogger(__name__)
 _lock = threading.Lock()
 CHUNK_LIMIT = 1200  # characters; Bulbul v3 accepts 2500, shorter chunks start playing sooner
+# Voice is optional: after this the explanation goes as text, so it gives up quickly.
+VOICE = retry.Policy(attempts=2, base_s=1.0, max_s=4.0, budget_s=15.0)
 
 
 def _index_path():  # type: ignore[no-untyped-def]
@@ -69,12 +72,16 @@ async def _synthesise(client: httpx.AsyncClient, text: str, code: str) -> bytes:
     s = get_settings()
     body = {"text": text, "target_language_code": code, "speaker": s.sarvam_speaker,
             "model": s.sarvam_model, "pace": s.sarvam_pace, "output_audio_codec": "mp3"}
-    response = await client.post("/text-to-speech", json=body)
-    if response.status_code in (400, 422):
-        # Older and newer API revisions name the language field differently.
-        body["language_code"] = body.pop("target_language_code")
+
+    async def once() -> httpx.Response:
         response = await client.post("/text-to-speech", json=body)
-    response.raise_for_status()
+        if response.status_code in (400, 422) and "target_language_code" in body:
+            # Older and newer API revisions name the language field differently.
+            body["language_code"] = body.pop("target_language_code")
+            response = await client.post("/text-to-speech", json=body)
+        return response.raise_for_status()
+
+    response = await retry.call(once, "sarvam tts", VOICE)
     return base64.b64decode(response.json()["audios"][0])
 
 
@@ -98,7 +105,7 @@ async def speak(text: str, language: str) -> list[str] | None:
             for part in chunks(text):
                 audio = await _synthesise(client, part, code)
                 ids.append(media.save(audio, _audio_mime(audio)))
-    except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
+    except (httpx.HTTPError, *retry.TRANSPORT, KeyError, IndexError, ValueError) as exc:
         log.warning("sarvam tts failed: %s", type(exc).__name__)
         return None
     _remember(key, ids)

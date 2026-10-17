@@ -169,13 +169,17 @@ def erase_chat(conn: sqlite3.Connection, user_id: str) -> list[str]:
     conn.execute("DELETE FROM chat_drafts WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM usc_codes WHERE user_id = ?", (user_id,))
     conn.execute("UPDATE complaints SET reply_to = NULL WHERE user_id = ?", (user_id,))
+    # Messages still waiting to go and bills waiting to be read hold the number; a row being sent right now finishes.
+    conn.execute("DELETE FROM outbox WHERE recipient = ? AND state != 'sending'", (user_id,))
+    conn.execute("DELETE FROM extract_jobs WHERE user_id = ?", (user_id,))
     return used
 
 
 def forget_user(user_id: str) -> None:
     with tx() as conn:
         used = erase_chat(conn, user_id)
-        conn.execute("UPDATE users SET current_bill_id = NULL, awaiting = NULL WHERE user_id = ?", (user_id,))
+        # The row goes too, so a person who writes again later is a new contact and sees the privacy notice first.
+        conn.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
     media.discard_unreferenced(used)
 
 
@@ -195,3 +199,10 @@ def log_event(channel: str, type_: str, *, language: str | None = None, intent: 
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (channel, type_, language, intent, audit_status, units, amount, discom, section, ms),
         )
+
+
+def language_of(user_id: str) -> str | None:
+    """The person's language without creating their chat state, so a first message keeps its privacy notice."""
+    with tx() as conn:
+        row = conn.execute("SELECT language FROM users WHERE user_id = ?", (user_id,)).fetchone()
+    return row[0] if row else None

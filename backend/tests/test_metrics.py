@@ -24,6 +24,21 @@ from tests.real import OCT_2025, reading, variant
 FAKE_WA = "test-wa-address-3"  # obviously synthetic WhatsApp address
 
 
+@pytest.fixture(autouse=True)
+def live_counts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests read the summary before and after a change, so each read is fresh."""
+    monkeypatch.setattr(console, "CACHE_SECONDS", 0)
+
+
+def test_the_summary_is_shared_for_a_minute(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(console, "CACHE_SECONDS", 60)
+    first = console.summary(days=3)
+    _complaint("TGSPDCL")
+    assert console.summary(days=3) is first
+    console.forget_cached()
+    assert console.summary(days=3) is not first
+
+
 def _photo_in_chat(channel: str = "web") -> None:
     async def emit(_: Event) -> None:
         return None

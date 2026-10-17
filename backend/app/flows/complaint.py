@@ -162,8 +162,8 @@ async def ask(complaint: Complaint, kind: RequestKind, account_id: str, note: st
     message = complaint_reply.request_text(kind, complaint.language or "te", complaint.ticket)
     if note:
         message += "\n" + note
-    outcome = await notify.send(complaint, message)
-    complaints.add_message(complaint.ticket, "officer", account_id, message, outcome.delivery, outcome.note)
+    outcome = await notify.send(complaint, message, kind="request")
+    complaints.add_message(complaint.ticket, "officer", account_id, message, outcome.delivery, outcome.note, wamid=outcome.wamid, outbox_id=outcome.outbox_id)
     repos.set_awaiting(complaint.user_id, INFO_PREFIX + complaint.ticket)
     return outcome
 

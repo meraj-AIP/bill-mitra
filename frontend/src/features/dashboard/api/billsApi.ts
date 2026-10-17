@@ -1,12 +1,12 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { ReviewSummary } from '@/features/review';
-import { getJson, isStatus, postForm, sendJson } from '@/shared/api/http';
+import { getJson, isStatus, sendJson, uploadForm } from '@/shared/api/http';
 import { queryKeys } from '@/shared/api/queryKeys';
 import { shrinkImage } from '@/shared/lib/image';
 import type { Language } from '@/shared/lib/languages';
 
-import type { BillListQuery, BillReport, BillSummary, Page } from './types';
+import type { BillListQuery, BillReport, BillSummary, ExtractJob, Page, UploadOutcome } from './types';
 
 export const MAX_MB = 12;
 const MAX_BYTES = MAX_MB * 1024 * 1024;
@@ -21,27 +21,50 @@ export function validateFile(file: File): string | null {
   return null;
 }
 
-export async function uploadBill(file: File, language: Language): Promise<BillReport> {
+/** A 200 is the finished report; a 202 means the read hit a passing fault and the server queued it as a job. */
+export async function uploadBill(file: File, language: Language, onProgress?: (fraction: number) => void): Promise<UploadOutcome> {
   const problem = validateFile(file);
   if (problem) throw new Error(problem);
   const body = await shrinkImage(file);
   const form = new FormData();
   form.append('file', body, file.name);
   form.append('language', language);
-  return postForm<BillReport>('/api/bills', form);
+  const sent = await uploadForm<BillReport | ExtractJob>('/api/bills', form, onProgress);
+  return sent.status === 202 ? { kind: 'job', job: sent.data as ExtractJob } : { kind: 'report', report: sent.data as BillReport };
 }
 
-export function useUploadBill() {
+/** Retries come from the client default: only an upload that broke off before the whole photo arrived is sent again. */
+export function useUploadBill(onProgress: (fraction: number) => void) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ file, language }: { file: File; language: Language }) => uploadBill(file, language),
-    onSuccess: (report, { language }) => {
-      if (!report.id) return;
-      client.setQueryData(queryKeys.bill(report.id, language), report);
+    mutationFn: ({ file, language }: { file: File; language: Language }) => uploadBill(file, language, onProgress),
+    onSuccess: (outcome, { language }) => {
+      if (outcome.kind === 'job') return;
+      const { report } = outcome;
+      const id = report.id;
+      if (!id) return;
+      client.setQueryData(queryKeys.bill(id, language), report);
       void client.invalidateQueries({ queryKey: [...queryKeys.bills, 'list'] });
       // A new upload can answer a request for earlier bills on another report, so other reports are fetched again.
-      void client.invalidateQueries({ queryKey: [...queryKeys.bills, 'one'], predicate: (q) => q.queryKey[2] !== report.id });
+      void client.invalidateQueries({ queryKey: [...queryKeys.bills, 'one'], predicate: (q) => q.queryKey[2] !== id });
     },
+  });
+}
+
+const POLL_MS = 3_000;
+
+/** Polls a queued bill read until it is done or failed. The server keeps retrying it in the meantime. */
+export function useExtractJob(jobId: string | null) {
+  const client = useQueryClient();
+  return useQuery({
+    queryKey: queryKeys.extractJob(jobId ?? ''),
+    queryFn: async ({ signal }) => {
+      const job = await getJson<ExtractJob>(`/api/bills/jobs/${encodeURIComponent(jobId ?? '')}`, signal);
+      if (job.status === 'done') void client.invalidateQueries({ queryKey: [...queryKeys.bills, 'list'] });
+      return job;
+    },
+    enabled: jobId !== null,
+    refetchInterval: (query) => (query.state.data && ['done', 'failed'].includes(query.state.data.status) ? false : POLL_MS),
   });
 }
 
@@ -73,7 +96,6 @@ export function useBill(id: string, language: Language) {
     // Keep the old report on screen while the explanation reloads in another language, never across bills.
     placeholderData: (previous, previousQuery) => (previousQuery?.queryKey[2] === id ? previous : undefined),
     staleTime: Infinity,
-    retry: (count, error) => count < 1 && !('status' in error && error.status === 404),
   });
 }
 

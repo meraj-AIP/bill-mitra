@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { getJson, isStatus, sendJson } from '@/shared/api/http';
 import { queryKeys } from '@/shared/api/queryKeys';
+import { IDEMPOTENT } from '@/shared/api/retry';
 import type { Discom, UnitRef } from '@/shared/api/types';
 
 /** A unit the account works in. It covers that unit and everything under it. */
@@ -90,6 +91,7 @@ export function leaveTo(path: string): void {
 
 export function useLogout() {
   return useMutation({
+    ...IDEMPOTENT,
     mutationFn: () => sendJson<void>('/api/auth/logout'),
     onSettled: () => leaveTo('/login'),
   });

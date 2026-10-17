@@ -81,7 +81,7 @@ def _grantable_scopes(actor: Account, unit_ids: list[str]) -> list[str]:
 @router.get("/accounts", response_model=accounts.AccountPage)
 async def list_accounts(
     actor: Manager,
-    page: int = Query(1, ge=1),
+    page: int = Query(1, ge=1, le=1000),
     page_size: int = Query(10, ge=5, le=50),
     role: str | None = Query(None, max_length=40),
     active: bool | None = None,
@@ -196,7 +196,7 @@ async def reset_password(account_id: str, body: NewPassword, actor: Manager) -> 
 @router.get("/audit", response_model=accounts.AuditPage)
 async def audit_log(
     actor: Auditor,
-    page: int = Query(1, ge=1),
+    page: int = Query(1, ge=1, le=1000),
     page_size: int = Query(10, ge=5, le=50),
     action: str | None = Query(None, max_length=60),
 ) -> accounts.AuditPage:

@@ -70,6 +70,9 @@ T = {
     "reading_off": "Reading bill photos is switched off right now. Type the units on your bill, for example: 214 units October.",
     "poor_quality": "I could not read this photo clearly. Please take it again in good light, with the whole bill flat in the frame.",
     "ask_units": "No problem. Type the units on your bill, for example: 214 units October.",
+    # When the reply or the bill read is delayed by a passing failure (docs/reliability-contract.md).
+    "working_on_it": "We got your message and are working on it. We will reply here shortly.",
+    "reading_later": "We got your bill. Reading it is taking a little longer than usual; we will send the result here as soon as it is done.",
     "trend_caption": "Your usage over the months we have. The dashed line is 200 units.",
     "complaint_preview": "I will record this complaint with the tariff check and your bill photo:\nService number {service}\nBill month {month}\nIssue: {issue}\nWe will look into it and reply here.",
     "complaint_filed": "Complaint *{ticket}* is recorded in Bill Mitra. Bill Mitra is not connected to 1912 yet, so please also call 1912 and quote this number.",
@@ -333,4 +336,6 @@ T = {
     "term_str_code": "STR code identifies the pole or transformer your connection is fed from. It helps the DISCOM trace supply faults.",
     "term_bill_amount": "Bill Amount is this month's charges added up: energy, fixed, customer charge, duty and any other line, rounded to a rupee.",
     "term_energy": "Energy charge is for the units you used, priced slab by slab at the TGERC rates.",
+    "media_failed": "I could not open that file. Please send the photo or PDF of your bill again.",
+    "unsupported_message": "I can read a photo or PDF of your electricity bill, a voice note, or a typed question. Please send one of those.",
 }

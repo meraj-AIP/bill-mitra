@@ -35,7 +35,9 @@ _CASES = (
     "AS channel FROM complaints c "
     f"{_LATEST} LEFT JOIN review_policy p ON p.discom = c.discom LEFT JOIN units sec ON sec.id = c.section_id "
     "LEFT JOIN accounts asg ON asg.id = c.assigned_to WHERE c.kind = 'wrong_reading'")
-_OUTER = "SELECT x.*, (x.state NOT IN ('decided', 'applied') AND x.days_open > x.sla) AS overdue FROM ({inner}) x"
+# A closed case is never overdue, whatever its state says.
+_OUTER = ("SELECT x.*, (x.status IN ('Open', 'In progress') AND x.state NOT IN ('decided', 'applied') "
+          "AND x.days_open > x.sla) AS overdue FROM ({inner}) x")
 
 
 class CasePage(BaseModel):

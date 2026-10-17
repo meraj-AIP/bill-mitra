@@ -40,7 +40,7 @@ export function useCase(ticket: string) {
   return useQuery({
     queryKey: queryKeys.reviewCase(ticket),
     queryFn: ({ signal }) => getJson<CaseDetail>(casePath(ticket), signal),
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
   });
 }
 
@@ -131,7 +131,21 @@ export interface CaseAssist {
   worded_by?: 'ai' | 'rules';
 }
 
-/** On demand only: a press of Ask AI, never on page load. */
+/** The case's stored brief, shared by everyone who opens it; the server writes it again only when the case moves on. */
 export function useCaseAssist(ticket: string) {
-  return useMutation({ mutationFn: () => sendJson<CaseAssist>(`${casePath(ticket)}/assist`) });
+  return useQuery({
+    queryKey: ['review', 'case', ticket, 'assist'],
+    queryFn: ({ signal }) => getJson<CaseAssist>(`${casePath(ticket)}/assist`, signal),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+/** Refresh: a new brief written now, which then becomes the shared one. */
+export function useRefreshCaseAssist(ticket: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => sendJson<CaseAssist>(`${casePath(ticket)}/assist`),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ['review', 'case', ticket, 'assist'] }),
+  });
 }

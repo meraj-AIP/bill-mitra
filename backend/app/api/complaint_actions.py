@@ -110,6 +110,9 @@ async def request_info(ticket: str, body: InfoRequest, account: Replier) -> Comp
     complaint = _for_staff(account, ticket)
     if complaint.status not in OPEN_STATUSES:
         raise HTTPException(409, "This complaint is closed. Reopen it before asking the consumer for more.")
+    # A reading check's requests are part of its case, so they need the case permission too.
+    if complaint.kind == "wrong_reading" and not account.can("cases.request_info"):
+        raise HTTPException(403, "Ask for this from the review case, which needs the case request permission.")
     if body.kind != "note" and \
             body.kind not in complaint_options.allowed_asks(complaint_flow.options_context(complaint)):
         raise HTTPException(422, "That request does not fit this complaint.")
@@ -142,7 +145,7 @@ async def retry(ticket: str, message_id: int, account: Replier) -> ComplaintDeta
         outcome = await notify.reply(complaint, found["body"])
     else:
         outcome = await notify.send(complaint, found["body"], complaint.status)
-    store.set_delivery(message_id, outcome.delivery, outcome.note)
+    store.set_delivery(message_id, outcome.delivery, outcome.note, wamid=outcome.wamid, outbox_id=outcome.outbox_id)
     accounts.audit(account.id, "complaint.retry", ticket, f"message {message_id}, delivery {outcome.delivery}")
     return _detail(complaint, account)
 
@@ -153,6 +156,8 @@ async def _apply(ticket: str, body: BulkAction, account: Account) -> str | None:
         complaint = _for_staff(account, ticket)
     except HTTPException:
         return "not found"
+    if complaint.kind == "wrong_reading":
+        return "reading check, decide it in its review case"
     if body.send_explanation:
         if complaint.status not in OPEN_STATUSES:
             return "already closed"
@@ -160,7 +165,7 @@ async def _apply(ticket: str, body: BulkAction, account: Account) -> str | None:
         if text is None:
             return "no bill to explain"
         outcome = await notify.reply(complaint, text)
-        store.add_message(ticket, "officer", account.id, text, outcome.delivery, outcome.note)
+        store.add_message(ticket, "officer", account.id, text, outcome.delivery, outcome.note, wamid=outcome.wamid, outbox_id=outcome.outbox_id)
         accounts.audit(account.id, "complaint.reply", ticket, f"bulk explanation, delivery {outcome.delivery}")
     if body.status:
         await _change_status(complaint, body.status, account)

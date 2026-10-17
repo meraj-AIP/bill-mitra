@@ -32,7 +32,8 @@ function RevisedChip({ original }: { original: number | null }) {
 
 function MonthCell({ bill }: { bill: BillSummary }) {
   const original = bill.original_total_payable ?? null;
-  const revised = bill.revised_amount !== null || original !== null;
+  // original_total_payable is always sent; only an approved revision makes a month revised.
+  const revised = bill.revised_amount !== null;
   return (
     <TableCell sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
       {monthLabel(bill.bill_month)}

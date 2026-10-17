@@ -12,6 +12,8 @@ from app.config import get_settings
 from app.domain.insights import cliffs, what_if_curve
 from app.domain.tariff.engine import compute
 from app.domain.tariff.tables import TARIFF_VERSIONS
+from app.flows import recovery
+from app.flows.recovery import QueueHealth
 from app.services import scheduler
 from app.services.scheduler import AutomationHealth
 from app.store import media
@@ -32,6 +34,7 @@ class Health(BaseModel):
     modes: Modes
     whatsapp_number: str | None  # public, so the website can link consumers to the chat
     automation: AutomationHealth
+    queues: QueueHealth  # counts only, never what is in the queues
 
 
 @router.get("/health", response_model=Health)
@@ -44,7 +47,7 @@ async def health() -> Health:
         voice=live if s.tts_live else "off",
         listening=live if s.stt_live else "off",
         whatsapp="connected" if s.whatsapp_enabled else "ready, not connected",
-    ), whatsapp_number=s.whatsapp_display_number or None, automation=scheduler.health())
+    ), whatsapp_number=s.whatsapp_display_number or None, automation=scheduler.health(), queues=recovery.health())
 
 
 @router.get("/media/{media_id}")

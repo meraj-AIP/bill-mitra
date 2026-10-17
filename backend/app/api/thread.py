@@ -23,7 +23,7 @@ class ComplaintMessage(BaseModel):
     author_name: str | None
     body: str
     created_at: str
-    delivery: Literal["sent", "failed", "stored"]
+    delivery: Literal["sent", "queued", "failed", "stored"]
     delivery_note: str | None
     media_url: str | None
     media_type: str | None

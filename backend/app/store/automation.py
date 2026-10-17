@@ -47,16 +47,23 @@ def lapse(request_id: int, note: str, at: str) -> bool:
     return cursor.rowcount == 1
 
 
-def undecided_past(now: str, sla_multiple: int, *, unescalated: bool = False) -> list[dict[str, Any]]:
-    """Open cases with no decision, open longer than `sla_multiple` times their DISCOM's decision SLA."""
+def undecided_past(now: str, sla_multiple: int, *, unescalated: bool = False,
+                   unalerted: str | None = None) -> list[dict[str, Any]]:
+    """Open cases with no decision, open longer than `sla_multiple` times their DISCOM's decision SLA.
+    `unalerted` is an alert kind: cases that already have that alert are left out, so each run reaches new ones
+    instead of picking the same oldest batch again."""
     extra = " AND c.escalated_at IS NULL" if unescalated else ""
+    if unalerted:
+        extra += " AND NOT EXISTS (SELECT 1 FROM alerts a WHERE a.dedupe_key = ? || c.ticket)"
     with tx() as conn:
         rows = conn.execute(
             f"SELECT c.ticket, c.unit_id, c.section_id, {_DAYS} AS days_open, {_SLA} AS sla FROM complaints c "
             f"LEFT JOIN review_policy p ON p.discom = c.discom WHERE {_OPEN_CASE} AND {_UNDECIDED}{extra} "
             f"AND {_DAYS} > {_SLA} * ? ORDER BY c.created_at LIMIT ?",
-            (now, *OPEN_STATUSES, now, sla_multiple, BATCH)).fetchall()
+            (now, *OPEN_STATUSES, *([f"{unalerted}:"] if unalerted else []), now, sla_multiple, BATCH)).fetchall()
     return [dict(r) for r in rows]
+
+
 
 
 def mark_escalated(ticket: str, at: str) -> bool:
@@ -64,6 +71,11 @@ def mark_escalated(ticket: str, at: str) -> bool:
         cursor = conn.execute("UPDATE complaints SET escalated_at = ? WHERE ticket = ? AND escalated_at IS NULL",
                               (at, ticket))
     return cursor.rowcount == 1
+
+
+def alerted(dedupe_key: str) -> bool:
+    with tx() as conn:
+        return conn.execute("SELECT 1 FROM alerts WHERE dedupe_key = ?", (dedupe_key,)).fetchone() is not None
 
 
 def deciders() -> list[str]:

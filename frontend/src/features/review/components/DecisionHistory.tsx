@@ -24,8 +24,11 @@ function Withdraw({ c, d }: { c: CaseDetail; d: Decision }) {
 
 /** Every decision on the case, newest first. Revisions never overwrite each other; each one stays here. */
 export function DecisionHistory({ c }: { c: CaseDetail }) {
-  const { account } = useAuth();
-  const canWithdraw = (d: Decision) => d.status === 'pending_approval' && (d.proposed_by.id === account?.id || c.can.approve);
+  const { account, can } = useAuth();
+  // Matches the server: a pending decision, or an approved revision not yet in the billing system, on an open case.
+  const live = (d: Decision) => d.status === 'pending_approval'
+    || (d.status === 'approved' && d.revision !== null && d.applied_at === null && c.state === 'decided');
+  const canWithdraw = (d: Decision) => live(d) && (d.proposed_by.id === account?.id || can('cases.approve'));
   // Approvers see someone else's open decision in the approvals panel; their own stays here so they can withdraw it.
   const shown = c.can.approve
     ? c.decisions.filter((d) => d.status !== 'pending_approval' || d.proposed_by.id === account?.id) : c.decisions;

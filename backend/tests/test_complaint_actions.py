@@ -93,7 +93,7 @@ def test_failed_delivery_is_listed_and_retried(reader, staff, monkeypatch):
 
     async def refuse(_: dict) -> None:
         raise httpx.HTTPStatusError("down", request=httpx.Request("POST", "https://example.invalid"),
-                                    response=httpx.Response(500))
+                                    response=httpx.Response(403))  # permanent: a 5xx is queued instead
 
     async def accept(payload: dict) -> None:
         sent.append(payload)
