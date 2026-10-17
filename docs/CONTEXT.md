@@ -8,9 +8,9 @@ This file holds the full background of Bill Mitra. Read it before you change any
 
 Bill Mitra is an electricity bill assistant for households in Telangana. It lives on WhatsApp.
 
-A consumer sends a photo of the electricity bill. Bill Mitra reads it, explains every charge in Telugu (text and voice), checks the amount against the tariff, looks at usage and predicts the next bill. It can also record a complaint when the bill looks wrong, which a department officer answers.
+A consumer sends a photo of the electricity bill. Bill Mitra reads it, explains every charge in Telugu (text and voice), checks the amount against the tariff, looks at usage and predicts the next bill. It can record a complaint, which a department officer answers. And when the reading itself looks wrong, the consumer taps "Bill looks wrong": the section AE reviews it with an evidence pack the system has already gathered, and an approved revision becomes the bill.
 
-This repository is the working app. It has sign in for consumers, officers and admins, a bill dashboard, a chat that looks and behaves like WhatsApp, a Department console and a complaints inbox. All of it runs on the same engine the WhatsApp version uses.
+This repository is the working app. It has sign in with role-based access, a bill dashboard, a chat that looks and behaves like WhatsApp, a Department console, a complaints inbox, a bill review queue, and admin screens for roles, units, review policy and accounts. All of it runs on the same engine the WhatsApp version uses.
 
 ## 2. The challenge
 
@@ -64,6 +64,7 @@ All of this was done in our working sessions in the days before the jury session
 10. We planned a demo app: a React web app that mimics WhatsApp, with mock upload, since there is no Meta or WhatsApp account yet.
 11. Owner asked to build it end to end, cover every edge case, and keep the design simple. This repository is the result.
 12. We then removed every made-up bill and figure, tested reading on two real TGSPDCL bills, and added sign in, roles, the complaints inbox and privacy controls.
+13. After the jury session (16 to 17 Oct) we added role-based access with org units and scopes, and the AE bill review flow: report, routing, evidence pack, requests for earlier bills, decisions, final amounts and the case timeline. The super admin can now edit built-in roles. The How it works page got playable journeys, including staff-only ones.
 
 ## 5. Decisions and why
 
@@ -83,9 +84,16 @@ All of this was done in our working sessions in the days before the jury session
 | Charts sent as images | WhatsApp cannot show live charts. |
 | MUI design, simple and minimal | Same style as the owner's recent task app. Enterprise-plain, no flashy colours. |
 | Logos: AI Planet and the AIKAM lockup | AIKAM lockup has the Telangana Government seal, Telangana Rising and aikam. |
-| History only from what the consumer gives us; privacy notice; STOP and account deletion erase data | Privacy. History is the table printed on the bill plus the account's own uploads. Nothing is fetched from the DISCOM. We never read name, address or phone from the bill. |
+| History mostly from what the consumer gives us; privacy notice; STOP and account deletion erase data | Privacy. History is the table printed on the bill plus the account's own uploads. DISCOM billing records are fetched only for a reported bill, and only once the DISCOM connects them (off today). We never read name, address or phone from the bill. |
 | Department console and complaints inbox included | Shows the DISCOM what they get, from real activity only: reading quality, complaints by status, overdue tickets. Officers reply from the inbox. |
 | Complaints recorded in Bill Mitra, not 1912 | We have no 1912 API access. Tickets are `BM-` numbers and the consumer is told to also call 1912. |
+| Access by permission and unit, not by role name | DISCOMs run on circles, divisions and sections. Each staff account covers its units only. Roles are sets of permissions, so a DISCOM can shape its own roles. |
+| Super admin can edit built-in roles, with locks | Owner's call. The consumer role is locked, super admin keeps role management, and role management never sits with money permissions. Edits survive a restart and can be reset. |
+| Separation of duties | Nobody approves or applies their own decision. Super admin and admin never move money. |
+| Consumers never see who reviews | Owner's call. Consumer copy names only the DISCOM. No "AE" and no staff names on the consumer side. |
+| AE decides alone by default | Owner's call. `ae_limit` is empty and custom reductions need no approval. A DISCOM can switch on a second approval in the review policy. |
+| Evidence is gathered before the AE opens the case | The AE should not wait for basics. The pack is built on report, and missing earlier bills are asked for at once. |
+| The original bill is never edited | A revision is a new numbered record. The revised amount is shown as the bill, with the original beside it. |
 | Demo not in the deck | Owner's call. A recorded video is shared separately. |
 | No GitHub URL for now | Owner said it is not needed at this stage. |
 
@@ -113,14 +121,18 @@ What is real:
 - The bill check, line by line, with a Rs 1 tolerance.
 - The next bill prediction and the savings tips.
 - The conversation flow, in four languages.
-- Accounts, roles, the console, the complaints inbox and officer replies.
+- Accounts, the console, the complaints inbox and officer replies.
+- Role-based access: seven built-in roles, custom roles, super admin role editing with reset, unit scopes, and a test that checks every built-in role against 14 protected areas.
+- Org units with aliases, CSV import and the unmapped section queue.
+- AE bill review: report, routing, evidence pack, automatic request for earlier bills, decisions priced by the engine, optional approval, revisions, final amounts and the case timeline.
 - The WhatsApp adapter code (webhook check, signature check, dedupe, media upload and download).
 
 What is not built or not live:
 
 - WhatsApp is not connected. No Meta account or number yet.
-- Complaints are recorded in Bill Mitra only. Nothing goes to 1912 or the DISCOM's own system.
-- No DISCOM billing API. History and Gruha Jyothi eligibility come only from the bill and earlier uploads.
+- Complaints are recorded in Bill Mitra only. Nothing goes to 1912. Revisions are marked applied by hand with a billing reference; nothing is written to the DISCOM's billing system.
+- DISCOM billing records connector is built but not connected. History and Gruha Jyothi eligibility come from the bill and earlier uploads.
+- No real org tree or staff list loaded yet. No single sign on. No SLA alerts.
 - No SMS OTP at sign up. One API process only, so no horizontal scaling yet.
 - Urdu voice is not available.
 
@@ -160,7 +172,9 @@ Code:
 - Keep the rule: numbers come from the engine, words come from the AI, and the guard checks every number.
 - Any new reply must fit WhatsApp limits: up to 3 buttons with titles of 20 characters or fewer, list rows of 24 characters or fewer, body of 1024 characters or fewer.
 - Do not extract or store name, address or phone. WhatsApp numbers are stored only as a hashed key.
-- Run backend tests and the frontend typecheck, lint and build before calling anything done.
+- Run backend tests (`pytest`, `ruff check .`) and the frontend typecheck, lint and build before calling anything done.
+- Consumer copy never names who reviews a bill. Only the DISCOM.
+- Never weaken a permission check or the separation of duties. `tests/test_access_matrix.py` must stay green.
 
 Email:
 
@@ -176,4 +190,4 @@ After the 16 Oct jury session:
 4. Fill the slide 9 placeholder and review the adoption target.
 5. Prepare for 24 Oct (finalist list) and lock the final deck and demo by 25 Oct.
 6. Set up a Meta Business account and a WhatsApp Business number. Fill the WHATSAPP_* settings and test the webhook end to end.
-7. If we win the pilot: get real tariff and bill data from TGSPDCL or TGNPDCL, and connect complaints to the DISCOM's own system.
+7. If we win the pilot: get real tariff and bill data from TGSPDCL or TGNPDCL, connect the billing records connector, load the real org tree and staff, and connect complaints to the DISCOM's own system.

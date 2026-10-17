@@ -30,7 +30,9 @@ Permission catalogue (fixed in code, `app/domain/rbac.py`):
 | `chat.preview` | Use the Assistant page as staff |
 | `self.bills` | Consumer: own bills, chat, review requests |
 
-Built-in roles (seeded, `builtin = true`, permissions fixed, cannot be deleted):
+Built-in roles (seeded, `builtin = true`, cannot be deleted). The table is what ships. A `roles.manage` holder can change
+any built-in role except `consumer`, which is locked; `super_admin` must keep `roles.manage`. A changed built-in role reads
+`customised: true` and `POST /api/admin/roles/{slug}/reset` puts it back. Server start never overwrites an edited role:
 
 | Slug | Name | Permissions |
 | --- | --- | --- |
@@ -42,9 +44,9 @@ Built-in roles (seeded, `builtin = true`, permissions fixed, cannot be deleted):
 | `auditor` | Auditor | `console.view`, `complaints.view`, `cases.view`, `cases.export`, `audit.view` |
 | `consumer` | Consumer | `self.bills` |
 
-Custom roles: created by `roles.manage` holders from the catalogue. A custom role may hold any permission except that
-`roles.manage` can only be combined with `units.manage`, `policy.manage`, `accounts.manage`, `audit.view`, `console.view`
-(no money permissions alongside role management). Hard rules enforced in code whatever the role: nobody approves or
+Custom roles: created by `roles.manage` holders from the catalogue. Any role, built-in or custom, that holds
+`roles.manage` cannot also hold `cases.decide`, `cases.approve`, `cases.mark_applied` or `self.bills` (no money
+permissions alongside role management). Hard rules enforced in code whatever the role: nobody approves or
 marks applied their own decision; a decision needs a reason code, a note of 20+ characters and at least one evidence item.
 
 Migration of existing accounts: `admin` accounts become `super_admin` (owner decision: both current admins), `officer` stays
@@ -96,7 +98,8 @@ interface Spike { flagged: boolean; reason: 'above_normal'|'reading_went_back'|n
   median_units: number | null; months_used: number; ratio: number | null; usual_amount: number | null }
 ```
 The bill report (`GET/POST /api/bills...`) gains `analysis.spike: Spike` and `review: ReviewSummary | null`.
-In chat, a flagged bill gets one extra message with a button "Ask AE to check" (reply id `review_request`).
+Superseded by section 8: every checked bill offers "Bill looks wrong" in chat (reply id `report_bill`) and "Report a
+problem with this bill" on the web. Consumer copy never names the AE.
 
 ## 5. Cases
 
@@ -184,3 +187,59 @@ notifies the consumer in their language on their channel. The original bill is n
 `role.create`, `role.update`, `role.delete`, `unit.create`, `unit.update`, `unit.import`, `unit.map`, `policy.update`,
 `case.route`, `case.assign`, `case.request`, `case.unmask`, `decision.create`, `decision.approve`, `decision.reject`,
 `decision.withdraw`, `decision.applied`, `revision.export`. Details never contain a full service number or phone.
+
+## 8. Revision 2: consumer reports, evidence pack, final amounts, timeline (owner, 17 Oct 2026)
+
+Supersedes the consumer-facing parts above where they differ.
+
+**Consumers never see who reviews.** No "AE", no staff names, no "ask the AE" anywhere a consumer looks (web, chat,
+WhatsApp). They report a problem; they see neutral states. Staff screens keep names.
+
+**Reporting.** A consumer reports a bill as wrong:
+- Web: "Report a problem with this bill" on every checked bill (quiet), and a prominent note when the bill is flagged
+  ("This bill is 4.8 times your usual month"). `POST /api/bills/{bill_id}/review-request` stays the endpoint.
+- Chat and WhatsApp: the summary card's complaint button becomes `report_bill`, title key `btn_report` ("Bill looks
+  wrong"); a flagged bill's extra message uses the same button. Free text that says the bill is wrong, too high or
+  the reading is wrong (new intent `dispute`, rules first, model fallback within the fixed list) opens the same
+  report for the current bill. The general complaint flow stays for other problems.
+
+**On every report, automatically** (no staff action):
+1. The case is created (kind `wrong_reading`) and routed to the section AE, as before.
+2. An evidence pack is assembled: this bill (photo, readings, charges check), the printed usage table, the
+   consumer's earlier uploads, DISCOM billing records (`app/services/billing_records.py`: returns nothing unless
+   `BILLING_RECORDS_URL` and `BILLING_RECORDS_TOKEN` are set; then `GET {url}/consumers/{service_number}/history?months=12`
+   with a bearer token, 10 s timeout, response validated, months tagged `discom`), and the spike comparison.
+3. A request for supporting bills is raised by the system (`requested_by` null): the up to 3 calendar months before
+   the bill month that are not already on file from any source. The consumer is asked on their channel, in their
+   language, to send a photo of each ("To check your October 2025 bill we need your bills for July, August and
+   September 2025."). No months missing = no request.
+4. When the consumer uploads a bill (web or chat photo) whose service number matches the case bill and whose month is
+   one of the requested months, it is attached to the case as evidence and the request shows it received. All
+   received = request answered. The consumer may also reply "I don't have them" (chat) or tap "I don't have these
+   bills" (web): the request is answered with that note.
+
+**Final amounts.** Once a revision is approved, the revised amount is the consumer's bill for that month everywhere
+they look: bill report (`final`), My bills (`total_payable` is the final total; `original_total_payable` keeps the
+printed one), chat summaries. Final total payable = revised bill amount + the printed arrears. The original bill is
+never edited.
+
+```ts
+// Consumer side (replaces ReviewSummary)
+interface ReviewSummary { ticket: string;
+  state: 'received' | 'waiting_for_you' | 'revised' | 'no_change';   // derived from the staff state
+  requested_months: string[]; received_months: string[];            // YYYY-MM
+  revision: { original_amount: number; revised_amount: number; original_total: number | null; revised_total: number | null;
+              reason: string; office: string /* e.g. 'TGSPDCL' */; decided_at: string; status: 'pending_update' | 'applied' } | null }
+// Bill report gains: final: { bill_amount: number; total_payable: number | null; revised: boolean; status: 'pending_update' | 'applied' | null }
+
+// Staff side, added to CaseDetail
+interface EvidenceSource { key: 'this_bill'|'printed_history'|'uploads'|'discom_records'|'spike'|'requested_bills';
+  label: string; status: 'included'|'partial'|'missing'|'not_connected'; months: string[]; detail: string }
+interface EvidencePack { sources: EvidenceSource[]; requested_months: string[]; received_months: string[];
+  attached_bills: { bill_id: string; month: string; units: number | null; amount: number | null; media_url: string | null }[] }
+interface TimelineEntry { at: string; actor: { kind: 'consumer'|'system'|'staff'; name: string | null }; text: string }
+// CaseDetail gains: evidence_pack: EvidencePack; timeline: TimelineEntry[] (oldest first: reported, pack built,
+// bills requested, each bill received, routed, assigned, requests, unmask, decision, approval, applied, withdrawn)
+```
+Attached bills also appear as evidence options (`{ kind: 'bill', id: bill_id }`). Every automatic step is audited with
+actor null (shown as "System").

@@ -10,19 +10,19 @@ Personalized Billing Assistance on WhatsApp for Telangana electricity consumers.
 | Problem statement | Personalized Billing Assistance (Agentic AI) |
 | Partners running the challenge | AIKAM Global, IIIT Hyderabad, GDG Hyderabad |
 | Status | Shortlisted, top 30. Immersion Day jury session, 16 Oct 2026, IIIT Hyderabad |
-| Version | Draft 1, 15 Oct 2026 |
+| Version | Draft 2, 17 Oct 2026 (roles, units and bill review added) |
 
 ## 1. Summary
 
 Bill Mitra is a WhatsApp assistant for household electricity consumers in Telangana.
 
-A consumer sends a photo of the bill. A PDF, the bill SMS or just the number of units also work. Bill Mitra reads it, checks every charge against the TGERC tariff, and explains the bill in Telugu as a voice note with text. It says whether the bill matches the tariff. It estimates next month. It warns before the home crosses 100 or 200 units. It suggests how to save in plain terms, such as minutes of AC per day. If a charge is wrong, the consumer can raise a complaint once they agree. The complaint is recorded in Bill Mitra and answered by a department officer. It is not connected to 1912 yet, so the consumer is also told to call 1912.
+A consumer sends a photo of the bill. A PDF, the bill SMS or just the number of units also work. Bill Mitra reads it, checks every charge against the TGERC tariff, and explains the bill in Telugu as a voice note with text. It says whether the bill matches the tariff. It estimates next month. It warns before the home crosses 100 or 200 units. It suggests how to save in plain terms, such as minutes of AC per day. If a charge is wrong, the consumer can raise a complaint once they agree. The complaint is recorded in Bill Mitra and answered by a department officer. It is not connected to 1912 yet, so the consumer is also told to call 1912. If the reading itself looks wrong, the consumer taps "Bill looks wrong". The section AE reviews it with an evidence pack the system has already built, and an approved revision becomes the consumer's bill for that month.
 
 English, Hindi and Urdu are also supported. Urdu is text only for now.
 
 One rule runs through the product: **rules calculate, AI explains.** A deterministic engine does every calculation from versioned tariff tables. The language model only writes sentences. A number guard checks every figure the model writes. If any figure does not trace back to the engine, the reply falls back to a checked template.
 
-This build is a web app with sign in and three roles. Consumers get a bill dashboard and a WhatsApp preview chat with a "Behind the reply" trace panel. Officers get a Department console and a complaints inbox. Admins manage accounts and read the audit log. A How it works page holds the tariff explorer. The WhatsApp Cloud API adapter is built and switches on with environment settings. There is no mock data anywhere. Without an OpenAI key, bill reading is off and the consumer types the units.
+This build is a web app with sign in and role-based access. Consumers get a bill dashboard and a WhatsApp preview chat with a "Behind the reply" trace panel. DISCOM staff get the console, the complaints inbox and the bill review queue, limited to the units they cover. A super admin manages roles, units, review policy and accounts. A How it works page has an interactive system map with journeys, and the tariff explorer. The WhatsApp Cloud API adapter is built and switches on with environment settings. There is no mock data anywhere. Without an OpenAI key, bill reading is off and the consumer types the units.
 
 ## 2. Problem
 
@@ -65,22 +65,28 @@ The result: consumers call 1912 or visit the counter to ask "why is my bill so h
 | User | Need | How Bill Mitra serves them |
 |---|---|---|
 | Household consumer (primary) | Understand the bill, know if it is right, avoid a big jump next month. Often a Telugu speaker with low literacy, already on WhatsApp. | Voice note in Telugu with short text, buttons instead of typing, answers to common questions, slab warnings, one-tap complaint. |
-| Department officers | Answer complaints quickly and the same way every time. See volume, outcomes and hot spots. | Complaints inbox with the audit lines and bill photo, a thread, reply and status change. Console with reading quality, complaints by status, overdue tickets and CSV export. Tariff explorer to check any unit count. |
-| Admin | Control who can see consumer data. | Staff accounts (create, edit, deactivate, reset password) and an audit log of admin and complaint actions. |
+| Department officers | Answer complaints quickly and the same way every time. See volume, outcomes and hot spots. | Complaints inbox with the audit lines and bill photo, a thread, a checked suggested reply, reply and status change. Console with reading quality, complaints by status, overdue tickets and CSV export. Tariff explorer to check any unit count. |
+| Section AE | Decide wrong reading cases for their section fast, with the facts in one place. | Review queue for their section. Each case has the bill, readings, an evidence pack, a timeline and an engine preview of a corrected reading. |
+| Billing approver | Keep revisions honest and get them into the billing system. | Approves decisions when the DISCOM's policy asks for it, marks revisions applied with the billing reference, exports revisions. Never on their own decision. |
+| Super admin and admin | Control who can see consumer data and who can move money. | Super admin: roles, units, review policy, accounts. Admin: staff accounts in own scope. Neither holds a money permission. Audit log of every change. |
 
 ## 5. Scope
 
 ### In this build
 
-- Sign in, consumer registration (mobile and password, with consent to the privacy notice) and three roles: admin, officer (optionally limited to one DISCOM), consumer.
+- Sign in, consumer registration (mobile and password, with consent to the privacy notice).
+- Role-based access: a permission catalogue, built-in roles (super admin, admin, DISCOM officer, section AE, billing approver, auditor, consumer) and custom roles. Super admin can edit and reset built-in staff roles. Every staff account is scoped to units.
+- Org units: DISCOM, circle, division, subdivision, section and ERO, with aliases, CSV import and a queue of unmapped section names.
+- Bill review: "Bill looks wrong" report, routing to the section AE, automatic evidence pack, automatic request for missing earlier bills, AE decisions priced by the engine, optional second approval per DISCOM, revisions, final amounts, case timeline.
 - Consumer dashboard: upload a bill and get the full report, history, next month and a plain explanation in four languages.
 - WhatsApp preview chat. The phone UI shows only message types WhatsApp supports: text, image, voice note, reply buttons and lists.
 - Full conversation engine: two pass bill reading with rule checks, tariff engine, line audit, explanation, number guard, prediction, warnings, savings, what-if, complaint preview and filing.
 - "Behind the reply" trace panel showing each step, tagged as rules, AI or channel.
 - Department console with real metrics only, complaints inbox with replies, CSV export.
-- Admin pages for accounts and the audit log.
+- Admin pages for accounts, roles, units, review policy, the audit log and system health.
 - Privacy notice, STOP and account deletion, retention job.
-- How it works page with the tariff explorer and WhatsApp readiness status.
+- How it works page with the system map, playable journeys (staff journeys shown to staff only), live status and the tariff explorer.
+- DISCOM billing records connector for the evidence pack, built and off until the DISCOM gives an endpoint and token.
 - WhatsApp Cloud API adapter, built and tested, switches on with env settings.
 
 ### Pilot and later (not built)
@@ -88,14 +94,15 @@ The result: consumers call 1912 or visit the counter to ask "why is my bill so h
 These are **not in this build**. They need DISCOM or Department access, or come after the pilot.
 
 - Live WhatsApp Business number and approved message templates.
-- DISCOM billing API. Today history comes only from the usage table printed on the bill and the account's own earlier uploads.
+- Connecting the DISCOM billing records. The connector is built; it needs the DISCOM's endpoint and token. Until then history comes from the printed usage table and the account's own uploads.
 - 1912 grievance API. Today tickets are recorded in Bill Mitra only.
 - SMS OTP for consumer sign up (needs an SMS gateway).
 - Urdu voice notes.
 - Proactive mid-month reminders (needs WhatsApp templates and opt-in).
 - Audit of non-domestic (LT-II and other) bills.
 - Live FSA values per month from the DISCOM.
-- Assigning a complaint to a named officer, and SLA escalation.
+- SLA alerts and escalation. Cases are already assigned to the section AE and marked overdue, but nobody is alerted yet.
+- Loading the org tree and staff from DISCOM HR, and single sign on.
 
 ## 6. Functional requirements
 
@@ -127,25 +134,34 @@ Paths are relative to the repository root. `backend/app` is shortened to `b/` an
 | FR-22 | Savings: only when the cut needed to get back under 100 or 200 is at most a fifth of use, show how many units to cut, the rupee saving, and the same as AC minutes per day (1.5 kWh per hour) and geyser minutes. | `b/domain/insights.py` (`saving`) | Built |
 | FR-23 | What-if: answer "what if I use N units" with the engine's amount. Build the bill curve and the jump at 100 and 200 units. | `b/domain/insights.py`, `b/flows/question.py` | Built |
 | FR-24 | Gruha Jyothi: apply full subsidy for eligible homes at or under 200 units. Explain the subsidy, or explain that it was lost above 200 and how to get it back. | `b/domain/tariff/engine.py`, `b/domain/conversation/composer.py` | Built |
-| FR-25 | Fixed intent list for questions: why_high, next_bill, save, complain, explain_fsa, explain_fixed, explain_customer, explain_duty, explain_true_up, gruha_jyothi, due, what_if, greeting, thanks, power_cut, new_connection, help, stop, off_topic. Keyword rules in four languages first; the model may pick only from this list. Answers are templates filled with engine figures. | `b/domain/conversation/intents.py`, `b/flows/question.py`, `b/services/llm.py` | Built |
+| FR-25 | Fixed intent list for questions: why_high, next_bill, save, complain, dispute, explain_fsa, explain_fixed, explain_customer, explain_duty, explain_true_up, gruha_jyothi, due, what_if, greeting, thanks, power_cut, new_connection, help, stop, off_topic. Keyword rules in four languages first; the model may pick only from this list. Answers are templates filled with engine figures. | `b/domain/conversation/intents.py`, `b/flows/question.py`, `b/services/llm.py` | Built |
 | FR-26 | Out-of-scope requests (power cuts, new connections, other topics) get a fixed reply that points to 1912 or back to the bill. | `b/flows/question.py`, language packs | Built |
 | FR-27 | Privacy notice on first WhatsApp contact and at registration. The version is set by `PRIVACY_NOTICE_VERSION`. | `b/flows/question.py`, `b/api/auth.py`, `b/config.py` | Built |
 | FR-28 | STOP (or the word for it in Telugu, Hindi or Urdu) and account deletion erase the user's bills, chat and media no complaint refers to. A retention job removes data older than `RETENTION_DAYS` (180 by default). | `b/flows/question.py`, `b/store/repos.py` (`forget_user`), `b/api/auth.py` | Built |
 | FR-29 | Complaint preview: show masked service number, bill month and the issue in the consumer's language, with Send and Cancel buttons. Nothing is filed without Send. | `b/flows/complaint.py` (`preview`) | Built |
-| FR-30 | Complaint filing from the chat or the dashboard: create ticket `BM-yymmdd-NNNNN` with the audit lines in English, the overcharge amount and the bill photo. Recorded in Bill Mitra, not connected to 1912; the consumer is told to also call 1912. Statuses Open, In progress, Resolved, Rejected. | `b/flows/complaint.py`, `b/api/complaints.py`, `b/store/complaints.py` | Built |
+| FR-30 | Complaint filing from the chat (WhatsApp or the web Assistant; the dashboard links to WhatsApp): create ticket `BM-yymmdd-NNNNN` with the audit lines in English, the overcharge amount and the bill photo. Recorded in Bill Mitra, not connected to 1912; the consumer is told to also call 1912. Statuses Open, In progress, Resolved, Rejected. | `b/flows/complaint.py`, `b/api/complaints.py`, `b/store/complaints.py` | Built |
 | FR-31 | WhatsApp limits enforced in the message model: up to 3 reply buttons with 20-character titles, list rows up to 10 with 24-character titles, 1024 characters for interactive body text, 4096 for plain text. | `b/core/messages.py` | Built |
 | FR-32 | WhatsApp Cloud API adapter: webhook verify, signature check (HMAC SHA-256), parse text, image, document, audio and button replies, download media, upload media, send replies. Switches on when token, phone number id and verify token are set. | `b/channels/whatsapp/router.py`, `mapper.py`, `client.py`, `b/config.py` | Built (needs number) |
 | FR-33 | Web chat channel (Assistant): same engine, replies stream as they are ready. Phone UI with upload, voice recorder and language choice. | `b/channels/web.py`, `f/assistant/` | Built |
 | FR-34 | "Behind the reply" trace panel: each step with its kind (rules, AI, channel), a note, and whether it was skipped. | `b/core/trace.py`, `f/assistant/components/TracePanel.tsx` | Built |
-| FR-35 | Department console with real metrics only: reads trusted first time, re-read rescues, retakes, explanation number check pass rate, latency, complaints by status, overdue over 7 days. Date range and DISCOM filters. | `b/api/console.py`, `b/store/console.py`, `f/console/` | Built |
-| FR-36 | Complaints inbox for officers: paged list in the URL, thread, reply and status change. Replies reach the consumer on WhatsApp (free text inside the 24 hour window, else the approved template in `WHATSAPP_COMPLAINT_TEMPLATE`, else recorded as failed with the reason) or in the web app. CSV export. | `b/api/complaints.py`, `b/services/notify.py`, `f/console/`, `f/complaints/` | Built |
+| FR-35 | Department console with real metrics only: reads trusted first time, re-read rescues, retakes, explanation number check pass rate, latency, complaints by status, overdue past `COMPLAINT_REPLY_DAYS`. Date range and DISCOM filters; staff in one DISCOM always see that DISCOM. | `b/api/console.py`, `b/store/console.py`, `f/console/` | Built |
+| FR-36 | Complaints inbox for officers: paged list in the URL, thread, a checked suggested reply, reply and status change, retry a failed send, bulk actions. Replies reach the consumer on WhatsApp (free text inside the 24 hour window, else the approved template in `WHATSAPP_COMPLAINT_TEMPLATE`, else recorded as failed with the reason) or in the web app. CSV export. | `b/api/complaints.py`, `b/services/notify.py`, `f/console/`, `f/complaints/` | Built |
 | FR-37 | Tariff explorer: pick units, month, load and Gruha Jyothi; see slab lines, every charge, the bill curve and the jumps at 100 and 200. Uses the same engine as the assistant. | `b/api/catalog.py` (`/api/tariffs/calculate`), `f/explorer/` | Built |
 | FR-38 | Provider status: health endpoint reports vision, language model, voice, listening and WhatsApp as live, template, off or connected. Shown on the How it works page. | `b/api/catalog.py` (`/api/health`), `f/explorer/components/WhatsAppReadiness.tsx` | Built |
 | FR-39 | Bill dashboard: upload, then the full report with captured fields, consistency checks, charges check, slab breakdown reconciling to the printed total, history, next month and the plain explanation. Paged list of past bills. | `b/api/bills.py`, `b/flows/report.py`, `b/domain/capture.py`, `f/dashboard/` | Built |
 | FR-40 | Event log for the console: bill read, question, alert, meter read and complaint, with language, intent, audit status, units, DISCOM and section. No personal data. | `b/store/repos.py` (`log_event`) | Built |
-| FR-41 | Accounts and roles: sign in, consumer registration with mobile and password, roles admin, officer (optionally one DISCOM) and consumer. Server-side sessions, lockout after 5 wrong passwords. | `b/api/auth.py`, `b/store/accounts.py`, `b/core/security.py`, `f/auth/` | Built |
-| FR-42 | Admin: create staff accounts, edit, deactivate, reset password, and read the audit log of admin and complaint actions. | `b/api/admin.py`, `b/store/accounts.py`, `f/admin/` | Built |
-| FR-43 | My complaints for consumers: list, thread, reply. Delete my account. | `b/api/complaints.py`, `b/api/auth.py`, `f/complaints/` | Built |
+| FR-41 | Accounts: sign in, consumer registration with mobile and password, server-side sessions, lockout after 5 wrong passwords. | `b/api/auth.py`, `b/store/accounts.py`, `b/core/security.py`, `f/auth/` | Built |
+| FR-42 | Staff accounts: create with a role and unit scopes, edit, deactivate, reset password. Nobody grants a scope outside their own. Audit log limited to the reader's scope. | `b/api/admin.py`, `b/store/accounts.py`, `f/admin/` | Built |
+| FR-43 | Delete my account (consumers). The separate My complaints page is gone: general complaints are raised and answered in the chat, and wrong bill reports show their status on the bill page. | `b/api/privacy.py`, `f/dashboard/` | Built |
+| FR-44 | Permissions and roles: fixed catalogue, seven built-in roles, custom roles. Every staff route checks a permission, then the unit scope. Permissions are read on every request. | `b/domain/rbac.py`, `b/api/deps.py`, `b/store/roles.py`, `b/api/access.py`, `f/admin/` | Built |
+| FR-45 | Super admin edits built-in roles: any except consumer (locked); super admin keeps role management; role management never sits with money permissions or own bills; a changed role shows as customised and can be reset; a restart keeps the edits. | `b/domain/rbac.py`, `b/store/roles.py`, `b/store/db.py` | Built |
+| FR-46 | Separation of duties: nobody approves or marks applied their own decision; super admin and admin hold no money permission. Each built-in role is tested against 14 protected areas. | `b/api/review_decisions.py`, `tests/test_access_matrix.py` | Built |
+| FR-47 | Org units: DISCOM, circle, division, subdivision, section, ERO; aliases; CSV import; unmapped section queue that re-routes open cases once mapped. | `b/store/units.py`, `b/api/access.py`, `f/admin/` | Built |
+| FR-48 | Wrong bill report: "Bill looks wrong" in the chat (reply id `report_bill` or a `dispute` message) or on the web bill page. One open case per bill. Consumers see only received, waiting for you, revised or no change, and only the DISCOM's name. | `b/flows/cases.py`, `b/api/bills.py`, `f/dashboard/` | Built |
+| FR-49 | Routing and evidence: the printed section is matched to a unit; the least busy AE there gets it, else the division, else the DISCOM. The evidence pack (this bill, printed history, uploads, DISCOM records, spike, requested bills) is built on report. | `b/flows/cases.py`, `b/flows/evidence.py`, `b/services/billing_records.py` | Built (DISCOM records need access) |
+| FR-50 | Earlier bills: if any of the 3 months before the bill month are not on file, the consumer is asked at once; matching uploads attach to the case; the consumer can say they do not have them. | `b/flows/case_bills.py`, `b/store/case_evidence.py` | Built |
+| FR-51 | AE decisions: bill correct, corrected reading (engine reprices; surcharge, arrears and rounding kept) or custom reduction, each with a reason, a 20+ character note and evidence. Policy per DISCOM, AE decides alone by default. Revisions numbered per bill; the original bill is never edited. | `b/domain/review.py`, `b/api/review_decisions.py`, `b/store/policy.py`, `f/review/` | Built |
+| FR-52 | Final amounts and timeline: after approval the revised amount is the bill in the report, the bill list (final total plus original) and the chat. Each case shows a timeline of consumer, system and staff steps, all in the audit log. | `b/flows/report.py`, `b/store/repos.py`, `b/flows/evidence.py` | Built |
 
 ## 7. Non-functional requirements
 
@@ -154,7 +170,8 @@ Paths are relative to the repository root. `backend/app` is shortened to `b/` an
 - The vision prompt tells the model not to read name, address or phone number. Only billing fields are extracted.
 - Service numbers are masked to the last 4 digits wherever shown: complaint preview, console, trace.
 - The WhatsApp user key is a SHA-256 hash of the number. The raw number is stored only on a complaint, so an officer's reply can be sent. It is never returned by the API or written to logs.
-- A privacy notice is shown on first WhatsApp contact and at registration, in line with the DPDP Act 2023. History comes only from what the consumer gave us; nothing is fetched from the DISCOM.
+- A privacy notice is shown on first WhatsApp contact and at registration, in line with the DPDP Act 2023. History comes from what the consumer gave us. DISCOM billing records are fetched only for a bill the consumer reported, and only once the DISCOM connects them; the service number is never logged.
+- Consumers never see who reviews their bill. Staff see a full service number only with `consumer.unmask`, on an open case, and every look is audited.
 - STOP and account deletion erase bills, chat and media that no complaint refers to. A retention job removes data after `RETENTION_DAYS` (180 by default). Complaint tickets and anonymous events stay for the record.
 - The console works on counts and masked numbers only.
 
@@ -162,7 +179,8 @@ Paths are relative to the repository root. `backend/app` is shortened to `b/` an
 
 - Server-side sessions in an httpOnly, SameSite=Lax cookie that lasts 12 hours. Passwords hashed with scrypt. Five wrong passwords lock the login.
 - Rate limits per address on login, register and uploads. Origin check on every write. Security headers (CSP, nosniff, frame options, HSTS when `COOKIE_SECURE` is on).
-- Audit log of admin and complaint actions.
+- Every staff route checks a permission and then the unit scope; out of scope reads as not found.
+- Audit log of account, role, unit, policy, complaint and case actions. Details never hold a full service number or phone.
 - WhatsApp webhook signature check and dedupe by message id.
 
 ### Reliability
@@ -217,6 +235,10 @@ Paths are relative to the repository root. `backend/app` is shortened to `b/` an
 | Microphone permission refused | The voice button shows "Microphone permission was refused". Typing still works. |
 | Question before any bill | Asks the consumer to send the bill first. |
 | Provider down | Falls back as described in section 7. The trace shows what was skipped. |
+| Printed section nobody has mapped | The case waits at the DISCOM and the name goes on the unmapped queue. Mapping it moves the case to the section. |
+| No AE in the section | The case sits unassigned at the division, where officers can reassign it. |
+| Consumer has no earlier bills | They say so in the chat or on the web; the case goes on with what is on file. |
+| Bill reported twice | The second tap is told the bill is already being checked. |
 
 ## 9. Open items and assumptions
 
@@ -246,11 +268,12 @@ Two real TGSPDCL slips (March 2024 and October 2025) are read 100 percent correc
 
 ### Known gaps in this build
 
-- No 1912 or DISCOM billing API integration.
+- No 1912 integration. The DISCOM billing records connector is built but not connected.
 - No SMS OTP for consumer sign up. It needs an SMS gateway.
 - One API process (SQLite and in-memory rate limits), so no horizontal scaling yet.
 - Media ids cannot be guessed, but any signed-in account could fetch a media file if it had the id.
-- Complaints cannot be assigned to a named officer yet, and there is no SLA escalation.
+- No SLA alerts or escalation yet. Overdue complaints and cases are only marked in the lists.
+- Units are entered by hand or by CSV; there is no feed from DISCOM HR and no single sign on.
 - A Docker setup exists. An HTTPS proxy and backups are deployment work still to do.
 - Urdu voice is not available.
 - Gruha Jyothi eligibility comes only from what the bill prints.
@@ -259,7 +282,8 @@ Two real TGSPDCL slips (March 2024 and October 2025) are read 100 percent correc
 
 - A WhatsApp Business number, verified, with message templates approved.
 - Cloud credits, or space on the state cloud, to host the pilot.
-- DISCOM billing API (read only) for 12-month history and Gruha Jyothi eligibility, with the consumer's agreement.
+- DISCOM billing records endpoint and token (read only) for the built connector, plus Gruha Jyothi eligibility, with the consumer's agreement.
+- The DISCOM org tree (circles down to sections, and EROs) and the list of section AEs and billing approvers.
 - 1912 grievance API to file tickets and read status.
 - TGERC tariff tables and monthly FSA in machine-readable form.
 - An SMS gateway for sign up OTP.
