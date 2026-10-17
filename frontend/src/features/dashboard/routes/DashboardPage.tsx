@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useHealth } from '@/shared/api/health';
 import { BillImage } from '@/shared/components/BillImage';
 import { PageHeader } from '@/shared/components/PageHeader';
+import type { FilePreview } from '@/shared/hooks/useFilePreview';
 import { monthLabel } from '@/shared/lib/format';
 
 import { BillReportView } from '../components/BillReportView';
@@ -13,7 +14,6 @@ import { UploadCard } from '../components/UploadCard';
 import { UscCard } from '../components/UscCard';
 import { useBillsParams } from '../hooks/useBillsParams';
 import { useBillUpload } from '../hooks/useBillUpload';
-import type { FilePreview } from '../hooks/useFilePreview';
 
 function Reading({ preview }: { preview: FilePreview }) {
   return (

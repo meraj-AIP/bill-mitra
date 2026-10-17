@@ -1,11 +1,11 @@
-import { FormControlLabel, MenuItem, Stack, Switch, TextField } from '@mui/material';
+import { FormControlLabel, MenuItem, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup } from '@mui/material';
 
 import { COMPLAINT_STATUSES, PRIORITIES, PRIORITY, SOURCE_LABEL, SOURCES, TRIAGE, TRIAGES, TypeSelect } from '@/features/complaints';
 import { SearchField } from '@/shared/components/SearchField';
 import { DISCOMS } from '@/shared/api/types';
 
 import type { InboxQuery } from '../api/consoleApi';
-import type { InboxFilterKey } from '../hooks/useInboxParams';
+import type { InboxFilterKey, MineFilter } from '../hooks/useInboxParams';
 
 interface InboxFiltersProps {
   query: InboxQuery;
@@ -14,13 +14,29 @@ interface InboxFiltersProps {
   onFilter: (key: InboxFilterKey, value: string) => void;
   onFailed: (on: boolean) => void;
   onSort: (sort: InboxQuery['sort']) => void;
+  mine: MineFilter;
+  onMine: (value: MineFilter) => void;
+}
+
+const MINE_LABEL: Record<MineFilter, string> = { '': 'All I can see', with: 'With me', waiting: 'Waiting on me' };
+
+/** Whose complaints: all in scope, the ones you hold, or the ones you hold where the next move is yours. */
+function MineToggle({ value, onChange }: { value: MineFilter; onChange: (value: MineFilter) => void }) {
+  return (
+    <ToggleButtonGroup exclusive size="small" value={value} aria-label="Whose complaints"
+      onChange={(_, next: MineFilter | null) => onChange(next ?? '')}
+      sx={{ flexWrap: 'wrap', alignSelf: 'flex-start', '& .MuiToggleButton-root': { px: 1.75, textTransform: 'none', fontWeight: 600 } }}>
+      {(Object.keys(MINE_LABEL) as MineFilter[]).map((k) => <ToggleButton key={k || 'all'} value={k}>{MINE_LABEL[k]}</ToggleButton>)}
+    </ToggleButtonGroup>
+  );
 }
 
 const SORT_LABEL: Record<InboxQuery['sort'], string> = { priority: 'Needs you first', newest: 'Newest first', oldest: 'Oldest first' };
 
-export function InboxFilters({ query, showDiscom, onFilter, onFailed, onSort }: InboxFiltersProps) {
+export function InboxFilters({ query, showDiscom, onFilter, onFailed, onSort, mine, onMine }: InboxFiltersProps) {
   return (
     <Stack sx={{ gap: 1.5 }}>
+      <MineToggle value={mine} onChange={onMine} />
       <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1.5, flexWrap: 'wrap', alignItems: { sm: 'center' } }}>
         <SearchField label="Ticket" placeholder="BM-261016-7KQ2D" value={query.q} onChange={(v) => onFilter('q', v)} />
         <TextField select size="small" label="Status" value={query.status} onChange={(e) => onFilter('status', e.target.value)} sx={{ minWidth: 150 }}>

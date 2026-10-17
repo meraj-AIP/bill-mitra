@@ -10,19 +10,21 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.api.complaints import AuditLineOut, ComplaintMessage, visible_to
+from app.api import thread
+from app.api.complaints import AuditLineOut, visible_to
 from app.api.deps import require_perm, viewer
+from app.api.thread import ComplaintMessage, RequestOut
 from app.core import csvsafe
 from app.domain import review as rules
 from app.domain.complaint_reply import RequestKind
 from app.domain.review import DecisionKind, Policy, ReasonCode, Spike
-from app.flows import cases, evidence
+from app.flows import cases, evidence, handoff
 from app.flows import complaint as complaint_flow
 from app.flows.analysis import Analysis, analyse
 from app.flows.complaint import LABEL_EN
 from app.flows.evidence import EvidencePack, TimelineEntry
 from app.flows.report import bill_out, history_rows
-from app.store import accounts, media, repos, units
+from app.store import accounts, repos, units
 from app.store import case_evidence as evidence_store
 from app.store import complaints as complaint_store
 from app.store import policy as policy_store
@@ -92,14 +94,6 @@ class Decision(BaseModel):
     revision: int | None
 
 
-class CaseRequest(BaseModel):
-    id: int
-    kind: CaseKind
-    note: str | None
-    status: Literal["open", "answered"]
-    created_at: str
-
-
 class HistoryMonth(BaseModel):
     month: str
     units: int
@@ -124,7 +118,7 @@ class CaseDetail(CaseRow):
     spike: Spike
     history: list[HistoryMonth]
     messages: list[ComplaintMessage]
-    requests: list[CaseRequest]
+    requests: list[RequestOut]  # each with the consumer message that answered it
     decisions: list[Decision]
     policy: Policy
     can: Can
@@ -216,13 +210,11 @@ def detail(account: Account, complaint: Complaint) -> CaseDetail:
         a, media_id = found
         bill, spike, history = bill_out(a.bill), cases.spike_for(a), history_rows(a)
         lines = [AuditLineOut(label=LABEL_EN.get(line.code, line.code), **line.model_dump()) for line in a.audit.lines]
-        media_url = f"/api/media/{media_id}" if media_id else None
-        mime = media.mime_for(media_id) if media_id else None
+        media_url, mime = thread.media_url(complaint.ticket, media_id), thread.media_type(media_id)
     can = _can(account, complaint, row, decisions, found is not None)
     return CaseDetail(
         **row, bill=bill, media_url=media_url, mime_type=mime, audit_lines=lines, spike=spike, history=history,
-        messages=[ComplaintMessage(**m) for m in complaint_store.messages(complaint.ticket)],
-        requests=store.requests(complaint.ticket), decisions=decisions, policy=policy_store.get(complaint.discom),
+        messages=thread.messages(complaint.ticket), requests=thread.requests(complaint.ticket), decisions=decisions, policy=policy_store.get(complaint.discom),
         can=can, assignable=_assignable(complaint) if can.reassign else [],
         evidence_pack=evidence.pack(complaint.ticket, found, spike),
         timeline=evidence.timeline(complaint.ticket, row["created_at"]))
@@ -274,6 +266,8 @@ async def assign(ticket: str, body: AssignBody,
     complaint_store.place(ticket, Placement(section_id=complaint.section_id, unit_id=complaint.unit_id,
                                             assigned_to=body.account_id))
     accounts.audit(account.id, "case.assign", ticket, f"to {chosen.name}", unit_id=complaint.unit_id)
+    if chosen.id != account.id:
+        handoff.case_assigned(ticket, chosen.id, account)
     return detail(account, find_case(account, ticket))
 
 

@@ -117,12 +117,15 @@ _LONG_NUMBER = re.compile(r"\d[\d\s-]{3,}\d")
 _EMAIL = re.compile(r"\S+@\S+")
 
 
+def masked(said: str) -> str:
+    """The consumer's words minus anything shaped like a phone, service or account number or an email: a model
+    needs the gist, not their details."""
+    return _EMAIL.sub("[email]", _LONG_NUMBER.sub("[number]", said))
+
+
 def _background(ticket: str) -> str:
-    """The consumer's own words, minus anything shaped like a phone, service or account number or an email:
-    the model needs the gist, not their details."""
     row = complaints.row(ticket) or {}
-    said = _EMAIL.sub("[email]", _LONG_NUMBER.sub("[number]", row.get("description") or ""))
-    return said[:BACKGROUND_MAX]
+    return masked(row.get("description") or "")[:BACKGROUND_MAX]
 
 
 async def word_option(complaint: Complaint, key: str) -> Worded | None:

@@ -1,10 +1,13 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import HourglassEmptyRoundedIcon from '@mui/icons-material/HourglassEmptyRounded';
+import PersonOutlineRoundedIcon from '@mui/icons-material/PersonOutlineRounded';
 import { Box, Button, Chip, Stack, Typography } from '@mui/material';
 import { Link } from 'react-router-dom';
 
 import { dateTime } from '@/shared/lib/format';
 
 import type { ComplaintDetail, ComplaintStatus } from '../api/types';
+import { holderOf } from '../model/handoff';
 import { PRIORITY, STATUS_TONE } from '../model/labels';
 import { DemoChip, DueChip } from './DueChip';
 
@@ -25,6 +28,20 @@ export function PriorityChip({ priority, size = 'small', spelled = false }: Prio
   const p = PRIORITY[priority];
   // Only urgent and high need to catch the eye; normal and low stay quiet.
   return <Chip size={size} color={p.tone} variant={p.tone === 'default' ? 'outlined' : 'filled'} label={spelled ? `${p.label} priority` : p.label} />;
+}
+
+/** Who holds it now, and whether the next move is the consumer's. */
+function HolderChips({ complaint }: { complaint: ComplaintDetail }) {
+  const holder = holderOf(complaint);
+  return (
+    <>
+      <Chip size="medium" variant="outlined" icon={<PersonOutlineRoundedIcon />}
+        label={holder ? `With ${holder.name}` : 'Not with anyone yet'} />
+      {complaint.waiting_on === 'consumer' && (
+        <Chip size="medium" color="info" icon={<HourglassEmptyRoundedIcon />} label="Waiting on consumer" />
+      )}
+    </>
+  );
 }
 
 interface ComplaintHeaderProps {
@@ -57,6 +74,7 @@ export function ComplaintHeader({ complaint, backTo, backLabel }: ComplaintHeade
         <StatusChip status={complaint.status} size="medium" />
         <PriorityChip priority={complaint.priority} size="medium" spelled />
         <DueChip c={complaint} size="medium" />
+        <HolderChips complaint={complaint} />
       </Stack>
     </Stack>
   );

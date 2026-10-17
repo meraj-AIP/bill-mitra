@@ -1,5 +1,6 @@
 import { Box, Typography } from '@mui/material';
 
+import { TimelineText } from '@/features/complaints';
 import { dateTime } from '@/shared/lib/format';
 
 import type { CaseDetail, TimelineEntry } from '../api/types';
@@ -20,7 +21,7 @@ function Entry({ e, last }: { e: TimelineEntry; last: boolean }) {
         {', '}
         <Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>{actorName(e.actor)}</Box>
       </Typography>
-      <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{e.text}</Typography>
+      <TimelineText e={e} />
     </Box>
   );
 }

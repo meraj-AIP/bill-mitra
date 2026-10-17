@@ -25,6 +25,20 @@ function Flags({ c }: { c: ComplaintRow }) {
   );
 }
 
+/** Who holds it and whether the consumer owes an answer, under the ticket so they show first on a phone. */
+function HolderChips({ c }: { c: ComplaintRow }) {
+  if (!c.assignee_name && c.waiting_on !== 'consumer') return null;
+  return (
+    <Stack sx={{ gap: 0.5, mt: 0.5, alignItems: 'flex-start' }}>
+      {c.assignee_name && (
+        <Chip size="small" variant="outlined" label={`With ${c.assignee_name}`} title={`With ${c.assignee_name}`}
+          sx={{ maxWidth: 160, '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' } }} />
+      )}
+      {c.waiting_on === 'consumer' && <Chip size="small" color="info" label="Waiting on consumer" />}
+    </Stack>
+  );
+}
+
 /** Type, priority, source and place: the columns the complaints contract added. */
 function DetailCells({ c }: { c: ComplaintRow }) {
   return (
@@ -103,6 +117,7 @@ export function ComplaintsTable({ rows, loadingRows, dimmed = false, selection }
                 </MuiLink>
                 <Typography variant="caption" component="p" sx={{ color: 'text.secondary' }}>{dateTime(c.created_at)}</Typography>
                 {c.demo && <DemoChip />}
+                <HolderChips c={c} />
               </TableCell>
               <TableCell><Flags c={c} /></TableCell>
               <DetailCells c={c} />

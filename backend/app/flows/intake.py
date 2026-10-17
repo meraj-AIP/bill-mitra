@@ -58,6 +58,19 @@ def _ownership(bill: ExtractedBill | None, service_number: str | None) -> str:
     return "unverified" if service_number else "not_needed"
 
 
+def open_duplicate(user_id: str, type_code: str, service_number: str | None, *, number_asked: bool = True) -> str | None:
+    """An open complaint of this type the consumer already has, for the same service number when it is known. Before
+    the number is asked, an unknown number matches only a complaint that has none."""
+    return complaints.open_of_type(user_id, type_code, service_hash(service_number) if service_number else None,
+                                   unknown_is_any=number_asked)
+
+
+def add_to_open(ticket: str, words: str, source: str) -> None:
+    """A repeat of an open complaint joins its thread instead of opening a second ticket."""
+    complaints.add_message(ticket, "consumer", None, words, "stored")
+    accounts.audit(None, "complaint.merge", ticket, f"source {source}")
+
+
 def bill_request(ticket: str, language: str) -> str:
     return request_text("bill_photo", language, ticket)
 

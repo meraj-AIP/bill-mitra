@@ -24,6 +24,9 @@ export interface MyMessage {
   from: 'you' | 'bill_mitra';
   body: string;
   at: string;
+  /** A photo in the message, served to its owner only. Older servers leave it out. */
+  media_url?: string | null;
+  media_type?: string | null;
 }
 
 export interface MyComplaintDetail extends MyComplaintRow {

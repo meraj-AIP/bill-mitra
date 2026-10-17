@@ -5,22 +5,25 @@ from dataclasses import asdict
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, model_validator
 
-from app.api.complaints import ComplaintDetail, Replier, Viewer, _change_status, _detail, _for_staff, assignable
+from app.api.complaints import ComplaintDetail, Replier, Viewer, _change_status, _detail, _for_staff, visible_to
 from app.api.deps import require_perm
 from app.domain import complaint_options
-from app.domain.complaint_reply import AskKind, Triage
+from app.domain.complaint_reply import AskKind, RequestKind, Triage
 from app.flows import complaint as complaint_flow
 from app.services import notify
-from app.store import accounts
+from app.store import accounts, handoffs, media
 from app.store import complaints as store
 from app.store import review as review_store
 from app.store.accounts import Account
-from app.store.complaints import OPEN_STATUSES, Placement, Status
+from app.store.complaints import OPEN_STATUSES, Status
 
 router = APIRouter(prefix="/api/console/complaints", tags=["complaints"])
 BULK_MAX = 25
+# A reading check's files also open for case reviewers (billing approvers hold cases.view, not complaints.view).
+MediaViewer = Annotated[Account, Depends(require_perm("complaints.view", "cases.view"))]
 
 
 class ReplyOption(BaseModel):
@@ -54,14 +57,16 @@ class Draft(BaseModel):
 
 
 class InfoRequest(BaseModel):
-    kind: AskKind
+    kind: RequestKind
+    note: str | None = Field(default=None, min_length=3, max_length=300)  # the question itself, for kind "note"
 
-
-class AssignBody(BaseModel):
-    account_id: str = Field(max_length=40)
-
-
-Assigner = Annotated[Account, Depends(require_perm("complaints.assign"))]
+    @model_validator(mode="after")
+    def _note_for_a_question(self) -> "InfoRequest":
+        if (self.kind == "note") != bool(self.note and self.note.strip()):
+            raise ValueError("A note request carries its question; other kinds carry none.")
+        if self.note and complaint_options.STAFF_WORDS.search(self.note):
+            raise ValueError("The consumer is never told who handles their complaint.")
+        return self
 
 
 class BulkAction(BaseModel):
@@ -105,31 +110,26 @@ async def request_info(ticket: str, body: InfoRequest, account: Replier) -> Comp
     complaint = _for_staff(account, ticket)
     if complaint.status not in OPEN_STATUSES:
         raise HTTPException(409, "This complaint is closed. Reopen it before asking the consumer for more.")
-    if body.kind not in complaint_options.allowed_asks(complaint_flow.options_context(complaint)):
+    if body.kind != "note" and \
+            body.kind not in complaint_options.allowed_asks(complaint_flow.options_context(complaint)):
         raise HTTPException(422, "That request does not fit this complaint.")
-    outcome = await complaint_flow.ask(complaint, body.kind, account.id)
-    review_store.add_request(ticket, body.kind, None, account.id)
+    outcome = await complaint_flow.ask(complaint, body.kind, account.id, body.note)
+    review_store.add_request(ticket, body.kind, body.note, account.id)
     accounts.audit(account.id, "complaint.request", ticket, f"{body.kind}, delivery {outcome.delivery}")
     return _detail(complaint, account)
 
 
-@router.post("/{ticket}/assign", response_model=ComplaintDetail)
-async def assign(ticket: str, body: AssignBody, account: Assigner) -> ComplaintDetail:
-    """General complaints only; a reading check is assigned from its review case, where deciders are listed."""
-    complaint = _for_staff(account, ticket)
-    if complaint.kind != "general":
-        raise HTTPException(409, "Assign a reading check from its review case.")
-    if complaint.status not in OPEN_STATUSES:
-        raise HTTPException(409, "This complaint is closed.")
-    chosen = next((p for p in assignable(complaint) if p.id == body.account_id), None)
-    if chosen is None:
-        raise HTTPException(400, "Choose someone in this area who can see complaints.")
-    store.place(ticket, Placement(section_id=complaint.section_id, unit_id=complaint.unit_id,
-                                  assigned_to=chosen.id))
-    accounts.audit(account.id, "complaint.assign", ticket, f"to {chosen.name}", unit_id=complaint.unit_id)
-    updated = store.get(ticket)
-    assert updated is not None
-    return _detail(updated, account)
+@router.get("/{ticket}/media/{media_id}")
+async def ticket_media(ticket: str, media_id: str, account: MediaViewer) -> FileResponse:
+    """A photo or bill on this complaint, for staff who can see it. Anything else is a 404, never a 403."""
+    complaint = store.get(ticket)
+    path = media.path_for(media_id)
+    allowed = ("complaints.view", "cases.view") if complaint and complaint.kind == "wrong_reading" \
+        else ("complaints.view",)
+    if complaint is None or path is None or not account.can(*allowed) or not visible_to(account, complaint) \
+            or not handoffs.on_ticket(ticket, media_id):
+        raise HTTPException(404, "Not found")
+    return FileResponse(path, media_type=media.mime_for(media_id), headers={"Cache-Control": "private, max-age=3600"})
 
 
 @router.post("/{ticket}/messages/{message_id}/retry", response_model=ComplaintDetail)

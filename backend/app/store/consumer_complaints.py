@@ -9,7 +9,12 @@ from app.store.db import tx
 _WAITING = ("(c.status IN ('Open', 'In progress') AND (EXISTS (SELECT 1 FROM case_requests r WHERE r.ticket = c.ticket "
             "AND r.status = 'open') OR EXISTS (SELECT 1 FROM users u WHERE u.user_id = c.user_id "
             "AND u.awaiting = 'info:' || c.ticket)))")
-_STATE = (f"CASE WHEN {_WAITING} THEN 'waiting_for_you' WHEN c.status = 'Open' THEN 'received' "
+# Staff have acted (replied, asked something, handed it on): an Open complaint is under way for the consumer, so their
+# progress never steps back to "received" after they answer a request.
+_ACTED = ("(c.handed_by IS NOT NULL OR EXISTS (SELECT 1 FROM complaint_messages m WHERE m.ticket = c.ticket "
+          "AND m.author_kind = 'officer') OR EXISTS (SELECT 1 FROM case_requests r WHERE r.ticket = c.ticket))")
+_STATE = (f"CASE WHEN {_WAITING} THEN 'waiting_for_you' WHEN c.status = 'Open' AND {_ACTED} THEN 'in_progress' "
+          "WHEN c.status = 'Open' THEN 'received' "
           "WHEN c.status = 'In progress' THEN 'in_progress' WHEN c.status = 'Resolved' THEN 'resolved' ELSE 'closed' END")
 # Older complaints have no description: the consumer's first message stands in for it.
 _SELECT = (f"SELECT c.ticket, c.type, {_STATE} AS state, c.created_at, COALESCE(c.updated_at, c.created_at) AS updated_at, "
@@ -37,6 +42,7 @@ def one(user_id: str, ticket: str) -> dict[str, Any] | None:
         found = conn.execute(f"{_SELECT} WHERE c.ticket = ? AND c.user_id = ?", (ticket, user_id)).fetchone()
         if found is None:
             return None
-        thread = conn.execute("SELECT author_kind, body, created_at FROM complaint_messages WHERE ticket = ? "
-                              "ORDER BY id LIMIT 500", (ticket,)).fetchall()
+        thread = conn.execute("SELECT author_kind, body, created_at, CASE WHEN author_kind = 'consumer' THEN media_id "
+                              "END AS media_id FROM complaint_messages WHERE ticket = ? ORDER BY id LIMIT 500",
+                              (ticket,)).fetchall()
     return {**dict(found), "messages": [dict(m) for m in thread]}

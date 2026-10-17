@@ -13,11 +13,13 @@ from app.api import (
     access,
     admin,
     alerts,
+    assist,
     auth,
     bills,
     bills_by_usc,
     catalog,
     complaint_actions,
+    complaint_handoff,
     complaint_raise,
     complaints,
     console,
@@ -65,9 +67,9 @@ app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in settings.co
 app.middleware("http")(security.protect)
 
 for router in (auth.router, privacy.router, admin.router, alerts.router, access.router, catalog.router, bills.router,
-               bills_by_usc.router, complaints.router, complaint_actions.router, complaint_raise.router,
-               consumer_complaints.router, console.router, review.router, review_decisions.router, web.router,
-               whatsapp.router):
+               bills_by_usc.router, complaints.router, complaint_actions.router, complaint_handoff.router,
+               complaint_raise.router, assist.router, consumer_complaints.router, console.router, review.router,
+               review_decisions.router, web.router, whatsapp.router):
     app.include_router(router)
 
 

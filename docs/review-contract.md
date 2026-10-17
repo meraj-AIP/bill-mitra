@@ -133,7 +133,7 @@ interface CaseDetail extends CaseRow {
   audit_lines: AuditLine[]; spike: Spike;
   history: { month: string; units: number; amount: number; source: 'printed'|'uploaded'|'this_bill' }[];
   messages: ComplaintMessage[];         // the thread, as in api-contract
-  requests: { id: number; kind: 'earlier_bills'|'meter_photo'|'note'; note: string | null; status: 'open'|'answered'; created_at: string }[];
+  requests: ComplaintRequest[];         // as in api-contract: with answered_at and the answering message
   decisions: Decision[];                // newest first
   policy: Policy;
   can: { decide: boolean; approve: boolean; mark_applied: boolean; request_info: boolean; reassign: boolean; unmask: boolean };

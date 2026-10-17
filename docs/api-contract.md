@@ -9,6 +9,7 @@ The detailed rules for roles, units, review policy and bill review (decision mat
 - Access is decided by permissions, never by role names. A role is a named set of permissions from the catalogue in `backend/app/domain/rbac.py`.
 - Built-in roles: `admin`, `officer`, `section_ae`, `billing_approver`, `auditor`, `call_centre`, `consumer`. An admin can add custom roles.
 - `complaints.create` (log a complaint for a consumer) is held by `call_centre`, `officer` and `section_ae`. `admin`, `auditor` and `billing_approver` do not hold it by default.
+- `complaints.assign` (hand a complaint over) is held by `admin`, `officer`, `call_centre` and `section_ae`. Existing databases grant it to `call_centre` and `section_ae` once, when the hand-off columns first appear.
 - Every staff account has one role and one or more scopes (unit ids). A scope covers that unit and everything below it. Consumers have the `consumer` role and no scopes.
 - Every staff route runs `require_perm(...)` and then a scope check. Something outside the caller's scope is a 404, not a 403, so its existence does not leak.
 - Permissions are read from the role on every request, so a role change applies at once.
@@ -195,11 +196,15 @@ interface ComplaintRow {
   ownership: 'verified' | 'unverified' | 'not_needed' | null;
   demo: boolean;               // development demo row
   section: string | null;      // matched section name, null in a DISCOM or division queue
+  waiting_on: 'staff' | 'consumer' | 'none';   // consumer: a request or the chat waits for their answer; none: closed
+  assignee_name: string | null;   // who holds it
 }
 // overdue: open and past due_at; rows without due_at fall back to COMPLAINT_REPLY_DAYS.
 interface ComplaintMessage {
   id: number; author_kind: 'consumer' | 'officer' | 'system'; author_name: string | null;
-  body: string; created_at: string; media_url: string | null;
+  body: string; created_at: string;
+  media_url: string | null;    // /api/console/complaints/{ticket}/media/{id}: staff in scope only
+  media_type: string | null;   // e.g. image/jpeg, application/pdf
   delivery: 'sent' | 'failed' | 'stored';   // sent on WhatsApp / could not be sent / shown in the web app
   delivery_note: string | null;             // plain reason when failed, e.g. WhatsApp not connected
 }
@@ -208,29 +213,70 @@ interface ComplaintDetail extends ComplaintRow {
           bill_amount: number | null; service_masked: string | null; discom: string } | null;
   audit_lines: { code: string; label: string; printed: number | null; expected: number | null;
                  difference: number | null; status: string }[];
-  media_url: string | null;   // the bill photo or PDF
+  media_url: string | null;   // the bill photo or PDF, on the same scoped media route
   messages: ComplaintMessage[];
   reply_channel: 'whatsapp' | 'web';
   whatsapp_ready: boolean;    // false when the WhatsApp channel is not configured
   description: string | null; // the raiser's own words
-  assignee: { id: string; name: string } | null;
-  assignable: { id: string; name: string }[];   // in-scope staff with complaints.view, max 50; [] unless the viewer holds complaints.assign
+  assignee: { id: string; name: string } | null;   // who it is "with"
+  handoff: { by: { id: string; name: string } | null;   // null when it was routed to the section AE automatically
+             note: string | null; at: string | null } | null;   // null while nobody holds it
+  assignable: { id: string; name: string }[];   // whom this viewer may hand it to now (rules below); [] otherwise
+  can_return: boolean;          // the viewer holds it and may send it back to whoever handed it over
+  requests: ComplaintRequest[]; // newest first
   timeline: { at: string; actor: { kind: 'consumer' | 'system' | 'staff'; name: string | null }; text: string }[];   // oldest first
 }
 ```
 
+```ts
+interface ComplaintRequest {   // the same shape on review cases
+  id: number; kind: 'meter_photo' | 'bill_photo' | 'details' | 'earlier_bills' | 'payment_proof' | 'note';
+  note: string | null; status: 'open' | 'answered'; created_at: string; answered_at: string | null;
+  answer: { message_id: number; media_url: string | null; media_type: string | null;
+            body: string | null;   // null for a photo sent without words
+            at: string } | null;   // null while open, or when it lapsed with no reply
+}
+interface ComplaintAssist {
+  summary: string;                          // 2 to 3 English lines for staff
+  missing: string[];                        // what we still do not know, max 4
+  questions: { text: string; why: string }[];   // max 3, text in the consumer's language, send as a "note" request
+  next_action: { kind: 'reply_option' | 'request' | 'status' | 'assign'; key: string; why: string;
+                 account_id: string | null } | null;   // assign only: the section's AE when the viewer may hand to them
+  worded_by: 'ai' | 'rules';
+}
+```
+
+`next_action.key` is always on offer right now: a reply option key or a request kind from `/options`, a status other
+than the current one (`In progress`, `Resolved`, `Rejected`, open complaints only) or `hand_over` (only when the
+viewer has someone to hand to). Anything else the model picks is replaced by the rules' pick (the first reply option).
+Every model line holding a number the facts do not hold is dropped, as is a question naming staff; a summary that fails
+gives the whole rules answer. Without a model the rules give the same shape.
+
+Hand-off rules (permissions, never role names): a holder of `accounts.manage` (admin) may hand to anyone in scope who
+can see complaints; a holder of `cases.decide` (the section AE) to another decider or back to desk staff
+(`complaints.assign`); other desk staff (officer, call centre) to a decider. Nobody hands to themselves or to the
+current holder. A complaint raised in a section goes to that section's AE (an active account scoped on exactly that
+section that can see complaints and decide cases, the least busy first); unplaced ones wait in the DISCOM queue.
+Routing, each hand-off and each send back write the timeline (`Routed to <name>`, `Handed to <name>: <note>`, `Sent back
+to <name>: <note>`) and raise `complaint_assigned` for the new holder. A consumer message raises `consumer_replied` for
+the holder (or, unheld, for its unit with `complaints.reply`), once until staff write again. A consumer message never
+reaches a closed complaint.
+
 | Method and path | Permission | Body / query | Returns |
 | --- | --- | --- | --- |
-| `GET /api/console/complaints` | `complaints.view` | `page, page_size, status?, discom?, q?` (ticket), `sort=priority, newest or oldest`, `triage?`, `failed?`, `kind?`, `type?`, `priority?`, `source?` (422 for an unknown value) | `Page<ComplaintRow>` in scope. `priority` sort: open, overdue, then urgent types first |
+| `GET /api/console/complaints` | `complaints.view` | `page, page_size, status?, discom?, q?` (ticket), `sort=priority, newest or oldest`, `triage?`, `failed?`, `kind?`, `type?`, `priority?`, `source?`, `with_me?` (held by the caller), `waiting_on_me?` (held by the caller and `waiting_on` staff) (422 for an unknown value) | `Page<ComplaintRow>` in scope. `priority` sort: open, overdue, then urgent types first |
 | `POST /api/console/complaints` | `complaints.create` | `{ type, discom, section_id?, service_number? (5..16 digits), contact_mobile? (10 digit Indian mobile), description (3..1000), source: call_centre, office or field, bill_id? }` | 201 `ComplaintDetail`. 403 when the section (or, with no section, the DISCOM queue) is outside the raiser's scope, 422 for a section of another DISCOM. The mobile becomes the WhatsApp reply-to and is never returned. A `bill_id` is linked only when it belongs to that mobile's own WhatsApp account. Audited `complaint.create` with type and source only |
-| `POST /api/console/complaints/{ticket}/assign` | `complaints.assign` | `{ account_id }` | `ComplaintDetail`. General complaints only (409 for a reading check, which is assigned from its case, and when closed); 400 when the account is not in `assignable`. Audited `complaint.assign` |
+| `POST /api/console/complaints/{ticket}/assign` | `complaints.assign` | `{ account_id, note (10..300) }` | `ComplaintDetail`. General complaints only (409 for a reading check, which is moved from its case, when closed, or when it changed hands meanwhile); 400 when the account is not in `assignable`; 422 without a note. Audited `complaint.handoff` with the name and note |
+| `POST /api/console/complaints/{ticket}/return` | `complaints.reply` | `{ note (10..300) }` | `ComplaintDetail`. Back to whoever handed it over. 409 unless the caller holds a handed over complaint, or when that person can no longer see it. Audited `complaint.return` |
+| `POST /api/console/complaints/{ticket}/assist` | `complaints.reply` | | `ComplaintAssist`, on a button press only. Audited `assist.complaint` with `worded by ai or rules`, no text |
+| `GET /api/console/complaints/{ticket}/media/{media_id}` | `complaints.view` (or `cases.view` on a reading check) | | The file, for a photo or bill on this complaint (a message, its bill, a bill attached to the case). 404 outside scope or for any other file |
 | `GET /api/console/complaints.csv` | `complaints.view` | `status?, discom?, q?, sort=newest or oldest, kind?, type?, priority?, source?` | CSV download, columns ticket, created_at, updated_at, status, discom, bill_month, service_masked, issue, amount, channel, days_open. Audited |
 | `GET /api/console/complaints/{ticket}` | `complaints.view` | | `ComplaintDetail`, 404 outside scope |
 | `GET /api/console/complaints/{ticket}/options` | `complaints.view` | | `{ triage, options: [{ key, label, text, why, asks }], requests: [{ kind, label, text, why }] }`. Two to four replies chosen by type, status, bill check and thread state (`app/domain/complaint_options.py`); rules only, no model call. Figures only in bill options, from the engine |
 | `POST /api/console/complaints/{ticket}/draft` | `complaints.reply` | `{ option_key }` | `{ text, worded_by: 'ai' or 'rules' }`. The option reworded by the model on request; any figure not in the option, any staff word, or no model gives the template. 404 for an option not offered |
 | `POST /api/console/complaints/{ticket}/reply` | `complaints.reply` | `{ body (1..1000 chars), status?, asks? }` | `ComplaintDetail`. Sends to the consumer on their channel and records delivery. `asks` (a request kind, from an option) files their next answer under the complaint |
 | `POST /api/console/complaints/{ticket}/status` | `complaints.reply` | `{ status }` | `ComplaintDetail`; the consumer gets a short status message |
-| `POST /api/console/complaints/{ticket}/request` | `complaints.reply` | `{ kind: meter_photo, bill_photo, details, earlier_bills or payment_proof }` | `ComplaintDetail`; 409 when closed, 422 when the kind does not fit the complaint type |
+| `POST /api/console/complaints/{ticket}/request` | `complaints.reply` | `{ kind: meter_photo, bill_photo, details, earlier_bills, payment_proof or note, note? (3..300, required for note and only for note) }` | `ComplaintDetail`; 409 when closed, 422 when the kind does not fit the complaint type or the note names staff. A note request sends the question under the details line |
 | `POST /api/console/complaints/{ticket}/messages/{id}/retry` | `complaints.reply` | | `ComplaintDetail`; resends a failed message |
 | `POST /api/console/complaints/bulk` | `complaints.reply` | `{ tickets (1..25), status?, send_explanation? }` | `{ done: string[], skipped: { ticket, reason }[] }` |
 
@@ -241,7 +287,9 @@ interface ComplaintDetail extends ComplaintRow {
 | `POST /api/complaints` | `self.bills` | `{ type, discom, service_number?, bill_id?, description (3..1000) }`, `language?` | 201 `ConsumerComplaintDetail`. `bill_id` must be the caller's own (404). `wrong_reading` with a bill opens the review case (409 if one is open); without a bill it asks for the bill photo at once |
 | `GET /api/complaints` | `self.bills` | `page, page_size (5..50), language?, status?` (one of the neutral codes) | `Page<ConsumerComplaint>`, own only, newest first |
 | `GET /api/complaints/{ticket}` | `self.bills` | `language?` | `ConsumerComplaintDetail`, 404 unless it is the caller's |
-| `POST /api/complaints/{ticket}/reply` | `self.bills` | `{ body (3..1000) }`, `language?` | `ConsumerComplaintDetail`. 409 unless the complaint is `waiting_for_you` |
+| `POST /api/complaints/{ticket}/reply` | `self.bills` | `{ body (3..1000) }`, `language?` | `ConsumerComplaintDetail`. 409 unless the complaint is `waiting_for_you`. Answers every open request |
+| `POST /api/complaints/{ticket}/photo` | `self.bills` | multipart `file` (JPG, PNG, WEBP, HEIC or PDF, under `MAX_UPLOAD_MB`, type read from the bytes), `caption?` (form, up to 1000), `language?` | `ConsumerComplaintDetail`. 409 unless `waiting_for_you`, 413 too large, 415 wrong type. Stored as their message, answers every open request |
+| `GET /api/complaints/{ticket}/media/{media_id}` | `self.bills` | | The file, only for a photo the caller sent on their own complaint; 404 otherwise |
 
 ```ts
 interface ConsumerComplaint { ticket: string; type: TypeCode | null; type_label: string;
@@ -249,7 +297,8 @@ interface ConsumerComplaint { ticket: string; type: TypeCode | null; type_label:
   created_at: string; updated_at: string; description: string | null;
   service_masked: string | null; bill_month: string | null }
 interface ConsumerComplaintDetail extends ConsumerComplaint {
-  messages: { from: 'you' | 'bill_mitra'; body: string; at: string }[] }   // staff and system messages show as Bill Mitra
+  messages: { from: 'you' | 'bill_mitra'; body: string; at: string;   // staff and system messages show as Bill Mitra
+              media_url: string | null; media_type: string | null }[] }   // only on their own photos
 ```
 
 No staff name, assignee or role ever appears in the consumer view.
@@ -260,18 +309,37 @@ WhatsApp only allows free text within 24 hours of the consumer's last message. O
 
 Shapes (`CaseRow`, `CaseDetail`, `Decision`, `EvidencePack`, `TimelineEntry`) and decision rules are in [review-contract.md](review-contract.md), sections 5, 6 and 8.
 
+```ts
+interface CaseAssist {
+  summary: string;
+  conflicts: string[];   // always the rules': spike, misread signal, estimated reading, charges above tariff
+  questions: { text: string; why: string }[];   // send as a request of kind "note"
+  suggested: 'draft' | 'ask_consumer' | 'decide';   // "draft" only when the rules have a drafted decision
+  why: string;           // one English line on why that step; a model line with an unknown figure gives the rules' line
+  worded_by: 'ai' | 'rules';
+}
+```
+
+Every alert item carries `href`: `/review/{ticket}` for a case, `/console/complaints/{ticket}` for any other complaint,
+null when the alert has no ticket (a digest, a section pattern).
+
+Alerts on cases: `case_assigned` to the decider a case is routed or reassigned to, `consumer_replied` to its holder
+(or, unheld, its unit with `cases.decide`) once per staff turn, `decision_returned` to the proposer when an approver
+rejects their decision.
+
 | Method and path | Permission | Body / query | Returns |
 | --- | --- | --- | --- |
 | `GET /api/review/cases` | `cases.view` | `page, page_size, state?, mine?, overdue?, section_id?, q?` (ticket), `sort=oldest or newest` | `Page<CaseRow>` plus `counts` per state, in scope |
 | `GET /api/review/sections` | `cases.view` | | `{ id, name }[]` sections holding cases the caller can see |
-| `GET /api/review/cases/{ticket}` | `cases.view` | | `CaseDetail` with `evidence_pack`, `timeline`, `can` and `assignable`. 404 outside scope |
+| `GET /api/review/cases/{ticket}` | `cases.view` | | `CaseDetail` with `evidence_pack`, `timeline`, `can` and `assignable`. 404 outside scope. `messages` carry `media_url` and `media_type`, `requests` are `ComplaintRequest` (with `answer`), attached bills carry `media_type`; every file is on the scoped complaint media route |
+| `POST /api/review/cases/{ticket}/assist` | `cases.view` | | `CaseAssist`, on a button press only. 409 when the bill was erased. Audited `assist.case`, no text |
 | `POST /api/review/cases/{ticket}/unmask` | `consumer.unmask` | | `{ service_number }`, open case only, audited every time |
-| `POST /api/review/cases/{ticket}/assign` | `cases.reassign` | `{ account_id }` | `CaseDetail`; the account must be able to decide in that section |
+| `POST /api/review/cases/{ticket}/assign` | `cases.reassign` | `{ account_id }` | `CaseDetail`; the account must be able to decide in that section. Raises `case_assigned` for them |
 | `POST /api/review/cases/{ticket}/request` | `cases.request_info` | `{ kind: earlier_bills, meter_photo or note, note? }` | `CaseDetail`; the consumer is messaged on their channel |
 | `POST /api/review/cases/{ticket}/preview` | `cases.decide` | `{ corrected_present_reading }` | `{ corrected_units, revised_amount, reduction, needs_approval }` from the engine, nothing saved |
 | `POST /api/review/cases/{ticket}/decisions` | `cases.decide` | `{ kind: correct, corrected_reading or custom, corrected_present_reading?, reduction?, reason_code, note (20+ chars), evidence: { kind, id }[] (1..20) }` | `CaseDetail`. 409 when the case is not waiting for a decision |
 | `POST /api/review/decisions/{id}/approve` | `cases.approve` | `{ note? }` | `CaseDetail`. 403 on your own decision |
-| `POST /api/review/decisions/{id}/reject` | `cases.approve` | `{ note }` | `CaseDetail`. 403 on your own decision (withdraw it instead) |
+| `POST /api/review/decisions/{id}/reject` | `cases.approve` | `{ note }` | `CaseDetail`. 403 on your own decision (withdraw it instead). Raises `decision_returned` for the proposer |
 | `POST /api/review/decisions/{id}/withdraw` | proposer with `cases.decide`, or `cases.approve` | | `CaseDetail`. 409 once applied. The consumer is told if a revision had been announced |
 | `POST /api/review/decisions/{id}/applied` | `cases.mark_applied` | `{ billing_ref }` | `CaseDetail`, case Resolved, consumer told. 403 on your own decision |
 | `GET /api/review/revisions.csv` | `cases.export` | `from?, to?` (YYYY-MM-DD), `ero_id?` | CSV of revisions in scope. Audited |

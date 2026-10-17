@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from app.domain import complaint_types
 from app.domain.bill import ExtractedBill
-from app.store import policy
+from app.store import handoffs, policy
 from app.store.db import tx
 from app.store.units import Conflict, covered_sql, norm
 
@@ -97,6 +97,10 @@ _TRIAGE_RANK = f"CASE {_TRIAGE} WHEN 'overcharge' THEN 0 WHEN 'needs_check' THEN
 _FAILED = ("(SELECT m.delivery FROM complaint_messages m WHERE m.ticket = c.ticket AND m.author_kind != 'consumer' "
            "ORDER BY m.id DESC LIMIT 1) = 'failed'")
 _OPEN = "c.status IN ('Open', 'In progress')"
+# Whose move it is: the consumer's while a request or the chat waits for their answer, staff's while it is open.
+WAITING_ON = ("CASE WHEN c.status NOT IN ('Open', 'In progress') THEN 'none' WHEN EXISTS (SELECT 1 FROM case_requests "
+              "r WHERE r.ticket = c.ticket AND r.status = 'open') OR EXISTS (SELECT 1 FROM users u WHERE "
+              "u.user_id = c.user_id AND u.awaiting = 'info:' || c.ticket) THEN 'consumer' ELSE 'staff' END")
 _PRIORITY_RANK = "CASE c.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'low' THEN 3 ELSE 2 END"
 # What one staff account may see: complaints whose unit or matched section is in its tree, anything assigned to it,
 # and complaints from before units existed that only carry a DISCOM. Takes the account id VISIBLE_PARAMS times.
@@ -110,6 +114,8 @@ _ROW = ("SELECT c.ticket, c.created_at, c.updated_at, c.status, c.service_masked
         "(SELECT r.name FROM accounts r WHERE r.id = c.raised_by) AS raised_by, "
         "(SELECT u.name FROM units u WHERE u.id = c.section_id) AS section, "
         "(SELECT p.name FROM accounts p WHERE p.id = c.assigned_to) AS assignee_name, "
+        f"{WAITING_ON} AS waiting_on, c.handed_by, c.handoff_note, c.handed_at, "
+        "(SELECT h.name FROM accounts h WHERE h.id = c.handed_by) AS handed_by_name, "
         "CAST(julianday('now') - julianday(c.created_at) AS INTEGER) AS days_open, "
         "(SELECT COUNT(*) FROM complaint_messages m WHERE m.ticket = c.ticket) AS messages_count, "
         "(SELECT MAX(m.created_at) FROM complaint_messages m WHERE m.ticket = c.ticket) AS last_message_at "
@@ -163,7 +169,10 @@ def create(user_id: str, bill_id: str | None, bill: ExtractedBill, issue: str, a
                 f"SELECT 1 FROM complaints WHERE bill_id = ? AND kind = ? AND status IN ({_MARKS})",
                 (bill_id, kind, *OPEN_STATUSES)).fetchone():
             raise Conflict("A check is already open for this bill.")
-        return _insert(conn, values, intake, first_message)
+        ticket = _insert(conn, values, intake, first_message)
+    if where.assigned_to:
+        handoffs.routed(ticket, kind, where.assigned_to, where.unit_id)
+    return ticket
 
 
 class General(BaseModel):
@@ -189,7 +198,10 @@ def create_general(complaint: General, placement: Placement, intake: Intake, fir
     if created_at:
         values |= {"created_at": created_at, "updated_at": created_at}
     with tx() as conn:
-        return _insert(conn, values, intake, first_message, author_kind, author_id)
+        ticket = _insert(conn, values, intake, first_message, author_kind, author_id)
+    if placement.assigned_to:
+        handoffs.routed(ticket, "general", placement.assigned_to, placement.unit_id)
+    return ticket
 
 
 def place(ticket: str, placement: Placement) -> None:
@@ -223,12 +235,28 @@ def latest_for_bill(user_id: str, bill_id: str, kind: Kind) -> str | None:
     return row[0] if row else None
 
 
+def open_of_type(user_id: str, type_code: str, service_number_hash: str | None, *, unknown_is_any: bool = True) -> str | None:
+    """The newest open general complaint of this type from this consumer. With a service number, only one for the
+    same number or for none, so two connections of one consumer do not merge. Without one, any of them, or with
+    `unknown_is_any` False only one that has no number either."""
+    number = (" AND (service_number_hash = ? OR service_number_hash IS NULL)" if service_number_hash else
+              "" if unknown_is_any else " AND service_number_hash IS NULL")
+    sql = (f"SELECT ticket FROM complaints WHERE user_id = ? AND kind = 'general' AND type = ? AND status IN ({_MARKS})"
+           + number)
+    params = (user_id, type_code, *OPEN_STATUSES, *((service_number_hash,) if service_number_hash else ()))
+    with tx() as conn:
+        row = conn.execute(sql + " ORDER BY created_at DESC, rowid DESC LIMIT 1", params).fetchone()
+    return row[0] if row else None
+
+
 class Filters(BaseModel):
     """The inbox filters on the new intake columns."""
 
     type: str | None = None
     priority: str | None = None
     source: str | None = None
+    holder: str | None = None  # an account id: only complaints it holds
+    waiting_on: str | None = None
 
 
 def _filter(status: str | None, discom: str | None, q: str | None, owner: str | None,
@@ -241,7 +269,8 @@ def _filter(status: str | None, discom: str | None, q: str | None, owner: str | 
         where.append(f"{_OPEN} AND {_FAILED}")
     for column, value in (("c.status", status), ("c.discom", discom), ("c.user_id", owner), (_TRIAGE, triage),
                           ("c.kind", kind), ("c.type", extra.type), ("c.priority", extra.priority),
-                          ("c.source", extra.source)):
+                          ("c.source", extra.source), ("c.assigned_to", extra.holder),
+                          (f"({WAITING_ON})", extra.waiting_on)):
         if value:
             where.append(f"{column} = ?")
             params.append(value)
@@ -310,12 +339,19 @@ def get(ticket: str) -> Complaint | None:
 
 
 def add_message(ticket: str, author_kind: AuthorKind, author_id: str | None, body: str, delivery: Delivery,
-                delivery_note: str | None = None, media_id: str | None = None) -> None:
+                delivery_note: str | None = None, media_id: str | None = None) -> int | None:
+    """The new message id. A consumer message only reaches an open complaint (None otherwise) and tells its holder."""
     with tx() as conn:
-        conn.execute("INSERT INTO complaint_messages (ticket, author_kind, author_id, body, delivery, delivery_note, "
-                     "media_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                     (ticket, author_kind, author_id, body, delivery, delivery_note, media_id))
+        if author_kind == "consumer" and not conn.execute(
+                f"SELECT 1 FROM complaints c WHERE c.ticket = ? AND {_OPEN}", (ticket,)).fetchone():
+            return None
+        cursor = conn.execute("INSERT INTO complaint_messages (ticket, author_kind, author_id, body, delivery, "
+                              "delivery_note, media_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                              (ticket, author_kind, author_id, body, delivery, delivery_note, media_id))
         conn.execute("UPDATE complaints SET updated_at = CURRENT_TIMESTAMP WHERE ticket = ?", (ticket,))
+    if author_kind == "consumer":
+        handoffs.consumer_replied(ticket, bool(media_id))
+    return cursor.lastrowid
 
 
 def message(ticket: str, message_id: int) -> dict[str, Any] | None:

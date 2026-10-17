@@ -1,4 +1,4 @@
-import type { ComplaintMessage } from '@/features/complaints';
+import type { ComplaintMessage, RequestAnswer } from '@/features/complaints';
 import type { AuditLine, Bill } from '@/features/dashboard';
 import type { Discom, Page } from '@/shared/api/types';
 
@@ -79,10 +79,14 @@ export interface Decision {
 
 export interface InfoRequest {
   id: number;
-  kind: RequestKind;
+  /** The server may list complaint kinds too, such as bill_photo, so any string is read. */
+  kind: string;
   note: string | null;
   status: 'open' | 'answered';
   created_at: string;
+  answered_at?: string | null;
+  /** What came back. Older servers leave it out. */
+  answer?: RequestAnswer | null;
 }
 
 export interface CaseDetail extends CaseRow {
@@ -126,7 +130,7 @@ export interface EvidencePack {
   attached_bills: AttachedBill[];
 }
 
-export interface TimelineEntry { at: string; actor: { kind: 'consumer' | 'system' | 'staff'; name: string | null }; text: string }
+export interface TimelineEntry { at: string; actor: { kind: 'consumer' | 'system' | 'staff'; name: string | null }; text: string; note?: string | null }
 
 export type ReportState = 'received' | 'waiting_for_you' | 'revised' | 'no_change';
 

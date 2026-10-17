@@ -8,6 +8,8 @@ import { COMPLAINT_STATUSES, ReplyBox, type ComplaintDetail, type ComplaintStatu
 
 import { useDraftOption, useReplyOptions } from '../api/actionsApi';
 import { useReply } from '../api/consoleApi';
+import { usePreset } from '../hooks/usePreset';
+import type { Focus } from '../model/focus';
 import { OptionCards } from './OptionCards';
 
 function Destination({ complaint }: { complaint: ComplaintDetail }) {
@@ -26,7 +28,11 @@ function Destination({ complaint }: { complaint: ComplaintDetail }) {
       <Typography variant="body2">
         {whatsapp
           ? 'Your reply goes to the consumer on WhatsApp. Outside 24 hours of their last message it is sent as the approved template.'
-          : 'This complaint came from the web chat preview. Your reply is saved here only; the consumer does not receive it.'}
+          : complaint.source === 'consumer_web'
+            ? 'Your reply shows on the consumer\'s complaint page in the Bill Mitra app.'
+            : complaint.source === 'consumer_chat'
+              ? 'This complaint came from the web chat preview. Your reply is saved here only; the consumer does not receive it.'
+              : 'There is no way to reach this consumer yet, so your reply is saved on the complaint only.'}
       </Typography>
     </Stack>
   );
@@ -64,7 +70,7 @@ function DraftRow({ wording, asks, pending, error, onDraft }: DraftRowProps) {
 
 interface Loaded { key: string | null; text: string; wording: Wording | null; n: number }
 
-export function ReplyPanel({ complaint }: { complaint: ComplaintDetail }) {
+export function ReplyPanel({ complaint, preset }: { complaint: ComplaintDetail; preset: Focus | null }) {
   const reply = useReply(complaint.ticket);
   const options = useReplyOptions(complaint.ticket);
   const ai = useDraftOption(complaint.ticket);
@@ -78,6 +84,7 @@ export function ReplyPanel({ complaint }: { complaint: ComplaintDetail }) {
     const option = list.find((o) => o.key === key);
     if (option) load(option.key, option.text, 'rules');
   };
+  usePreset(preset, 'reply', list.length > 0, pick);
   const draftWithAi = () => {
     if (!chosen) return;
     ai.mutate(chosen.key, { onSuccess: (d) => load(chosen.key, d.text, d.worded_by === 'ai' ? 'ai' : 'rules_fallback') });

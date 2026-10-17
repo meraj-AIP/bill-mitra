@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from app.domain.review import Spike
 from app.flows.analysis import Analysis
 from app.store import case_evidence as evidence_store
+from app.store import media
 
 SourceKey = Literal["this_bill", "printed_history", "uploads", "discom_records", "spike", "requested_bills"]
 SourceStatus = Literal["included", "partial", "missing", "not_connected"]
@@ -17,6 +18,11 @@ LABELS: dict[str, str] = {"this_bill": "This bill", "printed_history": "Usage ta
                           "uploads": "Consumer's earlier uploads", "discom_records": "DISCOM billing records",
                           "spike": "Comparison with the usual month", "requested_bills": "Requested bills"}
 SPIKE_MONTHS = 6
+
+
+def staff_media(ticket: str, media_id: str | None) -> str | None:
+    """A file on a complaint, served only to staff who can see that complaint."""
+    return f"/api/console/complaints/{ticket}/media/{media_id}" if media_id else None
 
 
 class EvidenceSource(BaseModel):
@@ -33,6 +39,7 @@ class AttachedBill(BaseModel):
     units: int | None
     amount: float | None
     media_url: str | None
+    media_type: str | None
 
 
 class EvidencePack(BaseModel):
@@ -120,7 +127,8 @@ def _requested(request: dict | None) -> EvidenceSource:
 def pack(ticket: str, found: tuple[Analysis, str | None] | None, spike: Spike) -> EvidencePack:
     request = evidence_store.month_request(ticket)
     attached = [AttachedBill(bill_id=b["bill_id"], month=b["month"], units=b["units"], amount=b["amount"],
-                             media_url=f"/api/media/{b['media_id']}" if b["media_id"] else None)
+                             media_url=staff_media(ticket, b["media_id"]),
+                             media_type=media.mime_for(b["media_id"]) if b["media_id"] else None)
                 for b in evidence_store.attached(ticket)]
     if found is None:
         sources = [_source("this_bill", "missing", [], "The consumer has erased this bill."), _records(ticket)]
@@ -143,6 +151,21 @@ TIMELINE_TEXT = {"case.route": "Routed", "case.pack": "Evidence pack built", "ca
                  "case.escalate": "Escalated", "revision.applied_auto": "Marked the revision applied: the DISCOM "
                  "billing records show the revised amount"}
 CONSUMER_ACTIONS = {"case.attach", "case.no_bills"}
+UNLISTED = {"assist.complaint", "assist.case"}  # audited, but reading the AI card is not a step on the case
+
+
+REQUEST_WORDS = {"meter_photo": "a meter photo", "bill_photo": "a bill photo", "earlier_bills": "earlier bills",
+                 "details": "more details", "note": "an answer to a question", "payment_proof": "the payment receipt"}
+
+
+def readable(action: str, detail: str | None) -> str | None:
+    """Audit details are records, written for the log; the timeline drops the delivery suffix and names a request."""
+    if not detail:
+        return detail
+    text = detail.split(", delivery ")[0]
+    if action in ("complaint.request", "case.request"):
+        return REQUEST_WORDS.get(text, text)
+    return text
 
 
 def _entry(row: dict) -> TimelineEntry:
@@ -153,7 +176,7 @@ def _entry(row: dict) -> TimelineEntry:
     else:
         actor = Actor(kind="staff", name=row["actor_name"])
     label = TIMELINE_TEXT.get(row["action"], row["action"])
-    detail = None if row["action"] == "case.no_bills" else row["detail"]
+    detail = None if row["action"] == "case.no_bills" else readable(row["action"], row["detail"])
     return TimelineEntry(at=row["ts"], actor=actor, text=f"{label}: {detail}" if detail else label)
 
 
@@ -161,4 +184,4 @@ def timeline(ticket: str, reported_at: str) -> list[TimelineEntry]:
     """Oldest first. The report itself opens it; every later step is an audit entry on the case."""
     reported = TimelineEntry(at=reported_at, actor=Actor(kind="consumer", name=None),
                              text="Reported the bill as wrong")
-    return [reported, *(_entry(r) for r in evidence_store.timeline_rows(ticket))]
+    return [reported, *(_entry(r) for r in evidence_store.timeline_rows(ticket) if r["action"] not in UNLISTED)]

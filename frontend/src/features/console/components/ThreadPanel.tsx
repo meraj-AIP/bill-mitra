@@ -9,7 +9,7 @@ import { useRetry } from '../api/actionsApi';
  * The thread scrolls inside its own box, so a new message moves this box and never the page.
  * Only the box's scrollTop is set; scrollIntoView would drag the whole window down.
  */
-export function ThreadPanel({ ticket, messages }: { ticket: string; messages: ComplaintDetail['messages'] }) {
+export function ThreadPanel({ ticket, messages, inApp = false }: { ticket: string; messages: ComplaintDetail['messages']; inApp?: boolean }) {
   const box = useRef<HTMLDivElement>(null);
   const retry = useRetry(ticket);
   useLayoutEffect(() => {
@@ -18,7 +18,7 @@ export function ThreadPanel({ ticket, messages }: { ticket: string; messages: Co
   return (
     <Box ref={box} sx={{ maxHeight: { xs: 420, md: 520 }, overflowY: 'auto', overscrollBehavior: 'contain', pr: 0.5 }}>
       {retry.isError && <Alert severity="error" sx={{ mb: 1.5 }}>{retry.error.message}</Alert>}
-      <MessageThread messages={messages} viewer="staff" onRetry={(id) => retry.mutate(id)} />
+      <MessageThread messages={messages} viewer="staff" onRetry={(id) => retry.mutate(id)} inApp={inApp} />
     </Box>
   );
 }

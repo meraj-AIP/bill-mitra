@@ -138,7 +138,7 @@ def test_dashboard_offers_the_earlier_month_until_it_is_reported(reader, sign_in
     lines = audit_rows(ticket, "case.suggestion")
     assert len(lines) == 1 and lines[0]["actor_id"] is None and "1150" in lines[0]["detail"]
     assert SERVICE not in lines[0]["detail"]
-    alerts = alert_rows(ticket)
+    alerts = [a for a in alert_rows(ticket) if a["kind"] != "case_assigned"]  # routing tells the AE separately
     assert [(a["kind"], a["unit_id"], a["perm"]) for a in alerts] == [("misread_found", area.section_a.id,
                                                                       "cases.decide")]
     assert SERVICE not in alerts[0]["title"] + alerts[0]["body"]

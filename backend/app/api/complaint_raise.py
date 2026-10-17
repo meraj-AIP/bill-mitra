@@ -15,7 +15,7 @@ from app.channels.whatsapp.mapper import user_key
 from app.core.hashing import INDIAN_MOBILE, clean_service_number, mobile_hash
 from app.domain.complaint_types import TypeCode
 from app.flows import intake
-from app.store import complaints, units
+from app.store import complaints, handoffs, units
 from app.store.accounts import Account
 from app.store.complaints import Placement
 from app.store.db import DISCOM_UNITS
@@ -70,7 +70,7 @@ def _placement(account: Account, discom: str, section_id: str | None) -> Placeme
         raise HTTPException(422, "Unknown section for this DISCOM.")
     if not in_scope(account, section_id):
         raise HTTPException(403, OUT_OF_SCOPE)
-    return Placement(section_id=section_id, unit_id=section_id)
+    return Placement(section_id=section_id, unit_id=section_id, assigned_to=handoffs.section_holder(section_id))
 
 
 @router.post("", response_model=ComplaintDetail, status_code=201)

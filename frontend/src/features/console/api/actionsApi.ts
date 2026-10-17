@@ -61,11 +61,31 @@ export function useRetry(ticket: string) {
   });
 }
 
-/** Contract section 6 lists assign among the actions; the route mirrors the review case one. */
+/** Hand-off contract section 4: every hand over carries a note of 10 to 300 characters. */
+export const HANDOFF_NOTE = { min: 10, max: 300 } as const;
+
 export function useAssign(ticket: string) {
   const apply = useApplyDetail(ticket);
   return useMutation({
-    mutationFn: (accountId: string) => sendJson<ComplaintDetail>(`${path(ticket)}/assign`, { account_id: accountId }),
+    mutationFn: (body: { account_id: string; note: string }) => sendJson<ComplaintDetail>(`${path(ticket)}/assign`, body),
+    onSuccess: apply,
+  });
+}
+
+/** Returns the complaint to whoever handed it over, with a note. */
+export function useSendBack(ticket: string) {
+  const apply = useApplyDetail(ticket);
+  return useMutation({
+    mutationFn: (note: string) => sendJson<ComplaintDetail>(`${path(ticket)}/return`, { note }),
+    onSuccess: apply,
+  });
+}
+
+/** A question in the consumer's language, sent as a request of kind note so their answer is filed under it. */
+export function useAskQuestion(ticket: string) {
+  const apply = useApplyDetail(ticket);
+  return useMutation({
+    mutationFn: (note: string) => sendJson<ComplaintDetail>(`${path(ticket)}/request`, { kind: 'note', note }),
     onSuccess: apply,
   });
 }

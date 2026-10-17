@@ -53,12 +53,13 @@ def mime_for(media_id: str) -> str:
 
 
 def discard_unreferenced(media_ids: Iterable[str]) -> int:
-    """Delete the files no bill points at any more. Complaints reach their photo only through a bill, so this
-    covers both. Files are shared by content, so another user's copy of the same photo keeps it alive."""
+    """Delete the files no bill and no complaint message points at any more. Files are shared by content, so another
+    user's copy of the same photo keeps it alive."""
     removed = 0
     with tx() as conn:  # held while unlinking, so a bill saved meanwhile cannot lose its file
         for media_id in {m for m in media_ids if m}:
-            if conn.execute("SELECT 1 FROM bills WHERE media_id = ? LIMIT 1", (media_id,)).fetchone():
+            if conn.execute("SELECT 1 FROM bills WHERE media_id = ? UNION ALL SELECT 1 FROM complaint_messages "
+                            "WHERE media_id = ? LIMIT 1", (media_id, media_id)).fetchone():
                 continue
             path = path_for(media_id)
             if path is not None:

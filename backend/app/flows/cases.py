@@ -13,11 +13,11 @@ from app.domain import review
 from app.domain.conversation.facts import rs, with_revision
 from app.domain.conversation.lang import text
 from app.domain.review import Final, Spike
-from app.flows import case_bills, misread
+from app.flows import case_bills, handoff, misread
 from app.flows.analysis import Analysis, analyse
 from app.flows.turn import Turn
 from app.services import billing_records, notify
-from app.store import accounts, complaints, repos, units
+from app.store import accounts, complaints, handoffs, repos, units
 from app.store import case_evidence as evidence_store
 from app.store import policy as policy_store
 from app.store import review as review_store
@@ -68,9 +68,11 @@ def _section(discom: str | None, printed: str | None) -> str | None:
 
 
 def place_general(discom: str | None, printed: str | None) -> Placement:
-    """A general complaint sits on its section, or its DISCOM when the section is not known. Nobody is assigned."""
+    """A general complaint goes to its section's AE, or waits in the DISCOM queue when the section is not known."""
     section_id = _section(discom, printed)
-    return Placement(section_id=section_id, unit_id=section_id or DISCOM_UNITS.get(discom or ""))
+    if section_id is None:
+        return Placement(section_id=None, unit_id=DISCOM_UNITS.get(discom or ""))
+    return Placement(section_id=section_id, unit_id=section_id, assigned_to=handoffs.section_holder(section_id))
 
 
 def route(discom: str | None, printed: str | None) -> Placement:
@@ -134,6 +136,8 @@ def reroute(discom: str, names: set[str]) -> list[str]:
         if placement.section_id:
             complaints.place(ticket, placement)
             _audit_route(ticket, placement)
+            if placement.assigned_to:
+                handoff.case_assigned(ticket, placement.assigned_to, None)
             moved.append(ticket)
     return moved
 

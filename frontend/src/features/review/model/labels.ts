@@ -66,3 +66,6 @@ export function ratioOf(units: number | null, median: number | null): number | n
   if (units === null || median === null || median <= 0) return null;
   return units / median;
 }
+
+/** Parts of the case page that AI assist can bring into view. */
+export const CASE_SECTION = { decision: 'case-decision', ask: 'case-ask' } as const;

@@ -20,11 +20,11 @@ def test_history_reads_back_in_order_and_pages(sign_in):
     with TestClient(app) as client:
         sign_in(client)
         say(client, "hello")
-        say(client, "power cut in my street")
+        say(client, "who will win the match")
         latest = client.get("/api/web/history?limit=2").json()
         assert latest["has_more"] and [i["sender"] for i in latest["items"]] == ["user", "bot"]
-        assert latest["items"][0]["body"] == {"kind": "text", "text": "power cut in my street"}
-        assert "1912" in latest["items"][1]["body"]["body"]
+        assert latest["items"][0]["body"] == {"kind": "text", "text": "who will win the match"}
+        assert "only with your electricity bill" in latest["items"][1]["body"]["body"]
         earlier = client.get(f"/api/web/history?limit=2&before={latest['items'][0]['id']}").json()
         assert earlier["items"][0]["body"]["text"] == "hello" and not earlier["has_more"]
 

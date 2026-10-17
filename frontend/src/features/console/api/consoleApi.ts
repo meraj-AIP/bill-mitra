@@ -77,9 +77,15 @@ export interface InboxQuery {
   type: string;
   priority: Priority | '';
   source: Source | '';
+  /** Held by the signed-in account. */
+  withMe: boolean;
+  /** Held by the signed-in account and waiting on staff, not on the consumer. */
+  waitingOnMe: boolean;
 }
 
 function addCatalogue(params: URLSearchParams, query: InboxQuery) {
+  if (query.withMe) params.set('with_me', 'true');
+  if (query.waitingOnMe) params.set('waiting_on_me', 'true');
   if (query.type) params.set('type', query.type);
   if (query.priority) params.set('priority', query.priority);
   if (query.source) params.set('source', query.source);

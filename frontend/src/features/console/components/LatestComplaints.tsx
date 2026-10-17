@@ -8,7 +8,7 @@ import { EmptyState, ErrorState } from '@/shared/components/States';
 import { useInbox, type InboxQuery } from '../api/consoleApi';
 import { ComplaintsTable } from './ComplaintsTable';
 
-const LATEST: InboxQuery = { page: 1, pageSize: 5, status: '', discom: '', q: '', sort: 'priority', triage: '', failed: false, type: '', priority: '', source: '' };
+const LATEST: InboxQuery = { page: 1, pageSize: 5, status: '', discom: '', q: '', sort: 'priority', triage: '', failed: false, type: '', priority: '', source: '', withMe: false, waitingOnMe: false };
 
 /** The five complaints that need an officer most, on the summary page; the inbox has the full list. */
 export function LatestComplaints() {

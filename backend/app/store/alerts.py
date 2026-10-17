@@ -14,7 +14,8 @@ from app.store.db import tx
 from app.store.units import covered_sql
 
 Kind = Literal["misread_found", "case_overdue", "case_escalated", "digest", "applied_auto", "pattern_section",
-               "request_reminded", "request_lapsed"]
+               "request_reminded", "request_lapsed", "complaint_assigned", "consumer_replied", "case_assigned",
+               "decision_returned"]
 
 # Named parameters :me (account id), :perms (JSON list of its permissions), :everywhere (1 for a global account).
 _VISIBLE = ("(a.account_id = :me OR (a.account_id IS NULL AND a.perm IN (SELECT value FROM json_each(:perms)) "
@@ -31,6 +32,13 @@ class AlertOut(BaseModel):
     unit_name: str | None
     created_at: str
     read: bool
+    href: str | None  # the page the alert opens: a case for review kinds, the complaint for the rest
+
+
+def _href(ticket: str | None, kind: str | None) -> str | None:
+    if not ticket or kind is None:
+        return None
+    return f"/review/{ticket}" if kind == "wrong_reading" else f"/console/complaints/{ticket}"
 
 
 class AlertPage(BaseModel):
@@ -61,11 +69,13 @@ def page(account: Account, page_no: int, page_size: int, unread_only: bool) -> A
         total = conn.execute(f"SELECT COUNT(*) FROM alerts a WHERE {where}", args).fetchone()[0]
         unread = conn.execute(f"SELECT COUNT(*) FROM alerts a WHERE {_VISIBLE} AND NOT {_READ}", args).fetchone()[0]
         rows = conn.execute(
-            f"SELECT a.id, a.kind, a.title, a.body, a.ticket, u.name AS unit_name, a.created_at, {_READ} AS read "
+            f"SELECT a.id, a.kind, a.title, a.body, a.ticket, u.name AS unit_name, a.created_at, {_READ} AS read, "
+            "(SELECT c.kind FROM complaints c WHERE c.ticket = a.ticket) AS ticket_kind "
             f"FROM alerts a LEFT JOIN units u ON u.id = a.unit_id WHERE {where} "
             "ORDER BY a.id DESC LIMIT :limit OFFSET :offset", args).fetchall()
-    return AlertPage(items=[AlertOut(**{**dict(r), "read": bool(r["read"])}) for r in rows], total=total,
-                     unread=unread)
+    items = [AlertOut(**{k: v for k, v in dict(r).items() if k not in ("ticket_kind", "read")}, read=bool(r["read"]),
+                      href=_href(r["ticket"], r["ticket_kind"])) for r in rows]
+    return AlertPage(items=items, total=total, unread=unread)
 
 
 def mark_read(account: Account, alert_id: int) -> bool:

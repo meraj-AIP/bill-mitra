@@ -4,6 +4,7 @@ import { Panel } from '@/shared/components/Panel';
 import { dateTime } from '@/shared/lib/format';
 
 import type { ComplaintDetail, TimelineEntry } from '../api/types';
+import { splitNote } from '../model/handoff';
 
 const DOT: Record<TimelineEntry['actor']['kind'], string> = { system: 'grey.400', consumer: 'info.main', staff: 'primary.main' };
 
@@ -21,6 +22,22 @@ function entriesOf(c: ComplaintDetail): TimelineEntry[] {
   return [raised, ...notes];
 }
 
+/** The entry's line, and a hand-off note set apart as the person wrote it. */
+export function TimelineText({ e }: { e: TimelineEntry }) {
+  const { text, note } = splitNote(e);
+  return (
+    <>
+      <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{text}</Typography>
+      {note && (
+        <Typography variant="body2" component="blockquote" dir="auto"
+          sx={{ m: 0, mt: 0.5, pl: 1.25, py: 0.25, borderLeft: 2, borderColor: 'primary.light', color: 'text.secondary', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+          {note}
+        </Typography>
+      )}
+    </>
+  );
+}
+
 function Entry({ e, last }: { e: TimelineEntry; last: boolean }) {
   return (
     <Box component="li" sx={{ position: 'relative', pl: 3, pb: last ? 0 : 2,
@@ -33,7 +50,7 @@ function Entry({ e, last }: { e: TimelineEntry; last: boolean }) {
         {', '}
         <Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>{who(e.actor)}</Box>
       </Typography>
-      <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{e.text}</Typography>
+      <TimelineText e={e} />
     </Box>
   );
 }

@@ -4,19 +4,22 @@ Staff see complaints within their unit scope. reply_to never leaves the store la
 """
 
 from datetime import UTC, datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, StringConstraints, computed_field, model_validator
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 
+from app.api import thread
 from app.api.deps import require_perm, viewer
+from app.api.thread import ComplaintMessage, RequestOut
 from app.config import get_settings
 from app.core import csvsafe
 from app.domain import complaint_types
 from app.domain.complaint_reply import AskKind, Triage
 from app.domain.complaint_types import Ownership, Priority, Source, TypeCode
 from app.flows import complaint as complaint_flow
+from app.flows import handoff
 from app.flows.analysis import analyse
 from app.flows.complaint import LABEL_EN
 from app.flows.complaint_timeline import timeline
@@ -24,7 +27,6 @@ from app.flows.evidence import TimelineEntry
 from app.services import notify
 from app.store import accounts, repos, units
 from app.store import complaints as store
-from app.store import review as review_store
 from app.store.accounts import Account
 from app.store.complaints import OPEN_STATUSES, Complaint, Kind, Sort, Status
 from app.store.db import DISCOM_UNITS
@@ -38,6 +40,7 @@ PageSize = Annotated[int, Query(ge=5, le=50)]
 NOT_FOUND = "Complaint not found."
 Viewer = Annotated[Account, Depends(require_perm("complaints.view"))]
 Replier = Annotated[Account, Depends(require_perm("complaints.reply"))]
+WaitingOn = Literal["staff", "consumer", "none"]
 
 
 class ComplaintRow(BaseModel):
@@ -68,6 +71,8 @@ class ComplaintRow(BaseModel):
     ownership: Ownership | None = None
     demo: bool = False
     section: str | None = None  # the matched section's name; None while it sits in a DISCOM or division queue
+    waiting_on: WaitingOn = "none"
+    assignee_name: str | None = None  # who holds it, for the inbox table
 
     @model_validator(mode="after")
     def _overdue(self) -> "ComplaintRow":
@@ -82,22 +87,6 @@ class ComplaintRow(BaseModel):
         if self.type in complaint_types.BY_CODE:
             self.type_label = complaint_types.get(self.type).label
         return self
-
-
-class ComplaintMessage(BaseModel):
-    id: int
-    author_kind: Literal["consumer", "officer", "system"]
-    author_name: str | None
-    body: str
-    created_at: str
-    delivery: Literal["sent", "failed", "stored"]
-    delivery_note: str | None
-    media_id: str | None = Field(default=None, exclude=True)
-
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def media_url(self) -> str | None:
-        return f"/api/media/{self.media_id}" if self.media_id else None
 
 
 class BillSummary(BaseModel):
@@ -123,10 +112,19 @@ class Person(BaseModel):
     name: str
 
 
+class Handoff(BaseModel):
+    by: Person | None  # None when the system routed it
+    note: str | None
+    at: str | None
+
+
 class ComplaintDetail(ComplaintRow):
     description: str | None = None
-    assignee: Person | None = None
-    assignable: list[Person] = Field(default_factory=list)  # only for a viewer who may assign
+    assignee: Person | None = None  # who the complaint is with
+    handoff: Handoff | None = None  # how it reached them; None while nobody holds it
+    assignable: list[Person] = Field(default_factory=list)  # whom this viewer may hand it to now
+    can_return: bool = False  # the viewer holds it and may send it back to whoever handed it over
+    requests: list[RequestOut] = Field(default_factory=list)
     timeline: list[TimelineEntry] = Field(default_factory=list)
     bill: BillSummary | None
     audit_lines: list[AuditLineOut]
@@ -153,17 +151,12 @@ class StatusChange(BaseModel):
     status: Status
 
 
-ASSIGNABLE_MAX = 50
-
-
-def assignable(complaint: Complaint) -> list[Person]:
-    """Active staff who can see complaints and hold a scope on the complaint's unit, a unit above it, or its ERO."""
-    anchor = complaint.section_id or complaint.unit_id or DISCOM_UNITS.get(complaint.discom or "")
-    if anchor is None:
-        return []
-    chain = units.ancestors(anchor)
-    ids = [u.id for u in chain] + [u.ero_id for u in chain[:1] if u.ero_id]
-    return [Person(**p) for p in review_store.staff_covering(ids, "complaints.view", ASSIGNABLE_MAX)]
+def _handoff(complaint: Complaint, row: dict[str, Any]) -> Handoff | None:
+    if not complaint.assigned_to:
+        return None
+    by = Person(id=row["handed_by"], name=row["handed_by_name"]) if row["handed_by"] and row["handed_by_name"] \
+        else None
+    return Handoff(by=by, note=row["handoff_note"], at=row["handed_at"])
 
 
 def _detail(complaint: Complaint, account: Account | None = None) -> ComplaintDetail:
@@ -179,13 +172,15 @@ def _detail(complaint: Complaint, account: Account | None = None) -> ComplaintDe
                            service_masked=extracted.masked_service_number(), discom=extracted.discom)
         lines = [AuditLineOut(label=LABEL_EN.get(line.code, line.code), **line.model_dump())
                  for line in analyse(extracted, complaint.user_id).audit.lines]
-        media_url = f"/api/media/{media_id}" if media_id else None
+        media_url = thread.media_url(complaint.ticket, media_id)
     assignee = Person(id=complaint.assigned_to, name=row["assignee_name"]) \
         if complaint.assigned_to and row["assignee_name"] else None
-    people = assignable(complaint) if account and account.can("complaints.assign") else []
+    people = [Person(id=p["id"], name=p["name"]) for p in handoff.targets(account, complaint)] if account else []
     return ComplaintDetail(**row, bill=bill, audit_lines=lines, media_url=media_url, assignee=assignee,
-                           assignable=people, timeline=timeline(complaint.ticket, row),
-                           messages=[ComplaintMessage(**m) for m in store.messages(complaint.ticket)],
+                           handoff=_handoff(complaint, row), assignable=people,
+                           can_return=bool(account and handoff.can_return(account, complaint, row)),
+                           requests=thread.requests(complaint.ticket), timeline=timeline(complaint.ticket, row),
+                           messages=thread.messages(complaint.ticket),
                            reply_channel=notify.reply_channel(complaint),  # type: ignore[arg-type]
                            whatsapp_ready=get_settings().whatsapp_enabled)
 
@@ -224,10 +219,15 @@ async def console_list(account: Viewer, page: PageNo = 1, page_size: PageSize = 
                        discom: Discom | None = None, q: Annotated[str | None, Query(max_length=40)] = None,
                        sort: Sort = "priority", triage: Triage | None = None, failed: bool = False,
                        kind: Kind | None = None, type: TypeCode | None = None, priority: Priority | None = None,
-                       source: Source | None = None) -> store.Page:
+                       source: Source | None = None, with_me: bool = False, waiting_on_me: bool = False
+                       ) -> store.Page:
+    """`with_me`: complaints this account holds. `waiting_on_me`: those it holds where it is staff's move."""
+    more = store.Filters(type=type, priority=priority, source=source,
+                         holder=account.id if with_me or waiting_on_me else None,
+                         waiting_on="staff" if waiting_on_me else None)
     return store.page(page, page_size, status=status, discom=discom, q=q, sort=sort, triage=triage,
                       failed_only=failed, overdue_days=get_settings().complaint_reply_days, viewer=viewer(account),
-                      kind=kind, more=store.Filters(type=type, priority=priority, source=source))
+                      kind=kind, more=more)
 
 
 CSV_COLUMNS = ("ticket", "created_at", "updated_at", "status", "discom", "bill_month", "service_masked", "issue",

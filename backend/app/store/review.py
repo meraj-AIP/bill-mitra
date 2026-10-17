@@ -107,17 +107,27 @@ def add_request(ticket: str, kind: str, note: str | None, requested_by: str) -> 
                      (ticket, kind, note, requested_by))
 
 
+# The consumer message that answers a request: their newest one, never one sent before the request was made.
+# Callers store the message first, then answer the request.
+ANSWERING = ("(SELECT MAX(m.id) FROM complaint_messages m WHERE m.ticket = case_requests.ticket "
+             "AND m.author_kind = 'consumer' AND m.created_at >= case_requests.created_at)")
+
+
 def answer_requests(ticket: str) -> None:
-    """The consumer replied after being asked, so every open request on the case is answered."""
+    """The consumer replied after being asked, so every open request on the case is answered by that message."""
     with tx() as conn:
-        conn.execute("UPDATE case_requests SET status = 'answered', answered_at = CURRENT_TIMESTAMP "
-                     "WHERE ticket = ? AND status = 'open'", (ticket,))
+        conn.execute(f"UPDATE case_requests SET status = 'answered', answered_at = CURRENT_TIMESTAMP, "
+                     f"answer_message_id = {ANSWERING} WHERE ticket = ? AND status = 'open'", (ticket,))
 
 
 def requests(ticket: str) -> list[dict[str, Any]]:
+    """Newest first, each with the message that answered it (answer_* columns, null while open or lapsed)."""
     with tx() as conn:
-        rows = conn.execute("SELECT id, kind, note, status, created_at FROM case_requests WHERE ticket = ? "
-                            "ORDER BY id DESC LIMIT 100", (ticket,)).fetchall()
+        rows = conn.execute(
+            "SELECT r.id, r.kind, r.note, r.status, r.created_at, r.answered_at, m.id AS answer_id, "
+            "m.body AS answer_body, m.media_id AS answer_media_id, m.created_at AS answer_at FROM case_requests r "
+            "LEFT JOIN complaint_messages m ON m.id = r.answer_message_id AND m.ticket = r.ticket "
+            "WHERE r.ticket = ? ORDER BY r.id DESC LIMIT 100", (ticket,)).fetchall()
     return [dict(r) for r in rows]
 
 

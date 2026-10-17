@@ -18,6 +18,8 @@ import { InboxFilters } from '../components/InboxFilters';
 import { NewComplaintDialog } from '../components/NewComplaintDialog';
 import { useInboxParams } from '../hooks/useInboxParams';
 
+const MINE_HINT = 'Complaints handed to you show here. Choose All I can see for the rest.';
+
 export function ComplaintsInboxPage() {
   const { account } = useAuth();
   const params = useInboxParams();
@@ -37,8 +39,8 @@ export function ComplaintsInboxPage() {
     tickets.every((t) => now.has(t)) ? new Set([...now].filter((t) => !tickets.includes(t))) : new Set([...now, ...tickets]));
 
   const empty = filtered ? (
-    <EmptyState icon={<InboxOutlinedIcon />} title="No complaints match these filters"
-      hint="Try another status, type or source, or clear the ticket search."
+    <EmptyState icon={<InboxOutlinedIcon />} title={params.mine ? 'Nothing is with you right now' : 'No complaints match these filters'}
+      hint={params.mine ? MINE_HINT : 'Try another status, type or source, or clear the ticket search.'}
       action={<Button variant="outlined" onClick={params.clearFilters}>Clear filters</Button>} />
   ) : (
     <EmptyState icon={<InboxOutlinedIcon />} title="No complaints yet"
@@ -63,7 +65,8 @@ export function ComplaintsInboxPage() {
               </Stack>
             } />
         </Box>
-        <InboxFilters query={query} showDiscom={!scopedTo} onFilter={params.setFilter} onFailed={params.setFailed} onSort={params.setSort} />
+        <InboxFilters query={query} showDiscom={!scopedTo} onFilter={params.setFilter} onFailed={params.setFailed} onSort={params.setSort}
+          mine={params.mine} onMine={params.setMine} />
         <BulkBar tickets={[...selected]} onDone={() => setSelected(new Set())} />
         <ListPanel result={result} page={query.page} pageSize={query.pageSize} onPage={params.setPage} onPageSize={params.setPageSize}
           empty={empty}>

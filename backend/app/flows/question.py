@@ -2,14 +2,14 @@
 
 from app.domain.conversation import composer, terms
 from app.domain.conversation.facts import rs
-from app.domain.conversation.intents import Intent, classify, parse_units, says_no_bills
+from app.domain.conversation.intents import STOP_WORDS, Intent, classify, parse_units, says_no_bills
 from app.domain.conversation.lang import text
 from app.domain.tariff.engine import compute
 from app.flows import bill as bill_flow
-from app.flows import case_bills, cases, complaint, complaint_chat
+from app.flows import case_bills, cases, complaint, complaint_chat, understand
 from app.flows.analysis import Analysis, analyse, gruha_jyothi_eligible
 from app.flows.turn import Turn
-from app.services import llm, sms_parser
+from app.services import sms_parser
 from app.store import repos
 
 NO_BILL_NEEDED = {"greeting": "greeting", "thanks": "thanks", "power_cut": "power_cut",
@@ -46,28 +46,10 @@ def _answer(intent: Intent, a: Analysis, lang: str, units: int | None) -> str:
     return composer.why_high(f, lang)
 
 
-async def _classify(turn: Turn, message: str) -> tuple[Intent, int | None]:
-    async with turn.tracer.step("Understand the question", "rules") as step:
-        found = classify(message)
-        intent, units = found.intent, found.units
-        if intent == "off_topic":
-            by_model = await llm.classify(message)
-            if by_model:
-                intent, units = by_model
-                step.note(f"Intent '{intent}' (language model, constrained to the fixed list)", "ai")
-                return intent, units
-        step.note(f"Intent '{intent}' from the fixed list" + (f", units {units}" if units else ""))
-    return intent, units
-
-
 async def _reply(turn: Turn, body: str) -> None:
     if turn.voice_reply:
         await turn.speak(body)
     await turn.say(body)
-
-
-# Exact words only, so "don't stop the supply" is not read as a request to delete data.
-STOP_WORDS = {"stop", "ఆపండి", "ఆపు", "रोको", "बंद करो", "بند کرو", "روکو"}
 
 
 async def handle_text(turn: Turn, message: str) -> None:
@@ -93,8 +75,12 @@ async def handle_text(turn: Turn, message: str) -> None:
         return
     if await _answer_term(turn, message):
         return
-    intent, what_if_units = await _classify(turn, message)
-    await answer_intent(turn, intent, what_if_units)
+    decision = await understand.read(turn, message)
+    if decision.ask_about:
+        await understand.ask(turn, decision, message)
+        return
+    await answer_intent(turn, decision.intent, decision.units, complaint_type=decision.complaint_type, said=message,
+                        details=decision.details)
 
 
 # Intents a named bill term may take over: "why is there an ACD surcharge" asks about ACD, not about the whole bill.
@@ -117,12 +103,13 @@ async def _answer_term(turn: Turn, message: str) -> bool:
     return True
 
 
-async def answer_intent(turn: Turn, intent: Intent, units: int | None = None) -> None:
+async def answer_intent(turn: Turn, intent: Intent, units: int | None = None, *, complaint_type: str | None = None,
+                        said: str | None = None, details: dict[str, object] | None = None) -> None:
     repos.log_event(turn.inbound.channel, "question", language=turn.lang, intent=intent)
     if intent in NO_BILL_NEEDED:
         await _reply(turn, turn.t(NO_BILL_NEEDED[intent]))
         return
-    if await complaint_chat.on_intent(turn, intent):
+    if await complaint_chat.on_intent(turn, intent, complaint_type, said, details):
         return
     a = _current(turn)
     if a is None:
@@ -143,6 +130,11 @@ async def answer_intent(turn: Turn, intent: Intent, units: int | None = None) ->
 async def handle_button(turn: Turn, reply_id: str) -> None:
     if reply_id in BUTTON_INTENTS:
         await answer_intent(turn, BUTTON_INTENTS[reply_id])
+        return
+    if reply_id.startswith(understand.CONFIRM):
+        decided = await understand.on_confirm(turn, reply_id)
+        if decided is not None:
+            await answer_intent(turn, decided.intent, complaint_type=decided.complaint_type, said=decided.said)
         return
     if reply_id == "type_units":
         turn.state.awaiting = "units"

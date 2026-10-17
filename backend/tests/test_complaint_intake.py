@@ -84,7 +84,7 @@ def test_migration_backfills_old_rows_and_grants_create_once(data_dir):
     row = conn.execute("SELECT type, priority, due_at, source FROM complaints WHERE ticket = ?", (ticket,)).fetchone()
     assert tuple(row)[:2] == ("high_bill", "normal") and row["due_at"] and row["source"] == "consumer_chat"
     assert conn.execute("SELECT permissions FROM roles WHERE slug = 'officer'").fetchone()[0] == old_perms
-    db._grant_create(conn)
+    db._grant(conn, "complaints.create", db._CREATE_GRANTED_TO)
     assert "complaints.create" in conn.execute("SELECT permissions FROM roles WHERE slug = 'officer'").fetchone()[0]
     conn.execute("UPDATE roles SET permissions = ? WHERE slug = 'officer'",
                  (json.dumps(rbac.default_permissions("officer")),))
@@ -184,7 +184,7 @@ def test_consumer_view_never_names_staff(sign_in):
         assert staff.name not in view.text and "author" not in view.text and "assigned" not in view.text
         assert {m["from"] for m in view.json()["messages"]} == {"you", "bill_mitra"}
         answered = consumer.post(f"/api/complaints/{ticket}/reply", json={"body": "Sending it in the chat."})
-        assert answered.status_code == 200 and answered.json()["status"] == "received"
+        assert answered.status_code == 200 and answered.json()["status"] == "in_progress"  # staff have acted, so it is under way
 
 
 # Chat without a bill
@@ -203,7 +203,10 @@ def test_chat_complaint_without_a_bill_end_to_end():
     run(user, "whatsapp", kind="button_reply", reply_id="cdis:TGNPDCL")
     assert "does not look like a service number" in sent(run(user, "whatsapp", kind="text", text="12ab"))[-1].body
     run(user, "whatsapp", kind="text", text=usc)
-    preview = sent(run(user, "whatsapp", kind="text", text="No power since the morning, only our house."))[-1]
+    asked = sent(run(user, "whatsapp", kind="text", text="No power since the morning, only our house."))[-1]
+    assert "Since when" in asked.body and [b.id for b in asked.buttons] == ["cfq_skip"]
+    run(user, "whatsapp", kind="button_reply", reply_id="cfq_skip")
+    preview = sent(run(user, "whatsapp", kind="button_reply", reply_id="cfq_skip"))[-1]
     assert usc not in preview.body and usc[-4:] in preview.body and "No power at my home" in preview.body
     filed = sent(run(user, "whatsapp", kind="button_reply", reply_id="cdraft_send"))[-1]
     assert "BM-" in filed.body
@@ -222,7 +225,8 @@ def test_chat_draft_can_be_skipped_and_cancelled():
     run(user, kind="button_reply", reply_id="ctype:arrears_dispute")
     run(user, kind="button_reply", reply_id="cdis:TGSPDCL")
     run(user, kind="button_reply", reply_id="cusc_skip")
-    preview = sent(run(user, kind="text", text="Old dues added again."))[-1]
+    run(user, kind="text", text="Old dues added again.")
+    preview = sent(run(user, kind="button_reply", reply_id="cfq_skip"))[-1]
     assert "not given" in preview.body
     assert "not sent" in sent(run(user, kind="button_reply", reply_id="cdraft_cancel"))[-1].body
     assert store.page(1, 5, owner=user).total == 0
@@ -272,35 +276,10 @@ def test_create_permission_follows_the_contract():
     holders = {r.slug for r in rbac.BUILTIN_ROLES if "complaints.create" in r.permissions}
     assert holders == {"call_centre", "officer", "section_ae"}
     assert rbac.BUILTIN["call_centre"].permissions == {"console.view", "complaints.view", "complaints.create",
-                                                       "complaints.reply"}
+                                                       "complaints.reply", "complaints.assign"}
 
 
-# Console detail: section, assignee, timeline
-
-
-def test_assign_a_general_complaint_in_scope_and_see_it_on_the_timeline(sign_in):
-    t = tree()
-    with TestClient(app) as agent, TestClient(app) as lead:
-        caller = sign_in(agent, "call_centre", scopes=[t.section_a.id])
-        made = agent.post("/api/console/complaints", json={**STAFF_BODY, "section_id": t.section_a.id}).json()
-        ticket = made["ticket"]
-        assert made["section"] == t.section_a.name and made["assignable"] == [] and made["assignee"] is None
-        boss = sign_in(lead, "officer", scopes=[t.division.id])
-        detail = lead.get(f"/api/console/complaints/{ticket}").json()
-        names = {p["id"]: p["name"] for p in detail["assignable"]}
-        assert caller.id in names and boss.id in names
-        listed = lead.get("/api/console/complaints", params={"q": ticket[-5:]}).json()["items"][0]
-        assert listed["section"] == t.section_a.name
-        assert lead.post(f"/api/console/complaints/{ticket}/assign", json={"account_id": "nobody"}).status_code == 400
-        done = lead.post(f"/api/console/complaints/{ticket}/assign", json={"account_id": caller.id})
-        assert done.status_code == 200, done.text
-        assert done.json()["assignee"] == {"id": caller.id, "name": caller.name}
-        steps = done.json()["timeline"]
-        assert steps[0]["actor"] == {"kind": "staff", "name": caller.name} and "1912 call" in steps[0]["text"]
-        assert steps[-1]["text"] == f"Assigned: to {caller.name}" and steps[-1]["actor"]["name"] == boss.name
-        # The call centre agent may not assign: no complaints.assign.
-        assert agent.post(f"/api/console/complaints/{ticket}/assign",
-                          json={"account_id": caller.id}).status_code == 403
+# Console detail, assignee and hand-off: tests/test_handoff.py
 
 
 def test_consumer_list_filters_by_neutral_status(sign_in):

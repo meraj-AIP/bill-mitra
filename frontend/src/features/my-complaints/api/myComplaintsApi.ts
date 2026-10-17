@@ -1,6 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { getJson, isStatus, sendJson } from '@/shared/api/http';
+import { getJson, isStatus, postForm, sendJson } from '@/shared/api/http';
+import { shrinkImage } from '@/shared/lib/image';
 import { queryKeys } from '@/shared/api/queryKeys';
 import type { Page } from '@/shared/api/types';
 
@@ -50,6 +51,21 @@ export function useReplyToComplaint(ticket: string) {
   const store = useStore();
   return useMutation({
     mutationFn: (body: string) => sendJson<MyComplaintDetail>(`${path(ticket)}/reply?${LANG}`, { body }),
+    onSuccess: store,
+  });
+}
+
+/** A photo answer, shrunk on the phone first. The optional line goes with it as its caption. */
+export function useSendPhoto(ticket: string) {
+  const store = useStore();
+  return useMutation({
+    mutationFn: async ({ file, body }: { file: File; body: string }) => {
+      const form = new FormData();
+      const image = await shrinkImage(file);
+      form.append('file', image, file.name);
+      if (body) form.append('caption', body);
+      return postForm<MyComplaintDetail>(`${path(ticket)}/photo?${LANG}`, form);
+    },
     onSuccess: store,
   });
 }

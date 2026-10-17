@@ -14,7 +14,7 @@ from app.api.review import DECIDABLE, CaseDetail, Preview, case_analysis, correc
 from app.domain import review as rules
 from app.domain.conversation.facts import rs
 from app.domain.review import MIN_NOTE, DecisionKind, ReasonCode
-from app.flows import cases, drafts
+from app.flows import cases, drafts, handoff
 from app.store import accounts, repos
 from app.store import complaints as complaint_store
 from app.store import policy as policy_store
@@ -184,6 +184,7 @@ async def reject(decision_id: int, body: RejectBody, account: Approver) -> CaseD
         raise HTTPException(409, "This decision is not waiting for approval.")
     accounts.audit(account.id, "decision.reject", complaint.ticket, f"decision {decision_id}",
                    unit_id=complaint.unit_id)
+    handoff.decision_returned(complaint.ticket, decision_id, found["proposed_by"]["id"], account)
     return detail(account, complaint)
 
 

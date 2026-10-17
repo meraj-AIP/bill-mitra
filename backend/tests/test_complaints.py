@@ -104,7 +104,8 @@ def test_officer_reply_to_a_web_chat_complaint_is_stored(reader, people):
     detail = officer.get(f"/api/console/complaints/{ticket}").json()
     assert detail["channel"] == "web" and detail["reply_channel"] == "web"
     assert any(line["code"] == "energy" and line["status"] == "over" for line in detail["audit_lines"])
-    assert detail["media_url"].startswith("/api/media/") and detail["bill"]["service_masked"].endswith("1111")
+    assert detail["media_url"].startswith(f"/api/console/complaints/{ticket}/media/")
+    assert detail["bill"]["service_masked"].endswith("1111")
 
     listed = officer.get("/api/console/complaints", params={"q": ticket[-5:], "status": "Open"}).json()
     assert ticket in [row["ticket"] for row in listed["items"]]

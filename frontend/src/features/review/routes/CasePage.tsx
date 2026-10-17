@@ -1,16 +1,19 @@
 import { Alert, Box, Button, Container, Grid, Paper, Stack, Typography } from '@mui/material';
-import { useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
-import { DetailSkeleton } from '@/features/complaints';
+import { DetailSkeleton, pagePhotos } from '@/features/complaints';
 import { isStatus } from '@/shared/api/http';
 import { BillImage } from '@/shared/components/BillImage';
+import { PhotoGallery, uniquePhotos } from '@/shared/components/PhotoGallery';
 import { EmptyState, ErrorState } from '@/shared/components/States';
 
 import { useCase, useDraft } from '../api/reviewApi';
 import type { CaseDetail } from '../api/types';
 import { ApplyPanel } from '../components/ApplyPanel';
 import { ApprovalsPanel } from '../components/ApprovalsPanel';
+import { attachedBillPhoto } from '../components/AttachedBills';
+import { CaseAssist } from '../components/CaseAssist';
 import { CaseHeader } from '../components/CaseHeader';
 import { ConversationPanel } from '../components/ConversationPanel';
 import { DecisionHistory } from '../components/DecisionHistory';
@@ -21,6 +24,7 @@ import { ReadingsPanel } from '../components/ReadingsPanel';
 import { SuggestedDecision } from '../components/SuggestedDecision';
 import { TimelinePanel } from '../components/TimelinePanel';
 import { emptyDraft, fromDraft, OPEN_FOR_DECISION, type DecisionDraft } from '../model/decision';
+import { CASE_SECTION } from '../model/labels';
 
 const WAITING: Partial<Record<CaseDetail['state'], string>> = {
   awaiting_approval: 'A decision is waiting for a billing approver. Nothing more to do here until they approve or reject it.',
@@ -71,13 +75,18 @@ function Workspace({ c }: { c: CaseDetail }) {
       </Grid>
       <Grid size={{ xs: 12, md: 7 }}>
         <Stack sx={{ gap: 2 }}>
+          <CaseAssist c={c} />
           <FlagPanel c={c} />
           {c.state === 'rejected' && c.can.decide && (
             <Alert severity="error">The last decision was rejected. Read the approver&apos;s note in the history below, then decide again.</Alert>
           )}
           <ApprovalsPanel c={c} />
           <ApplyPanel c={c} />
-          {deciding && <DecisionArea c={c} />}
+          {deciding && (
+            <Stack id={CASE_SECTION.decision} tabIndex={-1} sx={{ gap: 2, scrollMarginTop: 80, '&:focus': { outline: 'none' } }}>
+              <DecisionArea c={c} />
+            </Stack>
+          )}
           {!deciding && note && <Alert severity="info" variant="outlined">{note}</Alert>}
           <ConversationPanel c={c} />
           <DecisionHistory c={c} />
@@ -85,6 +94,15 @@ function Workspace({ c }: { c: CaseDetail }) {
       </Grid>
     </Grid>
   );
+}
+
+/** Every photo on the case in one lightbox: the conversation, answers to requests, then earlier bills. */
+function Gallery({ c, children }: { c: CaseDetail; children: ReactNode }) {
+  const photos = useMemo(() => uniquePhotos([
+    ...pagePhotos(c.messages, c.requests),
+    ...c.evidence_pack.attached_bills.flatMap((b) => (b.media_url ? [attachedBillPhoto(b, b.media_url)] : [])),
+  ]), [c.messages, c.requests, c.evidence_pack.attached_bills]);
+  return <PhotoGallery photos={photos}>{children}</PhotoGallery>;
 }
 
 export function CasePage() {
@@ -100,11 +118,13 @@ export function CasePage() {
       )}
       {result.isError && !isStatus(result.error, 404) && <ErrorState message={result.error.message} onRetry={() => void result.refetch()} />}
       {c && (
-        <Stack sx={{ gap: 3 }}>
-          <Box sx={SCREEN_ONLY}><CaseHeader c={c} /></Box>
-          <EvidencePackPanel c={c} />
-          <Box sx={SCREEN_ONLY}><Workspace c={c} /></Box>
-        </Stack>
+        <Gallery c={c}>
+          <Stack sx={{ gap: 3 }}>
+            <Box sx={SCREEN_ONLY}><CaseHeader c={c} /></Box>
+            <EvidencePackPanel c={c} />
+            <Box sx={SCREEN_ONLY}><Workspace c={c} /></Box>
+          </Stack>
+        </Gallery>
       )}
     </Container>
   );

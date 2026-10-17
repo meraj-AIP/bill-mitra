@@ -1,5 +1,6 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import { Box, Button, Stack, Typography } from '@mui/material';
+import PersonOutlineRoundedIcon from '@mui/icons-material/PersonOutlineRounded';
+import { Box, Button, Chip, Stack, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
@@ -36,6 +37,7 @@ export function CaseHeader({ c }: { c: CaseDetail }) {
             </Typography>
             <StateChip state={c.state} size="medium" />
             {c.overdue && <OverdueChip days={c.days_open} size="medium" />}
+            <Chip size="medium" variant="outlined" icon={<PersonOutlineRoundedIcon />} label={c.assignee ? `With ${c.assignee.name}` : 'At the division'} />
           </Stack>
           <Typography variant="body1" sx={{ color: 'text.secondary', mt: 0.75, maxWidth: '70ch' }}>
             {STATE[c.state].hint}. Decide within {sla} {sla === 1 ? 'day' : 'days'} of opening; this case has been open {c.days_open} {c.days_open === 1 ? 'day' : 'days'}.

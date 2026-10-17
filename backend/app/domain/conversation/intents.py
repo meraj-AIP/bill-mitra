@@ -1,8 +1,16 @@
-"""Fixed intent set. Questions outside it get a fixed reply, never a free-form answer."""
+"""Fixed intent set and the rules that read a consumer's message. Questions outside it get a fixed reply, never a
+free-form answer.
+
+The rules match whole words (keywords.py), drop a hit that is negated ("meter is not burnt", "no complaint"), and tell
+a question about the bill from a report of a problem ("why is my bill high?" against "my bill is too high, please
+check"). A complaint type, when one is found, wins over the bill questions.
+"""
 
 import re
 from dataclasses import dataclass
 from typing import Literal
+
+from app.domain.conversation import keywords as k
 
 Intent = Literal[
     "why_high", "next_bill", "save", "complain", "dispute", "explain_fsa", "explain_fixed",
@@ -15,39 +23,34 @@ INTENTS: tuple[Intent, ...] = (
     "explain_customer", "explain_duty", "explain_true_up", "gruha_jyothi", "due",
     "what_if", "greeting", "thanks", "power_cut", "new_connection", "help", "stop", "off_topic", "fetch_bill",
 )
+COMPLAINT_INTENTS = {"complain", "dispute", "power_cut"}
+# Complaints about the bill amount or its reading take the bill check path when a bill is in the chat.
+DISPUTE_TYPES = {"high_bill", "wrong_reading"}
+STOP_WORDS = k.STOP
 
-# Ordered: the first matching rule wins. English, Telugu (script and romanised), Hindi, Urdu.
-_RULES: tuple[tuple[Intent, tuple[str, ...]], ...] = (
-    ("stop", ("stop", "ఆపండి", "रोको", "بند کرو")),
-    ("what_if", ("what if", "if i use", "వాడితే", "इस्तेमाल करूँ", "استعمال کروں")),
-    # Before complain and why_high: "wrong bill" and "too high" mean this bill should be checked, not explained.
-    ("dispute", ("bill is wrong", "wrong bill", "bill wrong", "bill looks wrong", "incorrect bill", "bill is incorrect",
-                 "too high", "too much bill", "reading is wrong", "wrong reading", "reading wrong",
-                 "బిల్లు తప్పు", "తప్పు బిల్లు", "రీడింగ్ తప్పు", "తప్పుగా వచ్చింది", "మరీ ఎక్కువ", "bill tappu",
-                 "reading tappu", "बिल गलत", "बिल ग़लत", "गलत बिल", "ग़लत बिल", "रीडिंग गलत", "रीडिंग ग़लत",
-                 "गलत रीडिंग", "बहुत ज़्यादा बिल", "बिल बहुत ज़्यादा", "بل غلط", "غلط بل", "ریڈنگ غلط", "غلط ریڈنگ",
-                 "بہت زیادہ بل", "بل بہت زیادہ")),
-    ("complain", ("complain", "complaint", "ఫిర్యాదు", "firyadu", "शिकायत", "شکایت")),
-    # Asking for the bill by service number, before the charge words so "get my bill" is not read as a question.
-    ("fetch_bill", ("get my bill", "fetch my bill", "bill by usc", "bill with usc", "bill by service number",
-                    "సర్వీస్ నంబర్‌తో బిల్లు", "నా బిల్లు తెప్పించ", "सर्विस नंबर से बिल", "मेरा बिल मँगा",
-                    "سروس نمبر سے بل", "میرا بل منگوا")),
-    ("explain_true_up", ("true-up", "true up", "trueup", "ట్రూ", "ट्रू", "ٹرو")),
-    ("explain_fsa", ("fsa", "fuel", "ఇంధన", "ईंधन", "ایندھن")),
-    ("explain_fixed", ("fixed", "ఫిక్స్", "फ़िक्स्ड", "फिक्स्ड", "فکسڈ")),
-    ("explain_customer", ("customer charge", "కస్టమర్", "कस्टमर", "کسٹمر")),
-    ("explain_duty", ("duty", "సుంకం", "शुल्क", "ڈیوٹی")),
-    ("gruha_jyothi", ("gruha", "jyothi", "free units", "subsidy", "గృహ", "జ్యోతి", "गृह ज्योति", "گرہ")),
-    ("next_bill", ("next month", "next bill", "predict", "వచ్చే నెల", "vache nela", "अगले महीने", "अगला", "اگلے مہینے", "اگلا")),
-    ("save", ("save", "reduce", "lower", "ఆదా", "తగ్గించ", "बचत", "बचा", "کم کر", "بچت")),
-    ("why_high", ("why", "high", "so much", "increase", "ఎందుకు", "enduku", "ఎక్కువ", "ekkuva", "क्यों", "ज़्यादा", "کیوں", "زیادہ")),
-    ("due", ("due", "last date", "pay by", "when to pay", "చివరి తేదీ", "ఎప్పుడు కట్ట", "अंतिम तिथि", "कब तक", "آخری تاریخ")),
-    ("power_cut", ("power cut", "no power", "outage", "కరెంటు పోయ", "కరెంట్ లేదు", "बिजली नहीं", "कटौती", "بجلی نہیں")),
-    ("new_connection", ("new connection", "కొత్త కనెక్షన్", "नया कनेक्शन", "نیا کنکشن")),
-    ("thanks", ("thank", "thanks", "ధన్యవాద", "థ్యాంక్స్", "धन्यवाद", "शुक्रिया", "شکریہ")),
-    ("greeting", ("hello", "hi ", "namaste", "namaskaram", "నమస్కారం", "హలో", "नमस्ते", "सलाम", "السلام")),
-    ("help", ("help", "menu", "సహాయం", "मदद", "مدد")),
+_NEGATORS = {"not", "never", "isn't", "isnt", "wasn't", "wasnt", "didn't", "didnt", "don't", "dont", "doesn't",
+             "doesnt", "hasn't", "hasnt", "haven't", "havent", "aren't", "arent"}
+_CLAUSE_END = re.compile(r"[,.;!?]|\b(?:but|and|though|although|however)\b")
+
+# Each type is found when every pattern of any one of its clauses matches. Order matters: the first type found wins,
+# so the specific (a burnt meter, a payment not shown) come before the general (no power, a high bill).
+_TYPES: tuple[tuple[str, tuple[tuple[re.Pattern[str], ...], ...]], ...] = (
+    ("meter_burnt", ((k.METER, k.BURN),)),
+    ("payment_not_updated", ((k.PAID, k.NOT_SHOWN), (k.PAID, k.PAY_APP), (k.PAY_APP, k.NOT_SHOWN), (k.DEBITED,))),
+    ("wrong_category", ((k.CATEGORY, k.CATEGORY_WRONG),)),
+    ("arrears_dispute", ((k.ARREARS, k.ARREARS_WRONG),)),
+    ("estimated_bill", ((k.ESTIMATED,),)),
+    ("wrong_reading", ((k.READING, k.READING_WRONG),)),
+    ("bill_not_received", ((k.BILL_NOT_RECEIVED,),)),
+    ("voltage_fluctuation", ((k.VOLTAGE,),)),
+    ("supply_other", ((k.FREQUENT, k.CUTS), (k.INTERMITTENT,), (k.PHASE,))),
+    ("power_outage", ((k.OUTAGE,), (k.CUTS,))),
+    ("meter_issue", ((k.METER, k.METER_FAULT),)),
 )
+
+# Words that point at some complaint type even when no type rule fires: "I have a complaint about the meter".
+_EVIDENCE = (k.METER, k.BURN, k.PAID, k.PAY_APP, k.DEBITED, k.CATEGORY, k.ARREARS, k.ESTIMATED, k.READING,
+             k.BILL_NOT_RECEIVED, k.VOLTAGE, k.FREQUENT, k.CUTS, k.INTERMITTENT, k.PHASE, k.OUTAGE, k.HIGH)
 
 _UNITS = re.compile(r"(\d{1,4})\s*(?:units?|యూనిట్|यूनिट|یونٹ)?", re.IGNORECASE)
 
@@ -56,18 +59,64 @@ _UNITS = re.compile(r"(\d{1,4})\s*(?:units?|యూనిట్|यूनिट|�
 class Classified:
     intent: Intent
     units: int | None = None
+    complaint_type: str | None = None
+    matched: bool = True  # False when no rule matched: the rules are silent
+    negated: bool = False  # the consumer said this is not a complaint
+    evidence: bool = False  # a generic complaint whose words still point at some type
+
+    @property
+    def label(self) -> str:
+        """One name for what the message is: the complaint type when there is one, else the intent."""
+        return self.complaint_type or self.intent
+
+
+def _negated(text: str, start: int) -> bool:
+    """A negation in the three words before a hit, in the same clause ("meter is not burnt"), or a "no" right before
+    it ("no power cut today")."""
+    words = _CLAUSE_END.split(text[:start])[-1].split()
+    return any(word in _NEGATORS for word in words[-3:]) or words[-1:] == ["no"]
+
+
+def hit(pattern: re.Pattern[str], text: str) -> bool:
+    return any(not _negated(text, m.start()) for m in pattern.finditer(text))
+
+
+def _is_question(text: str) -> bool:
+    return "?" in text or hit(k.QUESTION, text)
+
+
+def _complaint_type(text: str) -> str | None:
+    for code, clauses in _TYPES:
+        if any(all(hit(p, text) for p in clause) for clause in clauses):
+            return code
+    if not hit(k.HIGH, text):
+        return None
+    # "Why is my bill so high?" asks for the explanation; "too high, please check" asks for a check.
+    if hit(k.REPORT, text) or (not _is_question(text) and hit(k.HIGH_STRONG, text)):
+        return "high_bill"
+    return None
 
 
 def classify(message: str) -> Classified:
-    lowered = f" {message.lower().strip()} "
-    for intent, keywords in _RULES:
-        if any(k in lowered for k in keywords):
-            units = None
-            if intent == "what_if":
-                match = _UNITS.search(lowered)
-                units = int(match.group(1)) if match else None
-            return Classified(intent, units)
-    return Classified("off_topic")
+    text = k.normalise(message)
+    if text.strip(" .!") in STOP_WORDS:
+        return Classified("stop")
+    if hit(k.WHAT_IF, text):
+        found = _UNITS.search(text)
+        return Classified("what_if", int(found.group(1)) if found else None)
+    negated = bool(k.NEG_COMPLAINT.search(text))
+    if not negated:
+        code = _complaint_type(text)
+        if code:
+            return Classified("dispute" if code in DISPUTE_TYPES else "complain", complaint_type=code)
+        if hit(k.COMPLAINT, text):
+            return Classified("complain", evidence=any(hit(p, text) for p in _EVIDENCE))
+        if hit(k.FETCH_BILL, text):
+            return Classified("fetch_bill")
+    for intent, pattern in k.EXPLAIN:
+        if hit(pattern, text):
+            return Classified(intent, negated=negated)  # type: ignore[arg-type]
+    return Classified("off_topic", matched=False, negated=negated)
 
 
 # A reply to the request for earlier bills saying the consumer does not have them. Checked only while one is open.

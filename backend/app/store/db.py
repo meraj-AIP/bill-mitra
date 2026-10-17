@@ -149,6 +149,10 @@ _AUDIT_COLUMNS = {"unit_id": "TEXT"}
 _REQUEST_COLUMNS = {"months": "TEXT"}  # JSON list of YYYY-MM on a request the system raised for earlier bills
 # Automation (app/flows/automation.py): when a request was reminded, when a case went to the division above.
 _AUTOMATION_COLUMNS = (("case_requests", {"reminded_at": "TEXT"}), ("complaints", {"escalated_at": "TEXT"}))
+# Hand-off (docs/assist-contract.md section 4): who handed the complaint to its holder, with what note, and when.
+# answer_message_id is the consumer message that answered a request.
+_HANDOFF_COLUMNS = (("complaints", {"handed_by": "TEXT", "handoff_note": "TEXT", "handed_at": "TEXT"}),
+                    ("case_requests", {"answer_message_id": "INTEGER"}))
 _AUTOMATION_DDL = (
     "CREATE TABLE IF NOT EXISTS alerts (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, unit_id TEXT, account_id TEXT, "
     "ticket TEXT, title TEXT NOT NULL, body TEXT NOT NULL, perm TEXT, dedupe_key TEXT UNIQUE, "
@@ -191,25 +195,29 @@ _INTAKE_BACKFILL = (
 # Staff roles that gained complaints.create with complaint types. Granted once, when the type column first appears,
 # so a super admin's later edits to these roles are never undone.
 _CREATE_GRANTED_TO = ("officer", "section_ae")
+# Roles that gained complaints.assign with the hand-off journey, granted once when handed_by first appears.
+_ASSIGN_GRANTED_TO = ("call_centre", "section_ae")
 
 
-def _grant_create(conn: sqlite3.Connection) -> None:
-    for slug in _CREATE_GRANTED_TO:
+def _grant(conn: sqlite3.Connection, perm: str, slugs: tuple[str, ...]) -> None:
+    for slug in slugs:
         row = conn.execute("SELECT permissions FROM roles WHERE slug = ?", (slug,)).fetchone()
         perms = json.loads(row[0]) if row else None
-        if perms is not None and "complaints.create" not in perms:
+        if perms is not None and perm not in perms:
             conn.execute("UPDATE roles SET permissions = ? WHERE slug = ?",
-                         (json.dumps([p for p in rbac.PERMISSIONS if p in {*perms, "complaints.create"}]), slug))
+                         (json.dumps([p for p in rbac.PERMISSIONS if p in {*perms, perm}]), slug))
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
     complaint_columns = {row[1] for row in conn.execute("PRAGMA table_info(complaints)")}
     first_intake = "type" not in complaint_columns
+    first_handoff = "handed_by" not in complaint_columns
     # Table and column names come from the constants above, never from input; DDL cannot take parameters.
     for table, columns in (("bills", _BILL_COLUMNS), ("complaints", _COMPLAINT_COLUMNS), ("events", _EVENT_COLUMNS),
                            ("complaints", _INTAKE_COLUMNS),
                            ("accounts", _ACCOUNT_COLUMNS), ("complaint_messages", _MESSAGE_COLUMNS),
-                           ("audit_log", _AUDIT_COLUMNS), ("case_requests", _REQUEST_COLUMNS), *_AUTOMATION_COLUMNS):
+                           ("audit_log", _AUDIT_COLUMNS), ("case_requests", _REQUEST_COLUMNS), *_AUTOMATION_COLUMNS,
+                           *_HANDOFF_COLUMNS):
         present = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
         for name, kind in columns.items():
             if name not in present:
@@ -220,7 +228,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for statement in (*_INTAKE_DDL, *_INTAKE_BACKFILL):
         conn.execute(statement)
     if first_intake:
-        _grant_create(conn)
+        _grant(conn, "complaints.create", _CREATE_GRANTED_TO)
+    if first_handoff:
+        _grant(conn, "complaints.assign", _ASSIGN_GRANTED_TO)
     conn.commit()
 
 

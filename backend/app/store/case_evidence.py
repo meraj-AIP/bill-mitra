@@ -6,6 +6,7 @@ from typing import Any
 
 from app.store.complaints import OPEN_STATUSES
 from app.store.db import tx
+from app.store.review import ANSWERING
 
 _MARKS = ", ".join("?" * len(OPEN_STATUSES))
 
@@ -75,9 +76,10 @@ def attach(ticket: str, request_id: int, month: str, bill_id: str) -> bool:
 
 
 def answer(request_id: int) -> None:
+    """Answered by the consumer's newest message on the case, so store that message first."""
     with tx() as conn:
-        conn.execute("UPDATE case_requests SET status = 'answered', answered_at = CURRENT_TIMESTAMP "
-                     "WHERE id = ? AND status = 'open'", (request_id,))
+        conn.execute(f"UPDATE case_requests SET status = 'answered', answered_at = CURRENT_TIMESTAMP, "
+                     f"answer_message_id = {ANSWERING} WHERE id = ? AND status = 'open'", (request_id,))
 
 
 def attached(ticket: str) -> list[dict[str, Any]]:

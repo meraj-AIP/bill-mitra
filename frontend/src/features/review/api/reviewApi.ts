@@ -117,3 +117,21 @@ export function revisionsCsvUrl(range: { from: string; to: string }): string {
   const text = params.toString();
   return `/api/review/revisions.csv${text ? `?${text}` : ''}`;
 }
+
+/** Contract section 2. The drafted decision stays the rules' job; this only reads the case and suggests a step. */
+export interface CaseAssist {
+  summary: string;
+  /** From the engine facts: spike, misread signal, estimated reading, charges mismatch. */
+  conflicts: string[];
+  questions: Array<{ text: string; why: string }>;
+  suggested: 'draft' | 'ask_consumer' | 'decide';
+  /** One English line on why that step. */
+  why: string;
+  /** Not in the contract for cases yet; read as rules when missing. */
+  worded_by?: 'ai' | 'rules';
+}
+
+/** On demand only: a press of Ask AI, never on page load. */
+export function useCaseAssist(ticket: string) {
+  return useMutation({ mutationFn: () => sendJson<CaseAssist>(`${casePath(ticket)}/assist`) });
+}

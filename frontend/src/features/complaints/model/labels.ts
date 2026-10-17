@@ -47,3 +47,17 @@ export const OWNERSHIP_LABEL: Record<Ownership, string> = {
   unverified: 'Not verified',
   not_needed: 'Not needed for this type',
 };
+
+/** Request kinds from both the complaint and the review case, read as "Asked for ...". */
+const REQUEST_LABEL: Record<string, string> = {
+  meter_photo: 'a meter photo',
+  bill_photo: 'a bill photo',
+  earlier_bills: 'earlier bills',
+  payment_proof: 'proof of payment',
+  details: 'more details',
+  note: 'an answer to a question',
+};
+
+export function requestLabel(kind: string): string {
+  return REQUEST_LABEL[kind] ?? kind.replace(/_/g, ' ');
+}

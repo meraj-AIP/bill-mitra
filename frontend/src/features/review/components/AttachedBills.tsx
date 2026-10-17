@@ -1,9 +1,14 @@
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import { Box, Button, Typography } from '@mui/material';
+import { Box, Typography } from '@mui/material';
 
+import { PhotoThumb } from '@/shared/components/PhotoGallery';
+import type { GalleryPhoto } from '@/shared/hooks/usePhotoGallery';
 import { formatCount, monthLabel, rupees } from '@/shared/lib/format';
 
 import type { AttachedBill } from '../api/types';
+
+export function attachedBillPhoto(b: AttachedBill, src: string): GalleryPhoto {
+  return { src, alt: `Earlier bill for ${monthLabel(b.month)}, sent by the consumer`, caption: `Earlier bill, ${monthLabel(b.month)}` };
+}
 
 function BillCard({ b }: { b: AttachedBill }) {
   return (
@@ -16,10 +21,9 @@ function BillCard({ b }: { b: AttachedBill }) {
         {b.amount === null ? 'amount not read' : rupees(b.amount)}
       </Typography>
       {b.media_url ? (
-        <Button size="small" href={b.media_url} target="_blank" rel="noopener noreferrer" endIcon={<OpenInNewIcon fontSize="small" />}
-          sx={{ mt: 0.5, ml: -0.75, '@media print': { display: 'none' } }}>
-          Open the photo
-        </Button>
+        <Box sx={{ mt: 1, '@media print': { display: 'none' } }}>
+          <PhotoThumb size="small" {...attachedBillPhoto(b, b.media_url)} />
+        </Box>
       ) : (
         <Typography variant="caption" component="p" sx={{ color: 'text.secondary', mt: 0.5 }}>No photo stored</Typography>
       )}

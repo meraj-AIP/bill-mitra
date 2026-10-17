@@ -59,6 +59,10 @@ export interface ComplaintRow {
   source?: Source | null;
   section?: string | null;
   demo?: boolean;
+  /** Whose move it is. */
+  waiting_on?: WaitingOn;
+  /** Who holds it, for the inbox table. */
+  assignee_name?: string | null;
 }
 
 export interface ComplaintMessage {
@@ -71,7 +75,35 @@ export interface ComplaintMessage {
   delivery_note: string | null;
   /** A photo the consumer sent into the thread. */
   media_url: string | null;
+  /** The file's type, such as image/jpeg. Older servers leave it out. */
+  media_type?: string | null;
 }
+
+/** What the consumer sent back to a request. */
+export interface RequestAnswer {
+  message_id: number;
+  media_url: string | null;
+  media_type?: string | null;
+  /** Null when the answer is a photo sent without words. */
+  body: string | null;
+  at: string;
+}
+
+/** Something staff asked the consumer for, with the answer once it came. */
+export interface ComplaintRequest {
+  id: number;
+  kind: string;
+  note: string | null;
+  status: 'open' | 'answered';
+  created_at: string;
+  answered_at?: string | null;
+  answer?: RequestAnswer | null;
+}
+
+export type WaitingOn = 'staff' | 'consumer' | 'none';
+
+/** How the complaint reached its holder. `by` is null when the system routed it. */
+export interface Handoff { by: Person | null; note: string | null; at: string | null }
 
 export interface ComplaintAuditLine {
   code: string;
@@ -104,9 +136,22 @@ export interface ComplaintDetail extends ComplaintRow {
   assignee?: Person | null;
   /** People this complaint can move to. Present only for accounts allowed to assign. */
   assignable?: Person[];
+  // Added by the hand-off contract (section 4). Optional so an older server still renders.
+  /** Null while nobody holds it. */
+  handoff?: Handoff | null;
+  /** The viewer holds it and may send it back to whoever handed it over. */
+  can_return?: boolean;
+  /** Newest first. */
+  requests?: ComplaintRequest[];
 }
 
-export interface TimelineEntry { at: string; actor: { kind: 'consumer' | 'system' | 'staff'; name: string | null }; text: string }
+export interface TimelineEntry {
+  at: string;
+  actor: { kind: 'consumer' | 'system' | 'staff'; name: string | null };
+  text: string;
+  /** The note written with a hand-off or a send back. */
+  note?: string | null;
+}
 
 export interface NewStaffComplaint {
   type: string;

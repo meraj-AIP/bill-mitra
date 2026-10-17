@@ -77,7 +77,7 @@ def test_asked_for_photo_lands_on_the_complaint_once(reader, staff):
 
     chat(user, "web", kind="image")
     thread = officer.get(f"/api/console/complaints/{ticket}").json()["messages"]
-    assert thread[-1]["author_kind"] == "consumer" and thread[-1]["media_url"].startswith("/api/media/")
+    assert thread[-1]["author_kind"] == "consumer" and thread[-1]["media_url"].startswith(f"/api/console/complaints/{ticket}/media/")
     before = len(thread)
     reader(variant(OVERCHARGED, bill_month="2025-07"))
     chat(user, "web", kind="image")  # the next photo is a normal bill again

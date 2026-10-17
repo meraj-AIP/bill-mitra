@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import { useFilePreview } from '@/shared/hooks/useFilePreview';
 import type { Language } from '@/shared/lib/languages';
 
 import { useUploadBill, validateFile } from '../api/billsApi';
-import { useFilePreview } from './useFilePreview';
 
 /**
  * The dashboard upload flow: validate, preview, read, then open the saved report on its own page.

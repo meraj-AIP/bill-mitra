@@ -5,6 +5,8 @@ import { useState } from 'react';
 import type { ComplaintDetail } from '@/features/complaints';
 
 import { useReplyOptions, useRequestInfo, type RequestOption } from '../api/actionsApi';
+import { usePreset } from '../hooks/usePreset';
+import type { Focus } from '../model/focus';
 import { OptionCards } from './OptionCards';
 
 function RequestPreview({ request, pending, onSend }: { request: RequestOption; pending: boolean; onSend: () => void }) {
@@ -27,10 +29,11 @@ function AskOutcome({ done, error }: { done: boolean; error: string | null }) {
 }
 
 /** Ask the consumer for something that fits this complaint. Their next photo or message is filed under it. */
-export function RequestInfo({ complaint }: { complaint: ComplaintDetail }) {
+export function RequestInfo({ complaint, preset }: { complaint: ComplaintDetail; preset: Focus | null }) {
   const ask = useRequestInfo(complaint.ticket);
   const options = useReplyOptions(complaint.ticket);
   const [kind, setKind] = useState<string | null>(null);
+  usePreset(preset, 'request', true, setKind);
   const open = complaint.status === 'Open' || complaint.status === 'In progress';
   if (!open) {
     return <Typography variant="body2" sx={{ color: 'text.secondary' }}>Reopen the complaint to ask the consumer for something.</Typography>;

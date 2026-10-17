@@ -1,13 +1,16 @@
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import { Box, Stack, Typography } from '@mui/material';
 
+import { PhotoThumb } from '@/shared/components/PhotoGallery';
 import { EmptyState } from '@/shared/components/States';
 import { dateTime } from '@/shared/lib/format';
 
 import type { MyMessage } from '../api/types';
+import { myPhoto } from '../model/photos';
 
 function Bubble({ m }: { m: MyMessage }) {
   const mine = m.from === 'you';
+  const photo = myPhoto(m);
   return (
     <Stack component="li" sx={{ alignItems: mine ? 'flex-end' : 'flex-start' }}>
       <Box sx={{ maxWidth: { xs: '92%', sm: '78%' }, px: 2, py: 1.25, borderRadius: 2,
@@ -17,7 +20,8 @@ function Bubble({ m }: { m: MyMessage }) {
           <Typography variant="subtitle2" component="p">{mine ? 'You' : 'Bill Mitra'}</Typography>
           <Typography variant="caption" component="time" dateTime={m.at} sx={{ color: 'text.secondary' }}>{dateTime(m.at)}</Typography>
         </Stack>
-        <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{m.body}</Typography>
+        {m.body && <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{m.body}</Typography>}
+        {photo && <Box sx={{ mt: 1 }}><PhotoThumb {...photo} /></Box>}
       </Box>
     </Stack>
   );

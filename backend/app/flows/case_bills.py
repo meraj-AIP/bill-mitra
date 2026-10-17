@@ -95,8 +95,8 @@ async def tell_attached(turn: Turn, attached: list[Attached]) -> None:
 def no_bills(ticket: str, request_id: int) -> None:
     """The consumer does not have the months asked for: the request is answered with that note."""
     complaint = complaints.get(ticket)
-    evidence_store.answer(request_id)
     complaints.add_message(ticket, "consumer", None, NO_BILLS_NOTE, "stored")
+    evidence_store.answer(request_id)
     accounts.audit(None, "case.no_bills", ticket, "request answered: consumer has no earlier bills",
                    unit_id=complaint.unit_id if complaint else None)
 
