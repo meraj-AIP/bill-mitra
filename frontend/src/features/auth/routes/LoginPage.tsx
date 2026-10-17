@@ -39,6 +39,7 @@ export function LoginPage() {
 
   return (
     <AuthFrame title="Sign in" lead="Consumers use their mobile number. Department staff use their work email."
+      titleAction={<DemoLogins onPick={pick} />}
       footer={
         <Stack sx={{ gap: 1.5, alignItems: 'center', textAlign: 'center' }}>
           <Typography variant="caption" component="p" sx={{ color: 'text.secondary', maxWidth: '44ch' }}>
@@ -65,7 +66,6 @@ export function LoginPage() {
           {login.isPending ? 'Signing in' : 'Sign in'}
         </Button>
       </Stack>
-      <DemoLogins onPick={pick} />
       <Divider sx={{ my: 3 }} />
       <Typography variant="body2" sx={{ textAlign: 'center' }}>
         New here?{' '}

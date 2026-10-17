@@ -8,6 +8,8 @@ interface AuthFrameProps {
   lead: string;
   children: ReactNode;
   footer?: ReactNode;
+  /** A small control on the title row, such as the sample logins button. */
+  titleAction?: ReactNode;
 }
 
 function BuiltBy() {
@@ -22,7 +24,7 @@ function BuiltBy() {
 }
 
 /** The shared frame for sign in and register: brand panel on the left, the form on the right. */
-export function AuthFrame({ title, lead, children, footer }: AuthFrameProps) {
+export function AuthFrame({ title, lead, children, footer, titleAction }: AuthFrameProps) {
   return (
     <Box sx={{ minHeight: '100dvh', display: 'grid', bgcolor: 'background.default',
       gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 5fr) minmax(0, 6fr)' } }}>
@@ -32,7 +34,10 @@ export function AuthFrame({ title, lead, children, footer }: AuthFrameProps) {
           <CompactBrand />
           <Paper variant="outlined" sx={{ p: { xs: 3, sm: 4 }, ...rise(120),
             boxShadow: (t) => `0 1px 2px ${t.palette.action.selected}, 0 24px 48px -32px ${t.palette.action.focus}` }}>
-            <Typography variant="h2" component="h2">{title}</Typography>
+            <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+              <Typography variant="h2" component="h2">{title}</Typography>
+              {titleAction}
+            </Stack>
             <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.75, mb: 3 }}>{lead}</Typography>
             {children}
           </Paper>
