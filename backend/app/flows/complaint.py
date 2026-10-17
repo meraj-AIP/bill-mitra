@@ -45,7 +45,8 @@ async def preview(turn: Turn, a: Analysis) -> None:
     service = a.bill.masked_service_number() or "-"
     month = month_label(turn.lang, a.facts.month_number, a.facts.year)
     body = turn.t("complaint_preview", service=service, month=month, issue=_issue_for_consumer(turn, a))
-    await turn.buttons(body, [("complaint_send", "btn_send"), ("complaint_cancel", "btn_cancel")])
+    await turn.buttons(body, [("complaint_send", "btn_send"), ("complaint_cancel", "btn_cancel"),
+                              ("cnew", "btn_other_problem")])
 
 
 async def submit(turn: Turn, a: Analysis) -> None:

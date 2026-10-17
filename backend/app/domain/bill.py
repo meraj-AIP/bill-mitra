@@ -48,11 +48,23 @@ class ExtractedBill(BaseModel):
     billing_days: int | None = Field(default=None, ge=1, le=62)
     previous_reading: float | None = None
     present_reading: float | None = None
+    # The two digit "Sts" code beside each reading: 01 is a normal reading, others mean estimated (meter_status.py).
+    present_status: str | None = Field(default=None, pattern=r"^\d{2}$")
+    previous_status: str | None = Field(default=None, pattern=r"^\d{2}$")
     units: int | None = None
     export_units: int | None = None
     # Net-metered bills print import, export and the billed (net) units; the billed figure is a cross-check.
     billed_units: int | None = None
     load_kw: float | None = None
+    # Printed for reference; none of these change the tariff check, but consumers ask about them.
+    phase: int | None = Field(default=None, ge=1, le=3)
+    multiplying_factor: float | None = None
+    recorded_md: float | None = None
+    power_factor: float | None = Field(default=None, ge=0, le=1)
+    security_deposit: float | None = None
+    carry_forward_units: int | None = None
+    disconnection_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    last_paid_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     line_items: list[LineItem] = Field(default_factory=list)
     bill_amount: float | None = None
     arrears: float = 0.0

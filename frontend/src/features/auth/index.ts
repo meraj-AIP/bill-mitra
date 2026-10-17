@@ -4,7 +4,7 @@ export { PublicOnly, RequirePermission } from './components/Guards';
 export { PasswordField } from './components/PasswordField';
 export { useAuth } from './hooks/useAuth';
 export { can, canAny, isConsumer, landingFor, PERMISSIONS, scopeLabel, spansDiscoms, type Permission } from './model/permissions';
-export { MIN_PASSWORD } from './model/roles';
+export { MIN_PASSWORD, MOBILE_PATTERN } from './model/roles';
 export { LoginPage } from './routes/LoginPage';
 export { RegisterPage } from './routes/RegisterPage';
 export { PrivacyPage } from './routes/PrivacyPage';

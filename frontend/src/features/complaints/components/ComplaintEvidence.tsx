@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material';
+import { Box, Paper, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material';
 
 import { BillImage } from '@/shared/components/BillImage';
-import { rupees } from '@/shared/lib/format';
+import { Figure, Panel } from '@/shared/components/Panel';
+import { formatCount, monthLabel, rupees } from '@/shared/lib/format';
 
 import type { ComplaintDetail } from '../api/types';
 
@@ -56,21 +57,45 @@ export function AuditLines({ lines }: { lines: ComplaintDetail['audit_lines'] })
   );
 }
 
-/** The bill and the line-by-line check the complaint rests on. */
+function BillSummary({ bill }: { bill: NonNullable<ComplaintDetail['bill']> }) {
+  return (
+    <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(4, minmax(0, 1fr))' } }}>
+      <Figure label="Bill month" value={monthLabel(bill.bill_month)} />
+      <Figure label="Units" value={bill.units === null ? 'Not printed' : formatCount(bill.units)} />
+      <Figure label="Bill amount" value={money(bill.bill_amount)} />
+      <Figure label="Total payable" value={money(bill.total_payable)} strong />
+    </Box>
+  );
+}
+
+/** The bill the complaint rests on: its figures, the photo and the line-by-line check. */
 export function ComplaintEvidence({ complaint, staff }: { complaint: ComplaintDetail; staff: boolean }) {
   // The contract does not say whether the file is a photo or a PDF, so a photo that fails to load is shown as a PDF.
   const [isPdf, setIsPdf] = useState(false);
+  const { bill } = complaint;
+  if (!bill && !complaint.media_url) {
+    return (
+      <Panel title="Linked bill">
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+          No bill is linked to this complaint. Ask for a bill photo if the complaint needs one.
+        </Typography>
+      </Panel>
+    );
+  }
   return (
     <Stack sx={{ gap: 2 }}>
-      {complaint.media_url ? (
-        <BillImage src={complaint.media_url} isPdf={isPdf} heading={staff ? 'Bill as uploaded' : 'Your bill'}
-          onImageError={() => setIsPdf(true)} />
-      ) : (
-        <Paper variant="outlined" sx={{ p: 2 }}>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>No bill photo is attached to this complaint.</Typography>
-        </Paper>
+      {bill && (
+        <Panel title="Linked bill" caption={`${bill.discom}${bill.service_masked ? `, service no. ${bill.service_masked}` : ''}`}>
+          <BillSummary bill={bill} />
+        </Panel>
       )}
-      <AuditLines lines={complaint.audit_lines} />
+      <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: complaint.media_url ? 'minmax(0, 5fr) minmax(0, 7fr)' : '1fr' }, alignItems: 'start' }}>
+        {complaint.media_url && (
+          <BillImage src={complaint.media_url} isPdf={isPdf} heading={staff ? 'Bill as uploaded' : 'Your bill'}
+            onImageError={() => setIsPdf(true)} />
+        )}
+        {bill && <AuditLines lines={complaint.audit_lines} />}
+      </Box>
     </Stack>
   );
 }

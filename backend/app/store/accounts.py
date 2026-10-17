@@ -202,9 +202,9 @@ def bootstrap_admin() -> None:
     if not settings.bootstrap_admin_email or not settings.bootstrap_admin_password:
         return
     with tx() as conn:
-        if conn.execute("SELECT 1 FROM accounts WHERE role = ?", (rbac.SUPER_ADMIN,)).fetchone():
+        if conn.execute("SELECT 1 FROM accounts WHERE role = ?", (rbac.ADMIN,)).fetchone():
             return
-    admin = create(rbac.SUPER_ADMIN, settings.bootstrap_admin_email, "Administrator", settings.bootstrap_admin_password)
+    admin = create(rbac.ADMIN, settings.bootstrap_admin_email, "Administrator", settings.bootstrap_admin_password)
     audit(None, "account.bootstrap_admin", admin.id)
 
 

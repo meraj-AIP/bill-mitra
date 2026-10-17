@@ -1,12 +1,12 @@
 """Text, voice and button replies. Answers come from a fixed intent set over the engine's facts."""
 
-from app.domain.conversation import composer
+from app.domain.conversation import composer, terms
 from app.domain.conversation.facts import rs
 from app.domain.conversation.intents import Intent, classify, parse_units, says_no_bills
 from app.domain.conversation.lang import text
 from app.domain.tariff.engine import compute
 from app.flows import bill as bill_flow
-from app.flows import case_bills, cases, complaint
+from app.flows import case_bills, cases, complaint, complaint_chat
 from app.flows.analysis import Analysis, analyse, gruha_jyothi_eligible
 from app.flows.turn import Turn
 from app.services import llm, sms_parser
@@ -91,14 +91,38 @@ async def handle_text(turn: Turn, message: str) -> None:
         return
     if says_no_bills(message) and await case_bills.no_bills_from_chat(turn):
         return
+    if await _answer_term(turn, message):
+        return
     intent, what_if_units = await _classify(turn, message)
     await answer_intent(turn, intent, what_if_units)
+
+
+# Intents a named bill term may take over: "why is there an ACD surcharge" asks about ACD, not about the whole bill.
+VAGUE_INTENTS = {"why_high", "off_topic", "help", "due"}
+
+
+async def _answer_term(turn: Turn, message: str) -> bool:
+    """Explain any line printed on the bill, with this bill's own value. Rules only; nothing is generated."""
+    term = terms.match(message)
+    if term is None or classify(message).intent not in VAGUE_INTENTS:
+        return False
+    a = _current(turn)
+    if a is None:
+        return False
+    async with turn.tracer.step("Explain a line on the bill", "rules") as step:
+        body = terms.answer(term, a.bill, a.facts, turn.lang)
+        step.note(f"Bill term '{term.code}', value as printed on this bill")
+    repos.log_event(turn.inbound.channel, "question", language=turn.lang, intent=f"term_{term.code}")
+    await _reply(turn, body)
+    return True
 
 
 async def answer_intent(turn: Turn, intent: Intent, units: int | None = None) -> None:
     repos.log_event(turn.inbound.channel, "question", language=turn.lang, intent=intent)
     if intent in NO_BILL_NEEDED:
         await _reply(turn, turn.t(NO_BILL_NEEDED[intent]))
+        return
+    if await complaint_chat.on_intent(turn, intent):
         return
     a = _current(turn)
     if a is None:

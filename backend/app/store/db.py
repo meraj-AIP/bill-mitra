@@ -130,13 +130,18 @@ CREATE TABLE IF NOT EXISTS case_records (
 
 # Columns added after the first release; SQLite has no ADD COLUMN IF NOT EXISTS.
 _BILL_COLUMNS = {"bill_month": "TEXT", "units": "INTEGER", "total_payable": "REAL", "discom": "TEXT",
-                 "audit_status": "TEXT", "overcharge": "REAL NOT NULL DEFAULT 0"}
+                 "audit_status": "TEXT", "overcharge": "REAL NOT NULL DEFAULT 0",
+                 "source": "TEXT NOT NULL DEFAULT 'upload'"}  # upload | discom | demo
 
 
 # reply_to is the consumer's WhatsApp address, kept only so an officer's answer can reach them; never returned.
 _COMPLAINT_COLUMNS = {"channel": "TEXT", "reply_to": "TEXT", "updated_at": "TEXT", "assigned_to": "TEXT", "triage": "TEXT",
                       "kind": "TEXT NOT NULL DEFAULT 'general'", "unit_id": "TEXT", "section_id": "TEXT",
                       "section_name": "TEXT", "case_facts": "TEXT"}
+# Complaint types (docs/complaints-contract.md). The plain service number and contact number are never stored here.
+_INTAKE_COLUMNS = {"type": "TEXT", "priority": "TEXT", "due_at": "TEXT", "source": "TEXT", "raised_by": "TEXT",
+                   "service_number_hash": "TEXT", "contact_hash": "TEXT", "description": "TEXT", "ownership": "TEXT",
+                   "demo": "INTEGER NOT NULL DEFAULT 0"}
 _MESSAGE_COLUMNS = {"media_id": "TEXT"}
 _EVENT_COLUMNS = {"ms": "INTEGER"}
 _ACCOUNT_COLUMNS = {"consent_version": "TEXT", "consented_at": "TEXT"}
@@ -160,9 +165,49 @@ _SUGGESTIONS_DDL = ("CREATE TABLE IF NOT EXISTS case_suggestions (ticket TEXT PR
                     "corrected_present_reading INTEGER, source_bill_id TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
 
 
+# Chat drafts hold a complaint being put together over several messages; deleted once it is sent or cancelled.
+# Bill by service number: one-time codes, stored only as hashes.
+_INTAKE_DDL = (
+    "CREATE TABLE IF NOT EXISTS chat_drafts (user_id TEXT PRIMARY KEY, data TEXT NOT NULL, "
+    "updated_at TEXT DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS usc_codes (user_id TEXT NOT NULL, discom TEXT NOT NULL, service_hash TEXT NOT NULL, "
+    "code_hash TEXT NOT NULL, expires_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, locked_until TEXT, "
+    "created_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, discom, service_hash))",
+    "CREATE INDEX IF NOT EXISTS idx_complaints_user ON complaints(user_id, created_at)",
+)
+# Existing rows: the type from the kind, the priority and due date from the type, the source from the channel.
+_INTAKE_BACKFILL = (
+    "UPDATE complaints SET type = CASE kind WHEN 'wrong_reading' THEN 'wrong_reading' ELSE 'high_bill' END "
+    "WHERE type IS NULL",
+    "UPDATE complaints SET priority = 'normal' WHERE priority IS NULL",
+    "UPDATE complaints SET due_at = datetime(created_at, CASE type WHEN 'wrong_reading' THEN "
+    "'+' || COALESCE((SELECT decision_sla_days FROM review_policy p WHERE p.discom = complaints.discom), 3) || ' days' "
+    "ELSE '+7 days' END) WHERE due_at IS NULL",
+    "UPDATE complaints SET source = CASE WHEN channel = 'whatsapp' OR user_id LIKE 'wa:%' THEN 'whatsapp' "
+    "WHEN kind = 'wrong_reading' THEN 'consumer_web' ELSE 'consumer_chat' END WHERE source IS NULL",
+    "UPDATE complaints SET ownership = CASE WHEN bill_id IS NULL THEN 'not_needed' ELSE 'verified' END "
+    "WHERE ownership IS NULL",
+)
+# Staff roles that gained complaints.create with complaint types. Granted once, when the type column first appears,
+# so a super admin's later edits to these roles are never undone.
+_CREATE_GRANTED_TO = ("officer", "section_ae")
+
+
+def _grant_create(conn: sqlite3.Connection) -> None:
+    for slug in _CREATE_GRANTED_TO:
+        row = conn.execute("SELECT permissions FROM roles WHERE slug = ?", (slug,)).fetchone()
+        perms = json.loads(row[0]) if row else None
+        if perms is not None and "complaints.create" not in perms:
+            conn.execute("UPDATE roles SET permissions = ? WHERE slug = ?",
+                         (json.dumps([p for p in rbac.PERMISSIONS if p in {*perms, "complaints.create"}]), slug))
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
+    complaint_columns = {row[1] for row in conn.execute("PRAGMA table_info(complaints)")}
+    first_intake = "type" not in complaint_columns
     # Table and column names come from the constants above, never from input; DDL cannot take parameters.
     for table, columns in (("bills", _BILL_COLUMNS), ("complaints", _COMPLAINT_COLUMNS), ("events", _EVENT_COLUMNS),
+                           ("complaints", _INTAKE_COLUMNS),
                            ("accounts", _ACCOUNT_COLUMNS), ("complaint_messages", _MESSAGE_COLUMNS),
                            ("audit_log", _AUDIT_COLUMNS), ("case_requests", _REQUEST_COLUMNS), *_AUTOMATION_COLUMNS):
         present = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
@@ -172,6 +217,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for statement in _AUTOMATION_DDL:
         conn.execute(statement)
     conn.execute(_SUGGESTIONS_DDL)
+    for statement in (*_INTAKE_DDL, *_INTAKE_BACKFILL):
+        conn.execute(statement)
+    if first_intake:
+        _grant_create(conn)
     conn.commit()
 
 
@@ -186,30 +235,45 @@ def _seed(conn: sqlite3.Connection) -> None:
         conn.execute("INSERT OR IGNORE INTO units (id, kind, name, discom) VALUES (?, 'discom', ?, ?)",
                      (unit_id, discom, discom))
         conn.execute("INSERT OR IGNORE INTO review_policy (discom) VALUES (?)", (discom,))
-    # A super admin may edit built-in roles, so a restart must not undo that. Only the two locks are re-asserted:
-    # the consumer role's permissions, and role management on the super admin role.
+    _retire_super_admin(conn)
+    # An admin may edit built-in roles, so a restart must not undo that. Only the two locks are re-asserted:
+    # the consumer role's permissions, and role management on the admin role.
     for role in rbac.BUILTIN_ROLES:
         perms = json.dumps(rbac.default_permissions(role.slug))
         conn.execute("INSERT INTO roles (slug, name, description, permissions, builtin) VALUES (?, ?, ?, ?, 1) "
                      "ON CONFLICT(slug) DO UPDATE SET builtin = 1", (role.slug, role.name, role.description, perms))
     conn.execute("UPDATE roles SET permissions = ? WHERE slug = ?",
                  (json.dumps(rbac.default_permissions(rbac.CONSUMER)), rbac.CONSUMER))
-    row = conn.execute("SELECT permissions FROM roles WHERE slug = ?", (rbac.SUPER_ADMIN,)).fetchone()
+    row = conn.execute("SELECT permissions FROM roles WHERE slug = ?", (rbac.ADMIN,)).fetchone()
     if row and "roles.manage" not in json.loads(row[0]):
         conn.execute("UPDATE roles SET permissions = ? WHERE slug = ?",
-                     (json.dumps(["roles.manage", *json.loads(row[0])]), rbac.SUPER_ADMIN))
+                     (json.dumps(["roles.manage", *json.loads(row[0])]), rbac.ADMIN))
+
+
+def _retire_super_admin(conn: sqlite3.Connection) -> None:
+    """Super admin and admin were merged into one admin role. Once, when the old role is still there: its accounts
+    become admin, admin takes over its permissions (edits included), and the old role row goes."""
+    old = conn.execute("SELECT permissions FROM roles WHERE slug = ?", (rbac.RETIRED_SUPER_ADMIN,)).fetchone()
+    if old is None:
+        return
+    perms = [p for p in json.loads(old[0]) if p in rbac.PERMISSIONS]
+    conn.execute("UPDATE accounts SET role = ? WHERE role = ?", (rbac.ADMIN, rbac.RETIRED_SUPER_ADMIN))
+    conn.execute("UPDATE roles SET permissions = ?, name = ?, description = ? WHERE slug = ?",
+                 (json.dumps(perms), rbac.BUILTIN[rbac.ADMIN].name, rbac.BUILTIN[rbac.ADMIN].description, rbac.ADMIN))
+    conn.execute("DELETE FROM roles WHERE slug = ?", (rbac.RETIRED_SUPER_ADMIN,))
+    conn.execute("INSERT INTO audit_log (actor_id, action, target, detail) VALUES (NULL, 'role.merge', ?, ?)",
+                 (rbac.ADMIN, "super_admin merged into admin"))
 
 
 def _rebuild_accounts(conn: sqlite3.Connection) -> None:
     """The first accounts table had a CHECK on role that SQLite cannot drop, so it is rebuilt once, keeping every
-    id, hash and timestamp. admin becomes super_admin; a DISCOM officer gets a scope on that DISCOM, an officer
+    id, hash and timestamp. A DISCOM officer gets a scope on that DISCOM, an officer
     without one (all DISCOMs) and every former admin a scope on both."""
     found = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'accounts'").fetchone()
     if found is None or "CHECK" not in found[0]:
         return
     conn.execute(_ACCOUNTS_DDL.replace("CREATE TABLE IF NOT EXISTS accounts (", "CREATE TABLE accounts_v2 ("))
-    mapped = _ACCOUNT_COPY.replace("role,", "CASE role WHEN 'admin' THEN 'super_admin' ELSE role END,", 1)
-    conn.execute(f"INSERT INTO accounts_v2 ({_ACCOUNT_COPY}) SELECT {mapped} FROM accounts")
+    conn.execute(f"INSERT INTO accounts_v2 ({_ACCOUNT_COPY}) SELECT {_ACCOUNT_COPY} FROM accounts")
     conn.execute("INSERT OR IGNORE INTO account_scopes (account_id, unit_id) SELECT a.id, u.id FROM accounts a "
                  "JOIN units u ON u.kind = 'discom' AND (a.role = 'admin' OR a.discom IS NULL OR u.name = a.discom) "
                  "WHERE a.role IN ('admin', 'officer')")
@@ -263,7 +327,8 @@ def tx() -> Iterator[sqlite3.Connection]:
 
 
 def purge_mock_data() -> None:
-    """Earlier builds seeded invented pilot activity and pre-read sample bills. Only real activity is kept."""
+    """Earlier builds seeded invented pilot activity and pre-read sample bills. Only real activity is kept.
+    Demo complaints (demo = 1, app/tools/demo_complaints.py) are not mock data in this sense and stay."""
     with tx() as conn:
         conn.execute("DELETE FROM events WHERE simulated = 1")
         conn.execute("DELETE FROM complaints WHERE simulated = 1")

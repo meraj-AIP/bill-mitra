@@ -136,11 +136,11 @@ async def _explanation(turn: Turn, a: Analysis, discom: str | None) -> str:
         return logged("llm_pass", written)
 
 
-async def handle_bill(turn: Turn, bill: ExtractedBill, media_id: str | None) -> None:
+async def handle_bill(turn: Turn, bill: ExtractedBill, media_id: str | None, source: str = "upload") -> None:
     async with turn.tracer.step("Check against the TGERC tariff", "rules") as step:
         a = analyse(bill, turn.state.user_id)
         step.note(_check_note(a))
-    bill_id = repos.save_bill(turn.state.user_id, bill, media_id, a.audit.status, a.audit.overcharge)
+    bill_id = repos.save_bill(turn.state.user_id, bill, media_id, a.audit.status, a.audit.overcharge, source)
     turn.state.current_bill_id = bill_id
     turn.state.awaiting = None
     await case_bills.tell_attached(turn, case_bills.attach_upload(turn.state.user_id, bill_id, bill, media_id))

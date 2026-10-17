@@ -221,8 +221,8 @@ def least_busy_decider(section_id: str) -> str | None:
     return found[0] if found else None
 
 
-def deciders_covering(unit_ids: list[str]) -> list[dict[str, str]]:
-    """Active accounts that may decide and hold a scope on one of these units (a case's unit, its parents, its ERO)."""
+def staff_covering(unit_ids: list[str], perm: str, limit: int = 200) -> list[dict[str, str]]:
+    """Active accounts holding `perm` with a scope on one of these units (a record's unit, its parents, its ERO)."""
     if not unit_ids:
         return []
     marks = ",".join("?" * len(unit_ids))
@@ -230,9 +230,14 @@ def deciders_covering(unit_ids: list[str]) -> list[dict[str, str]]:
         rows = conn.execute(
             "SELECT DISTINCT a.id, a.name FROM accounts a JOIN account_scopes s ON s.account_id = a.id "
             f"JOIN roles r ON r.slug = a.role WHERE a.active = 1 AND s.unit_id IN ({marks}) AND EXISTS "
-            "(SELECT 1 FROM json_each(r.permissions) WHERE value = 'cases.decide') ORDER BY a.name LIMIT 200",
-            unit_ids).fetchall()
+            "(SELECT 1 FROM json_each(r.permissions) WHERE value = ?) ORDER BY a.name LIMIT ?",
+            [*unit_ids, perm, limit]).fetchall()
     return [dict(r) for r in rows]
+
+
+def deciders_covering(unit_ids: list[str]) -> list[dict[str, str]]:
+    """Active accounts that may decide and hold a scope on one of these units (a case's unit, its parents, its ERO)."""
+    return staff_covering(unit_ids, "cases.decide")
 
 
 def revisions(*, viewer: str | None, since: str | None, until: str | None, ero_id: str | None) -> list[dict[str, Any]]:

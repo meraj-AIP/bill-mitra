@@ -22,7 +22,7 @@ English, Hindi and Urdu are also supported. Urdu is text only for now.
 
 One rule runs through the product: **rules calculate, AI explains.** A deterministic engine does every calculation from versioned tariff tables. The language model only writes sentences. A number guard checks every figure the model writes. If any figure does not trace back to the engine, the reply falls back to a checked template.
 
-This build is a web app with sign in and role-based access. Consumers get a bill dashboard and a WhatsApp preview chat with a "Behind the reply" trace panel. DISCOM staff get the console, the complaints inbox and the bill review queue, limited to the units they cover. A super admin manages roles, units, review policy and accounts. A How it works page has an interactive system map with journeys, and the tariff explorer. The WhatsApp Cloud API adapter is built and switches on with environment settings. There is no mock data anywhere. Without an OpenAI key, bill reading is off and the consumer types the units.
+This build is a web app with sign in and role-based access. Consumers get a bill dashboard and a WhatsApp preview chat with a "Behind the reply" trace panel. DISCOM staff get the console, the complaints inbox and the bill review queue, limited to the units they cover. An admin manages roles, units, review policy and accounts. A How it works page has an interactive system map with journeys, and the tariff explorer. The WhatsApp Cloud API adapter is built and switches on with environment settings. There is no mock data anywhere. Without an OpenAI key, bill reading is off and the consumer types the units.
 
 ## 2. Problem
 
@@ -68,14 +68,14 @@ The result: consumers call 1912 or visit the counter to ask "why is my bill so h
 | Department officers | Answer complaints quickly and the same way every time. See volume, outcomes and hot spots. | Complaints inbox with the audit lines and bill photo, a thread, a checked suggested reply, reply and status change. Console with reading quality, complaints by status, overdue tickets and CSV export. Tariff explorer to check any unit count. |
 | Section AE | Decide wrong reading cases for their section fast, with the facts in one place. | Review queue for their section. Each case has the bill, readings, an evidence pack, a timeline and an engine preview of a corrected reading. |
 | Billing approver | Keep revisions honest and get them into the billing system. | Approves decisions when the DISCOM's policy asks for it, marks revisions applied with the billing reference, exports revisions. Never on their own decision. |
-| Super admin and admin | Control who can see consumer data and who can move money. | Super admin: roles, units, review policy, accounts. Admin: staff accounts in own scope. Neither holds a money permission. Audit log of every change. |
+| Admin | Control who can see consumer data and who can move money. | Roles, units, review policy, accounts and the audit log. Holds no money permission. A narrower account manager can be set up as a custom role. Audit log of every change. |
 
 ## 5. Scope
 
 ### In this build
 
 - Sign in, consumer registration (mobile and password, with consent to the privacy notice).
-- Role-based access: a permission catalogue, built-in roles (super admin, admin, DISCOM officer, section AE, billing approver, auditor, consumer) and custom roles. Super admin can edit and reset built-in staff roles. Every staff account is scoped to units.
+- Role-based access: a permission catalogue, built-in roles (admin, DISCOM officer, call centre agent, section AE, billing approver, auditor, consumer) and custom roles. Admin can edit and reset built-in staff roles. Every staff account is scoped to units.
 - Org units: DISCOM, circle, division, subdivision, section and ERO, with aliases, CSV import and a queue of unmapped section names.
 - Bill review: "Bill looks wrong" report, routing to the section AE, automatic evidence pack, automatic request for missing earlier bills, AE decisions priced by the engine, optional second approval per DISCOM, revisions, final amounts, case timeline.
 - Consumer dashboard: upload a bill and get the full report, history, next month and a plain explanation in four languages.
@@ -154,8 +154,8 @@ Paths are relative to the repository root. `backend/app` is shortened to `b/` an
 | FR-42 | Staff accounts: create with a role and unit scopes, edit, deactivate, reset password. Nobody grants a scope outside their own. Audit log limited to the reader's scope. | `b/api/admin.py`, `b/store/accounts.py`, `f/admin/` | Built |
 | FR-43 | Delete my account (consumers). The separate My complaints page is gone: general complaints are raised and answered in the chat, and wrong bill reports show their status on the bill page. | `b/api/privacy.py`, `f/dashboard/` | Built |
 | FR-44 | Permissions and roles: fixed catalogue, seven built-in roles, custom roles. Every staff route checks a permission, then the unit scope. Permissions are read on every request. | `b/domain/rbac.py`, `b/api/deps.py`, `b/store/roles.py`, `b/api/access.py`, `f/admin/` | Built |
-| FR-45 | Super admin edits built-in roles: any except consumer (locked); super admin keeps role management; role management never sits with money permissions or own bills; a changed role shows as customised and can be reset; a restart keeps the edits. | `b/domain/rbac.py`, `b/store/roles.py`, `b/store/db.py` | Built |
-| FR-46 | Separation of duties: nobody approves or marks applied their own decision; super admin and admin hold no money permission. Each built-in role is tested against 14 protected areas. | `b/api/review_decisions.py`, `tests/test_access_matrix.py` | Built |
+| FR-45 | Admin edits built-in roles: any except consumer (locked); admin keeps role management; role management never sits with money permissions or own bills; a changed role shows as customised and can be reset; a restart keeps the edits. | `b/domain/rbac.py`, `b/store/roles.py`, `b/store/db.py` | Built |
+| FR-46 | Separation of duties: nobody approves or marks applied their own decision; admin holds no money permission. Each built-in role is tested against 14 protected areas. | `b/api/review_decisions.py`, `tests/test_access_matrix.py` | Built |
 | FR-47 | Org units: DISCOM, circle, division, subdivision, section, ERO; aliases; CSV import; unmapped section queue that re-routes open cases once mapped. | `b/store/units.py`, `b/api/access.py`, `f/admin/` | Built |
 | FR-48 | Wrong bill report: "Bill looks wrong" in the chat (reply id `report_bill` or a `dispute` message) or on the web bill page. One open case per bill. Consumers see only received, waiting for you, revised or no change, and only the DISCOM's name. | `b/flows/cases.py`, `b/api/bills.py`, `f/dashboard/` | Built |
 | FR-49 | Routing and evidence: the printed section is matched to a unit; the least busy AE there gets it, else the division, else the DISCOM. The evidence pack (this bill, printed history, uploads, DISCOM records, spike, requested bills) is built on report. | `b/flows/cases.py`, `b/flows/evidence.py`, `b/services/billing_records.py` | Built (DISCOM records need access) |

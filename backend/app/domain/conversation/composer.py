@@ -2,6 +2,7 @@
 
 import re
 
+from app.domain import meter_status
 from app.domain.conversation.facts import Facts, due_label, rs
 from app.domain.conversation.lang import pack, text
 
@@ -25,6 +26,12 @@ def _audit_sentences(f: Facts, lang: str) -> list[str]:
     if f.audit_status == "mismatch":
         return [text(lang, "mismatch", label=_label(lang, code), diff=rs(diff)) for code, diff in f.over_lines]
     return [text(lang, "partial")]
+
+
+def _estimated(f: Facts, lang: str, key: str) -> list[str]:
+    if not meter_status.estimated(f.reading_status):
+        return []
+    return [text(lang, key, code=f.reading_status, why=text(lang, f"sts_{meter_status.kind(f.reading_status)}"))]
 
 
 def _prediction_sentences(f: Facts, lang: str) -> list[str]:
@@ -55,6 +62,7 @@ def explain(f: Facts, lang: str) -> list[str]:
     elif f.gj_lost:
         out.append(text(lang, "gj_lost"))
     out.extend(_audit_sentences(f, lang))
+    out.extend(_estimated(f, lang, "reading_estimated"))
     if f.surcharge:
         out.append(text(lang, "surcharge", surcharge=rs(f.surcharge)))
     if f.delta_units:
@@ -82,7 +90,7 @@ def summary_card(f: Facts, lang: str) -> str:
 
 
 def why_high(f: Facts, lang: str) -> str:
-    reasons = []
+    reasons = _estimated(f, lang, "reason_estimated")
     if f.overcharge:
         reasons.append(text(lang, "reason_overcharge", over=rs(f.overcharge)))
     if f.units > 200:

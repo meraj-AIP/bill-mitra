@@ -17,7 +17,7 @@ interface RoleDialogProps {
 const draftOf = (role: Role | null): RoleDraft =>
   (role ? { name: role.name, description: role.description, permissions: role.permissions } : { name: '', description: '', permissions: [] });
 
-const SUPER_ADMIN = 'super_admin';
+const ADMIN = 'admin';
 
 function problemsOf(d: RoleDraft, slug: string | undefined) {
   return {
@@ -25,7 +25,7 @@ function problemsOf(d: RoleDraft, slug: string | undefined) {
     permissions: d.permissions.length > 0 ? null : 'Tick at least one permission.',
     separation: separationProblem(d.permissions),
     // Without this nobody could ever change a role again.
-    lockout: slug === SUPER_ADMIN && !d.permissions.includes('roles.manage') ? 'Super admin must keep Manage roles.' : null,
+    lockout: slug === ADMIN && !d.permissions.includes('roles.manage') ? 'Admin must keep Manage roles.' : null,
   };
 }
 
@@ -58,7 +58,7 @@ function BuiltinNote({ role }: { role: Role }) {
       {role.customised
         ? 'This built-in role has been changed from what ships. Reset it to go back to the default permissions.'
         : 'A built-in role. Changes apply to every account that holds it, from their next request.'}
-      {role.slug === SUPER_ADMIN && ' Super admin always keeps Manage roles, so someone can always fix access.'}
+      {role.slug === ADMIN && ' Admin always keeps Manage roles, so someone can always fix access.'}
     </Alert>
   );
 }

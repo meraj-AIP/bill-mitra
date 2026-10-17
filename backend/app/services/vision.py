@@ -75,10 +75,20 @@ previous_reading, present_reading: readings from the "Previous" and "Present" ro
   slips print them as "Prs DD/MM/YY Sts KWH KVAH" and "Prv DD/MM/YY Sts KWH KVAH": the two numbers after the date
   and the 2 digit status are the KWH and KVAH readings. Take the column the units are billed on, the one whose
   difference equals the units or the "Import:" value (these bills are usually billed on KVAH)
+present_status, previous_status: the 2 digit status ("Sts") printed right after the date on the "Present"/"Prs" and
+  "Previous"/"Prv" rows, e.g. "01", exactly as printed; null if there is none
 units: the "Units:" value; on a solar net-metered bill the "Import:" value instead (units drawn from the grid), or null
 export_units: on a solar net-metered bill the "Export:" value (units sent to the grid), else null
 billed_units: the "Billed Units:" value when printed (import minus export on net-metered bills), or null
 load_kw: "Contracted Load" in kW, or null
+phase: 1 or 3 from "Ph:", or null
+multiplying_factor: the "MF:" value, or null
+recorded_md: the "Recorded MD" value, or null
+power_factor: the "PF" value (0 to 1), or null
+security_deposit: the "SD AVAILABLE" or "SD Available" amount, or null
+carry_forward_units: the present "CF Units" value (from "Prev/Pres CF Units : a/b" take b), or null
+disconnection_date: "YYYY-MM-DD" from "Disc Date", or null
+last_paid_date: "YYYY-MM-DD" from "Last Paid Dt", or null
 line_items: every charge row between the readings and "Bill Amount", as {code, label, amount}, label as printed,
   amounts negative when printed with a minus. Include rows that are 0.00. code is one of:
   energy = Energy Charges; fixed = Fixed Charges; customer = Customer Charges; duty = Electricity Duty only;

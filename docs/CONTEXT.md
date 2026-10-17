@@ -64,7 +64,7 @@ All of this was done in our working sessions in the days before the jury session
 10. We planned a demo app: a React web app that mimics WhatsApp, with mock upload, since there is no Meta or WhatsApp account yet.
 11. Owner asked to build it end to end, cover every edge case, and keep the design simple. This repository is the result.
 12. We then removed every made-up bill and figure, tested reading on two real TGSPDCL bills, and added sign in, roles, the complaints inbox and privacy controls.
-13. After the jury session (16 to 17 Oct) we added role-based access with org units and scopes, and the AE bill review flow: report, routing, evidence pack, requests for earlier bills, decisions, final amounts and the case timeline. The super admin can now edit built-in roles. The How it works page got playable journeys, including staff-only ones.
+13. After the jury session (16 to 17 Oct) we added role-based access with org units and scopes, and the AE bill review flow: report, routing, evidence pack, requests for earlier bills, decisions, final amounts and the case timeline. The admin can now edit built-in roles. The How it works page got playable journeys, including staff-only ones.
 
 ## 5. Decisions and why
 
@@ -88,8 +88,8 @@ All of this was done in our working sessions in the days before the jury session
 | Department console and complaints inbox included | Shows the DISCOM what they get, from real activity only: reading quality, complaints by status, overdue tickets. Officers reply from the inbox. |
 | Complaints recorded in Bill Mitra, not 1912 | We have no 1912 API access. Tickets are `BM-` numbers and the consumer is told to also call 1912. |
 | Access by permission and unit, not by role name | DISCOMs run on circles, divisions and sections. Each staff account covers its units only. Roles are sets of permissions, so a DISCOM can shape its own roles. |
-| Super admin can edit built-in roles, with locks | Owner's call. The consumer role is locked, super admin keeps role management, and role management never sits with money permissions. Edits survive a restart and can be reset. |
-| Separation of duties | Nobody approves or applies their own decision. Super admin and admin never move money. |
+| Admin can edit built-in roles, with locks | Owner's call. The consumer role is locked, admin keeps role management, and role management never sits with money permissions. Edits survive a restart and can be reset. |
+| Separation of duties | Nobody approves or applies their own decision. Admin never moves money. |
 | Consumers never see who reviews | Owner's call. Consumer copy names only the DISCOM. No "AE" and no staff names on the consumer side. |
 | AE decides alone by default | Owner's call. `ae_limit` is empty and custom reductions need no approval. A DISCOM can switch on a second approval in the review policy. |
 | Evidence is gathered before the AE opens the case | The AE should not wait for basics. The pack is built on report, and missing earlier bills are asked for at once. |
@@ -122,7 +122,7 @@ What is real:
 - The next bill prediction and the savings tips.
 - The conversation flow, in four languages.
 - Accounts, the console, the complaints inbox and officer replies.
-- Role-based access: seven built-in roles, custom roles, super admin role editing with reset, unit scopes, and a test that checks every built-in role against 14 protected areas.
+- Role-based access: seven built-in roles, custom roles, admin role editing with reset, unit scopes, and a test that checks every built-in role against 14 protected areas.
 - Org units with aliases, CSV import and the unmapped section queue.
 - AE bill review: report, routing, evidence pack, automatic request for earlier bills, decisions priced by the engine, optional approval, revisions, final amounts and the case timeline.
 - The WhatsApp adapter code (webhook check, signature check, dedupe, media upload and download).

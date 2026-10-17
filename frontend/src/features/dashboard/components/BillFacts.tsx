@@ -1,9 +1,10 @@
-import { Box, Chip, Paper, Stack, Typography } from '@mui/material';
+import { Alert, Box, Chip, Paper, Stack, Typography } from '@mui/material';
 
 import { calendarDate, formatCount, monthLabel, rupees } from '@/shared/lib/format';
 
 import type { Bill, FinalAmounts } from '../api/types';
 import { FINAL_STATUS } from '../model/labels';
+import { isEstimated, statusMeaning } from '../model/meterStatus';
 
 function Fact({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
   return (
@@ -43,6 +44,28 @@ function ConnectionFacts({ bill }: { bill: Bill }) {
       {!bill.is_domestic && <Fact label="Contracted load" value={bill.load_kw === null ? 'Not read' : `${formatCount(bill.load_kw)} kW`} />}
     </>
   );
+}
+
+function EstimatedNote({ code }: { code: string | null | undefined }) {
+  if (!isEstimated(code)) return null;
+  return (
+    <Alert severity="warning" sx={{ mb: 2 }}>
+      Meter status {code}: {statusMeaning(code).toLowerCase()}. These units were not read from the meter this month,
+      so the bill can be higher or lower than real use. The next actual reading adjusts it.
+    </Alert>
+  );
+}
+
+/** Printed for reference. Only what the bill shows appears, so a household bill stays short. */
+function ReferenceFacts({ bill }: { bill: Bill }) {
+  const rows: Array<[string, string]> = [];
+  if (bill.present_status) rows.push(['Meter status', `${bill.present_status}, ${statusMeaning(bill.present_status)}`]);
+  if (bill.phase) rows.push(['Supply', bill.phase === 3 ? 'Three phase' : 'Single phase']);
+  if (bill.recorded_md !== null && bill.recorded_md !== undefined) rows.push(['Recorded max demand', `${formatCount(bill.recorded_md)} kW`]);
+  if (bill.power_factor !== null && bill.power_factor !== undefined) rows.push(['Power factor', String(bill.power_factor)]);
+  if (bill.security_deposit !== null && bill.security_deposit !== undefined) rows.push(['Security deposit held', rupees(bill.security_deposit)]);
+  if (bill.disconnection_date) rows.push(['Disconnection date', calendarDate(bill.disconnection_date)]);
+  return <>{rows.map(([label, value]) => <Fact key={label} label={label} value={value} />)}</>;
 }
 
 function Revised({ label, value, printed }: { label: string; value: number; printed: number | null }) {
@@ -86,6 +109,7 @@ export function BillFacts({ bill, final }: { bill: Bill; final?: FinalAmounts | 
   return (
     <Paper variant="outlined" sx={{ p: { xs: 2, sm: 2.5 } }}>
       {revised && <FinalFacts bill={bill} final={revised} />}
+      <EstimatedNote code={bill.present_status} />
       <Box component="dl" sx={{ m: 0, display: 'grid', gap: 2, gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(4, 1fr)' } }}>
         {!revised && <Fact strong label="Total payable" value={bill.total_payable === null ? 'Not read' : rupees(bill.total_payable)} />}
         <Fact strong label={solar ? 'Billed units (net)' : 'Units'} value={count(solar ? netUnits(bill) : bill.units)} />
@@ -96,6 +120,7 @@ export function BillFacts({ bill, final }: { bill: Bill; final?: FinalAmounts | 
         <Fact label="Meter readings" value={readingsText(bill)} />
         <Fact label={bill.arrears < 0 ? 'Credit from earlier bills' : 'Arrears'} value={rupees(Math.abs(bill.arrears))} />
         <ConnectionFacts bill={bill} />
+        <ReferenceFacts bill={bill} />
       </Box>
     </Paper>
   );

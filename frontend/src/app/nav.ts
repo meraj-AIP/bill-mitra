@@ -54,7 +54,8 @@ export function navFor(account: Pick<Account, 'permissions'>): Nav {
   // People who decide or approve start their day in the queue, so it comes first for them.
   const reviewer = can(account, 'cases.decide') || can(account, 'cases.approve');
   const main: Entry[] = consumer
-    ? [{ to: '/', label: 'Dashboard', any: CONSUMER }, { to: '/assistant', label: 'Assistant', any: CONSUMER }]
+    ? [{ to: '/', label: 'Dashboard', any: CONSUMER }, { to: '/complaints', label: 'Complaints', any: CONSUMER },
+      { to: '/assistant', label: 'Assistant', any: CONSUMER }]
     : reviewer ? [review, ...staff] : [...staff, review];
   return {
     main: main.filter((e) => canAny(account, e.any)).map(strip),

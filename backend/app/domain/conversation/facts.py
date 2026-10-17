@@ -56,6 +56,8 @@ class Facts(BaseModel):
     due_date: str | None
     rates: list[float]
     # Set only once a revision is approved: bill_amount and total_payable then hold the revised figures.
+    # The meter status printed beside the present reading; anything but 01 means the units were estimated.
+    reading_status: str | None = None
     printed_bill_amount: float | None = None
     printed_total_payable: float | None = None
 
@@ -90,7 +92,7 @@ def build_facts(bill: ExtractedBill, comp: Computation, result: AuditResult,
         save_amount=ins.saving.saving if ins.saving else None,
         ac_minutes=ins.saving.ac_minutes_per_day if ins.saving else None,
         cliff_100=cliff.get(100, 0.0), cliff_200=cliff.get(200, 0.0),
-        due_date=bill.due_date, rates=rates,
+        due_date=bill.due_date, rates=rates, reading_status=bill.present_status,
     )
 
 

@@ -3,7 +3,7 @@ import type { Account } from '../api/authApi';
 /** The fixed catalogue from the review contract. Typed so a misspelt check fails to compile. */
 export const PERMISSIONS = [
   'roles.manage', 'units.manage', 'policy.manage', 'accounts.manage',
-  'console.view', 'complaints.view', 'complaints.reply', 'complaints.assign',
+  'console.view', 'complaints.view', 'complaints.create', 'complaints.reply', 'complaints.assign',
   'cases.view', 'cases.request_info', 'cases.decide', 'cases.reassign', 'cases.approve', 'cases.mark_applied', 'cases.export',
   'consumer.unmask', 'audit.view', 'chat.preview', 'self.bills',
 ] as const;

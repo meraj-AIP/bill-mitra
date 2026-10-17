@@ -63,8 +63,10 @@ def clear_correct(complaint: Complaint, a: Analysis, spike: Spike, requests: lis
     every_line = (a.audit.status == "verified" and bool(a.audit.lines) and "total_only" not in a.audit.notes
                   and all(line.status == "match" for line in a.audit.lines))
     nothing_open = all(r["status"] != "open" for r in requests)
+    # An estimated reading (meter status other than 01) is never drafted as correct, however well the charges match.
+    estimated = checks.get("reading_status") == "fail"
     if not (every_line and not spike.flagged and checks.get("readings") == "pass" and checks.get("days") == "pass"
-            and nothing_open and complaint.bill_id):
+            and nothing_open and complaint.bill_id and not estimated):
         return None
     usage = ("Units are in line with the household's usual months." if spike.median_units is not None
              else "No earlier months to compare, and nothing on the bill itself looks unusual.")

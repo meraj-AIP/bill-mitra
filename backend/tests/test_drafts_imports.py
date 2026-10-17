@@ -87,7 +87,7 @@ def test_draft_needs_decide_and_scope(reader, sign_in, area):
 
 
 def test_unmapped_names_suggest_close_sections_in_scope(sign_in, area):
-    admin = staff(sign_in, "super_admin")
+    admin = staff(sign_in, "admin")
     near, far = f"Sectin A {area.tag}", f"Zzqx {secrets.token_hex(4)}"
     units.record_unmapped("TGSPDCL", near)
     units.record_unmapped("TGSPDCL", far)
@@ -114,8 +114,8 @@ def _login() -> str:
     return f"import{secrets.token_hex(4)}@example.com"
 
 
-def test_staff_import_creates_good_lines_and_reports_bad_ones(sign_in, area):
-    admin = staff(sign_in, "admin", area.division.id)  # scoped to one division
+def test_staff_import_creates_good_lines_and_reports_bad_ones(sign_in, area, account_manager):
+    admin = staff(sign_in, account_manager, area.division.id)  # an account manager scoped to one division
     elsewhere = tree()
     good, dup = _login(), _login()
     response = admin.post("/api/admin/accounts/import", files=_csv(
@@ -124,7 +124,7 @@ def test_staff_import_creates_good_lines_and_reports_bad_ones(sign_in, area):
         f"Test AE Dup,{dup},section_ae,{area.section_b.code}",
         f"Test Consumer,{_login()},consumer,{area.section_a.code}",
         f"Test Ghost,{_login()},no_such_role,{area.section_a.code}",
-        f"Test Owner,{_login()},super_admin,{area.section_a.code}",
+        f"Test Owner,{_login()},admin,{area.section_a.code}",
         f"Test Away,{_login()},section_ae,{elsewhere.section_a.code}",
         f"Test Nowhere,{_login()},section_ae,NOPE{area.tag}",
         f"Test Bad Login,not-an-email,section_ae,{area.section_a.code}",

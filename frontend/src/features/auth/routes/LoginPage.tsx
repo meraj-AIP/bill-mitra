@@ -1,9 +1,10 @@
 import { Alert, Button, CircularProgress, Divider, Link as MuiLink, Stack, TextField, Typography } from '@mui/material';
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
 import { useLogin } from '../api/authApi';
 import { AuthFrame, FormError } from '../components/AuthFrame';
+import { DemoLogins } from '../components/DemoLogins';
 import { PasswordField } from '../components/PasswordField';
 import { normaliseLogin } from '../model/roles';
 
@@ -13,6 +14,12 @@ export function LoginPage() {
   const deleted = params.get('deleted') === '1';
   const [values, setValues] = useState({ login: '', password: '' });
   const [missing, setMissing] = useState(false);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const pick = (sample: string) => {
+    setMissing(false);
+    setValues({ login: sample, password: '' });
+    passwordRef.current?.focus();
+  };
 
   // Where to go next is decided by PublicOnly once the account is cached.
   const submit = (event: FormEvent) => {
@@ -51,13 +58,14 @@ export function LoginPage() {
           value={values.login} onChange={set('login')} error={missing && !values.login.trim()}
           slotProps={{ htmlInput: { autoCapitalize: 'none', spellCheck: false, autoCorrect: 'off' } }} />
         <PasswordField label="Password" name="password" autoComplete="current-password" required fullWidth
-          value={values.password} onChange={set('password')} error={missing && !values.password} />
+          value={values.password} onChange={set('password')} error={missing && !values.password} inputRef={passwordRef} />
         <Button type="submit" variant="contained" size="large" fullWidth disabled={login.isPending}
           startIcon={login.isPending ? <CircularProgress size={18} color="inherit" aria-hidden /> : null}
           sx={{ mt: 0.5, py: 1.4 }}>
           {login.isPending ? 'Signing in' : 'Sign in'}
         </Button>
       </Stack>
+      <DemoLogins onPick={pick} />
       <Divider sx={{ my: 3 }} />
       <Typography variant="body2" sx={{ textAlign: 'center' }}>
         New here?{' '}

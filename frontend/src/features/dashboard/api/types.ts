@@ -35,6 +35,17 @@ export interface Bill {
   export_units: number | null;
   /** Import minus export, as printed on a net-metered bill. */
   billed_units?: number | null;
+  /** Meter status ("Sts") beside the present and previous readings; anything but 01 means estimated units. */
+  present_status?: string | null;
+  previous_status?: string | null;
+  phase?: number | null;
+  multiplying_factor?: number | null;
+  recorded_md?: number | null;
+  power_factor?: number | null;
+  security_deposit?: number | null;
+  carry_forward_units?: number | null;
+  disconnection_date?: string | null;
+  last_paid_date?: string | null;
   load_kw: number | null;
   billing_days?: number | null;
   line_items: LineItem[];

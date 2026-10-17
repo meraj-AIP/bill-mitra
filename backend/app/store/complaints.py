@@ -7,13 +7,15 @@ import json
 import secrets
 import sqlite3
 import string
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 
+from app.domain import complaint_types
 from app.domain.bill import ExtractedBill
+from app.store import policy
 from app.store.db import tx
 from app.store.units import Conflict, covered_sql, norm
 
@@ -41,6 +43,36 @@ class Complaint(BaseModel):
     unit_id: str | None = None
     section_id: str | None = None
     assigned_to: str | None = None
+    type: str | None = None
+
+
+class Intake(BaseModel):
+    """What a complaint is about and how it came in. Hashes only: the plain numbers never reach this table."""
+
+    type: str
+    priority: str
+    due_at: str
+    source: str
+    raised_by: str | None = None
+    service_number_hash: str | None = None
+    contact_hash: str | None = None
+    description: str | None = None
+    ownership: str = "not_needed"
+    demo: bool = False
+
+
+def intake_for(type_code: str, source: str, discom: str | None, *, created: datetime | None = None,
+               **fields: Any) -> Intake:
+    """Priority and due date come from the type; a reading check falls due on the DISCOM's review SLA."""
+    kind = complaint_types.get(type_code)
+    due = complaint_types.due_at(type_code, created or datetime.now(UTC), policy.get(discom).decision_sla_days)
+    return Intake(type=type_code, priority=kind.priority, due_at=due, source=source, **fields)
+
+
+def _source(channel: str | None, kind: str) -> str:
+    if channel == "whatsapp":
+        return "whatsapp"
+    return "consumer_web" if kind == "wrong_reading" else "consumer_chat"
 
 
 class Placement(BaseModel):
@@ -65,6 +97,7 @@ _TRIAGE_RANK = f"CASE {_TRIAGE} WHEN 'overcharge' THEN 0 WHEN 'needs_check' THEN
 _FAILED = ("(SELECT m.delivery FROM complaint_messages m WHERE m.ticket = c.ticket AND m.author_kind != 'consumer' "
            "ORDER BY m.id DESC LIMIT 1) = 'failed'")
 _OPEN = "c.status IN ('Open', 'In progress')"
+_PRIORITY_RANK = "CASE c.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'low' THEN 3 ELSE 2 END"
 # What one staff account may see: complaints whose unit or matched section is in its tree, anything assigned to it,
 # and complaints from before units existed that only carry a DISCOM. Takes the account id VISIBLE_PARAMS times.
 VISIBLE = (f"(c.assigned_to = ? OR c.unit_id IN {covered_sql()} OR c.section_id IN {covered_sql()} OR "
@@ -73,6 +106,10 @@ VISIBLE = (f"(c.assigned_to = ? OR c.unit_id IN {covered_sql()} OR c.section_id 
 VISIBLE_PARAMS = 7
 _ROW = ("SELECT c.ticket, c.created_at, c.updated_at, c.status, c.service_masked, c.bill_month, c.discom, c.issue, "
         f"c.amount, c.language, c.channel, c.kind, c.unit_id, c.section_id, c.assigned_to, {_TRIAGE} AS triage, COALESCE({_FAILED}, 0) AS delivery_failed, "
+        "c.type, c.priority, c.due_at, c.source, c.ownership, c.demo, c.description, "
+        "(SELECT r.name FROM accounts r WHERE r.id = c.raised_by) AS raised_by, "
+        "(SELECT u.name FROM units u WHERE u.id = c.section_id) AS section, "
+        "(SELECT p.name FROM accounts p WHERE p.id = c.assigned_to) AS assignee_name, "
         "CAST(julianday('now') - julianday(c.created_at) AS INTEGER) AS days_open, "
         "(SELECT COUNT(*) FROM complaint_messages m WHERE m.ticket = c.ticket) AS messages_count, "
         "(SELECT MAX(m.created_at) FROM complaint_messages m WHERE m.ticket = c.ticket) AS last_message_at "
@@ -96,28 +133,63 @@ def _new_ticket(conn: sqlite3.Connection) -> str:
     raise RuntimeError("Could not find a free ticket number.")
 
 
+def _insert(conn: sqlite3.Connection, values: dict[str, Any], intake: Intake, first_message: str,
+            author_kind: AuthorKind = "consumer", author_id: str | None = None) -> str:
+    """One insert for every way a complaint comes in. Column names are fixed here; every value is a parameter."""
+    ticket = _new_ticket(conn)
+    row = {"ticket": ticket, "status": "Open", **values, **intake.model_dump(), "demo": int(intake.demo)}
+    conn.execute(f"INSERT INTO complaints ({', '.join(row)}) VALUES ({', '.join('?' * len(row))})", list(row.values()))
+    conn.execute("INSERT INTO complaint_messages (ticket, author_kind, author_id, body, delivery) "
+                 "VALUES (?, ?, ?, ?, 'stored')", (ticket, author_kind, author_id, first_message))
+    return ticket
+
+
 def create(user_id: str, bill_id: str | None, bill: ExtractedBill, issue: str, amount: float, language: str,
            channel: str, reply_to: str | None, first_message: str, triage: str | None = None, *,
            kind: Kind = "general", placement: Placement | None = None,
-           case_facts: dict[str, Any] | None = None) -> str:
-    """Record a complaint and open its thread with the consumer's own words."""
+           case_facts: dict[str, Any] | None = None, intake: Intake | None = None) -> str:
+    """Record a complaint about a bill and open its thread with the consumer's own words."""
     where = placement or Placement(section_id=None, unit_id=None)
+    type_code = complaint_types.WRONG_READING if kind == "wrong_reading" else complaint_types.LEGACY_GENERAL
+    intake = intake or intake_for(type_code, _source(channel, kind), bill.discom,
+                                  ownership="verified" if bill_id else "not_needed")
+    values = {"user_id": user_id, "bill_id": bill_id, "service_masked": bill.masked_service_number(),
+              "bill_month": bill.bill_month, "discom": bill.discom, "issue": issue, "amount": amount,
+              "language": language, "channel": channel, "reply_to": reply_to, "triage": triage, "kind": kind,
+              "unit_id": where.unit_id, "section_id": where.section_id, "section_name": bill.section,
+              "assigned_to": where.assigned_to, "case_facts": json.dumps(case_facts) if case_facts else None}
     with tx() as conn:
-        ticket = _new_ticket(conn)
         if kind == "wrong_reading" and bill_id and conn.execute(
                 f"SELECT 1 FROM complaints WHERE bill_id = ? AND kind = ? AND status IN ({_MARKS})",
                 (bill_id, kind, *OPEN_STATUSES)).fetchone():
             raise Conflict("A check is already open for this bill.")
-        conn.execute(
-            "INSERT INTO complaints (ticket, user_id, bill_id, service_masked, bill_month, discom, issue, amount, "
-            "status, language, channel, reply_to, triage, kind, unit_id, section_id, section_name, assigned_to, "
-            "case_facts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (ticket, user_id, bill_id, bill.masked_service_number(), bill.bill_month, bill.discom, issue, amount,
-             language, channel, reply_to, triage, kind, where.unit_id, where.section_id, bill.section,
-             where.assigned_to, json.dumps(case_facts) if case_facts else None))
-        conn.execute("INSERT INTO complaint_messages (ticket, author_kind, author_id, body, delivery) "
-                     "VALUES (?, 'consumer', NULL, ?, 'stored')", (ticket, first_message))
-    return ticket
+        return _insert(conn, values, intake, first_message)
+
+
+class General(BaseModel):
+    """A complaint that may have no bill: typed in chat, on the web, or logged by staff."""
+
+    user_id: str
+    discom: str | None
+    issue: str
+    language: str
+    channel: str | None
+    reply_to: str | None = None
+    bill_id: str | None = None
+    service_masked: str | None = None
+    bill_month: str | None = None
+    section_name: str | None = None
+
+
+def create_general(complaint: General, placement: Placement, intake: Intake, first_message: str,
+                   author_kind: AuthorKind = "consumer", author_id: str | None = None,
+                   created_at: str | None = None) -> str:
+    values = {**complaint.model_dump(), "amount": 0.0, "kind": "general", "unit_id": placement.unit_id,
+              "section_id": placement.section_id, "assigned_to": placement.assigned_to}
+    if created_at:
+        values |= {"created_at": created_at, "updated_at": created_at}
+    with tx() as conn:
+        return _insert(conn, values, intake, first_message, author_kind, author_id)
 
 
 def place(ticket: str, placement: Placement) -> None:
@@ -151,15 +223,25 @@ def latest_for_bill(user_id: str, bill_id: str, kind: Kind) -> str | None:
     return row[0] if row else None
 
 
+class Filters(BaseModel):
+    """The inbox filters on the new intake columns."""
+
+    type: str | None = None
+    priority: str | None = None
+    source: str | None = None
+
+
 def _filter(status: str | None, discom: str | None, q: str | None, owner: str | None,
             triage: str | None = None, failed_only: bool = False, viewer: str | None = None,
-            kind: str | None = None) -> tuple[str, list[str]]:
+            kind: str | None = None, more: Filters | None = None) -> tuple[str, list[str]]:
     """`viewer` is a staff account id whose scope limits the rows; None means no limit."""
     where, params = ["1 = 1"], []
+    extra = more or Filters()
     if failed_only:
         where.append(f"{_OPEN} AND {_FAILED}")
     for column, value in (("c.status", status), ("c.discom", discom), ("c.user_id", owner), (_TRIAGE, triage),
-                          ("c.kind", kind)):
+                          ("c.kind", kind), ("c.type", extra.type), ("c.priority", extra.priority),
+                          ("c.source", extra.source)):
         if value:
             where.append(f"{column} = ?")
             params.append(value)
@@ -178,13 +260,14 @@ Sort = Literal["newest", "oldest", "priority"]
 
 def page(page_no: int, page_size: int, *, status: str | None = None, discom: str | None = None,
          q: str | None = None, sort: Sort = "newest", owner: str | None = None, triage: str | None = None,
-         failed_only: bool = False, overdue_days: int = 7, viewer: str | None = None, kind: str | None = None) -> Page:
-    clause, params = _filter(status, discom, q, owner, triage, failed_only, viewer, kind)
+         failed_only: bool = False, overdue_days: int = 7, viewer: str | None = None, kind: str | None = None,
+         more: Filters | None = None) -> Page:
+    clause, params = _filter(status, discom, q, owner, triage, failed_only, viewer, kind, more)
     order_params: list[Any] = []
     if sort == "priority":
-        # Needs you first: open, then overdue, then overcharges by size, then the oldest.
-        order = (f"{_OPEN} DESC, ({_OPEN} AND c.created_at < datetime('now', ?)) DESC, {_TRIAGE_RANK}, "
-                 "c.amount DESC, c.created_at ASC, c.ticket ASC")
+        # Needs you first: open, then overdue, then urgent types, then overcharges by size, then the oldest.
+        order = (f"{_OPEN} DESC, ({_OPEN} AND c.created_at < datetime('now', ?)) DESC, {_PRIORITY_RANK}, "
+                 f"{_TRIAGE_RANK}, c.amount DESC, c.created_at ASC, c.ticket ASC")
         order_params = [f"-{overdue_days} days"]
     else:
         direction = "DESC" if sort == "newest" else "ASC"
@@ -197,9 +280,10 @@ def page(page_no: int, page_size: int, *, status: str | None = None, discom: str
 
 
 def export(*, status: str | None = None, discom: str | None = None, q: str | None = None,
-           newest: bool = True, viewer: str | None = None, kind: str | None = None) -> list[dict[str, Any]]:
+           newest: bool = True, viewer: str | None = None, kind: str | None = None,
+           more: Filters | None = None) -> list[dict[str, Any]]:
     """Rows for the CSV download. Never selects reply_to. days_open stops counting once a complaint is closed."""
-    clause, params = _filter(status, discom, q, None, viewer=viewer, kind=kind)
+    clause, params = _filter(status, discom, q, None, viewer=viewer, kind=kind, more=more)
     order = "DESC" if newest else "ASC"
     with tx() as conn:
         rows = conn.execute(
@@ -220,7 +304,8 @@ def row(ticket: str) -> dict[str, Any] | None:
 def get(ticket: str) -> Complaint | None:
     with tx() as conn:
         found = conn.execute("SELECT ticket, user_id, bill_id, discom, status, language, channel, reply_to, kind, "
-                             "unit_id, section_id, assigned_to FROM complaints WHERE ticket = ?", (ticket,)).fetchone()
+                             "unit_id, section_id, assigned_to, type FROM complaints WHERE ticket = ?",
+                             (ticket,)).fetchone()
     return Complaint(**dict(found)) if found else None
 
 

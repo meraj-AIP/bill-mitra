@@ -9,6 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app.domain import meter_status
 from app.domain.bill import ExtractedBill
 from app.domain.tariff.engine import money
 
@@ -31,6 +32,7 @@ FIELDS = (
 )
 # Only solar net-metered bills print these, so other bills are not marked down for lacking them.
 SOLAR_FIELDS = (("export_units", "Units exported (solar)"), ("billed_units", "Billed units (net)"))
+STATUS_FIELDS = (("present_status", "Meter status (present)"), ("previous_status", "Meter status (previous)"))
 
 
 class FieldCapture(BaseModel):
@@ -96,6 +98,17 @@ def _net_units(bill: ExtractedBill) -> Check:
     ok = net == bill.billed_units  # whole units on both sides, so any gap is a misread digit
     return Check(key="net_units", label=label, status="pass" if ok else "fail",
                  detail=f"{bill.units} - {bill.export_units} = {net}, bill says {bill.billed_units}")
+
+
+def _reading_status(bill: ExtractedBill) -> Check:
+    """Not a misread check: it never blocks. It says whether the units came from the meter or were estimated."""
+    label = "Units read from the meter, not estimated"
+    code = bill.present_status
+    if code is None:
+        return Check(key="reading_status", label=label, status="skipped", detail="No meter status printed")
+    detail = f"Status {code}: {meter_status.STAFF_LABEL[meter_status.kind(code) or 'other']}"
+    return Check(key="reading_status", label=label, status="fail" if meter_status.estimated(code) else "pass",
+                 detail=detail)
 
 
 def _charges_sum(bill: ExtractedBill) -> Check:
@@ -164,8 +177,11 @@ def failed_check(bill: ExtractedBill) -> str | None:
 
 def report(bill: ExtractedBill) -> CaptureReport:
     solar = bill.export_units is not None or bill.billed_units is not None
-    fields = [_field(bill, key, label) for key, label in (*FIELDS, *(SOLAR_FIELDS if solar else ()))]
-    checks = [_readings(bill), *([_net_units(bill)] if solar else []), _charges_sum(bill), _total(bill), _days(bill)]
+    status = bill.present_status is not None
+    extra = (*(SOLAR_FIELDS if solar else ()), *(STATUS_FIELDS if status else ()))
+    fields = [_field(bill, key, label) for key, label in (*FIELDS, *extra)]
+    checks = [_readings(bill), *([_net_units(bill)] if solar else []), _charges_sum(bill), _total(bill), _days(bill),
+              *([_reading_status(bill)] if status else [])]
     problem = _problem(bill, checks)
     return CaptureReport(captured=sum(f.status == "captured" for f in fields), expected=len(fields), fields=fields,
                          checks=checks, trusted=problem is None, problem=problem)

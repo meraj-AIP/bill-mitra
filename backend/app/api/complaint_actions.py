@@ -3,10 +3,11 @@ delivery and acting on many complaints at once. Every write is audited like a si
 
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
-from app.api.complaints import ComplaintDetail, Replier, Viewer, _change_status, _detail, _for_staff
+from app.api.complaints import ComplaintDetail, Replier, Viewer, _change_status, _detail, _for_staff, assignable
+from app.api.deps import require_perm
 from app.domain import complaint_reply
 from app.domain.complaint_reply import RequestKind, Triage
 from app.flows import complaint as complaint_flow
@@ -14,7 +15,7 @@ from app.services import notify
 from app.store import accounts
 from app.store import complaints as store
 from app.store.accounts import Account
-from app.store.complaints import OPEN_STATUSES, Status
+from app.store.complaints import OPEN_STATUSES, Placement, Status
 
 router = APIRouter(prefix="/api/console/complaints", tags=["complaints"])
 BULK_MAX = 25
@@ -29,6 +30,13 @@ class Suggestion(BaseModel):
 
 class InfoRequest(BaseModel):
     kind: RequestKind
+
+
+class AssignBody(BaseModel):
+    account_id: str = Field(max_length=40)
+
+
+Assigner = Annotated[Account, Depends(require_perm("complaints.assign"))]
 
 
 class BulkAction(BaseModel):
@@ -67,7 +75,26 @@ async def request_info(ticket: str, body: InfoRequest, account: Replier) -> Comp
         raise HTTPException(409, "This complaint is closed. Reopen it before asking the consumer for more.")
     outcome = await complaint_flow.ask(complaint, body.kind, account.id)
     accounts.audit(account.id, "complaint.request", ticket, f"{body.kind}, delivery {outcome.delivery}")
-    return _detail(complaint)
+    return _detail(complaint, account)
+
+
+@router.post("/{ticket}/assign", response_model=ComplaintDetail)
+async def assign(ticket: str, body: AssignBody, account: Assigner) -> ComplaintDetail:
+    """General complaints only; a reading check is assigned from its review case, where deciders are listed."""
+    complaint = _for_staff(account, ticket)
+    if complaint.kind != "general":
+        raise HTTPException(409, "Assign a reading check from its review case.")
+    if complaint.status not in OPEN_STATUSES:
+        raise HTTPException(409, "This complaint is closed.")
+    chosen = next((p for p in assignable(complaint) if p.id == body.account_id), None)
+    if chosen is None:
+        raise HTTPException(400, "Choose someone in this area who can see complaints.")
+    store.place(ticket, Placement(section_id=complaint.section_id, unit_id=complaint.unit_id,
+                                  assigned_to=chosen.id))
+    accounts.audit(account.id, "complaint.assign", ticket, f"to {chosen.name}", unit_id=complaint.unit_id)
+    updated = store.get(ticket)
+    assert updated is not None
+    return _detail(updated, account)
 
 
 @router.post("/{ticket}/messages/{message_id}/retry", response_model=ComplaintDetail)
@@ -82,7 +109,7 @@ async def retry(ticket: str, message_id: int, account: Replier) -> ComplaintDeta
         outcome = await notify.send(complaint, found["body"], complaint.status)
     store.set_delivery(message_id, outcome.delivery, outcome.note)
     accounts.audit(account.id, "complaint.retry", ticket, f"message {message_id}, delivery {outcome.delivery}")
-    return _detail(complaint)
+    return _detail(complaint, account)
 
 
 async def _apply(ticket: str, body: BulkAction, account: Account) -> str | None:

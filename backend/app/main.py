@@ -15,10 +15,13 @@ from app.api import (
     alerts,
     auth,
     bills,
+    bills_by_usc,
     catalog,
     complaint_actions,
+    complaint_raise,
     complaints,
     console,
+    consumer_complaints,
     privacy,
     review,
     review_decisions,
@@ -28,7 +31,7 @@ from app.channels.whatsapp import router as whatsapp
 from app.config import get_settings
 from app.core import security
 from app.services import scheduler
-from app.store import accounts
+from app.store import accounts, demo_accounts
 from app.store import privacy as retention
 from app.store.db import connection, purge_mock_data
 
@@ -41,6 +44,7 @@ settings = get_settings()
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     connection()
     accounts.bootstrap_admin()
+    demo_accounts.ensure()
     purge_mock_data()
     retention.sweep()
     scheduler.start()
@@ -61,8 +65,9 @@ app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in settings.co
 app.middleware("http")(security.protect)
 
 for router in (auth.router, privacy.router, admin.router, alerts.router, access.router, catalog.router, bills.router,
-               complaints.router, complaint_actions.router, console.router, review.router, review_decisions.router,
-               web.router, whatsapp.router):
+               bills_by_usc.router, complaints.router, complaint_actions.router, complaint_raise.router,
+               consumer_complaints.router, console.router, review.router, review_decisions.router, web.router,
+               whatsapp.router):
     app.include_router(router)
 
 

@@ -127,6 +127,20 @@ async def check_upload(user_id: str, data: bytes, mime: str, media_id: str, lang
         capture=report, analysis=analysis, final=final, misread=found)
 
 
+def check_fetched(user_id: str, bill: ExtractedBill, language: str) -> BillReport | None:
+    """A bill fetched from the DISCOM by service number: the same gate, engine and storage as an upload. None when
+    the bill does not pass the capture checks, so nothing untrusted is saved or shown."""
+    if not capture.report(bill).trusted:
+        return None
+    a = analyse(bill, user_id)
+    bill_id = repos.save_bill(user_id, bill, None, a.audit.status, a.audit.overcharge, source="discom")
+    case_bills.attach_upload(user_id, bill_id, bill, None)
+    misread.after_bill_saved(user_id, bill, bill_id)
+    repos.log_event("dashboard", "bill_read", language=language, audit_status=a.audit.status, units=a.comp.units,
+                    amount=a.comp.net, discom=bill.discom, section=bill.section)
+    return load(user_id, bill_id, language)
+
+
 def load(user_id: str, bill_id: str, language: str) -> BillReport | None:
     stored = repos.get_own_bill(user_id, bill_id)
     if stored is None:

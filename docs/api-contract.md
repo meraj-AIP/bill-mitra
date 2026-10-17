@@ -1,12 +1,14 @@
 # API contract: accounts, access, complaints and bill review
 
-The backend and the web app both build to this file. Errors are always `{ "detail": string }`.
+The backend and the web app both build to this file. Errors are always `{ "detail": string }`, with one exception: a
+wrong code on `POST /api/bills/by-usc/verify` answers `{ "detail": { "message": string, "attempts_left": number } }`.
 The detailed rules for roles, units, review policy and bill review (decision maths, case states, evidence pack) are in [review-contract.md](review-contract.md). This file lists every route and its shape; it does not repeat those rules.
 
 ## Sessions, permissions and scopes
 
 - Access is decided by permissions, never by role names. A role is a named set of permissions from the catalogue in `backend/app/domain/rbac.py`.
-- Built-in roles: `super_admin`, `admin`, `officer`, `section_ae`, `billing_approver`, `auditor`, `consumer`. A super admin can add custom roles.
+- Built-in roles: `admin`, `officer`, `section_ae`, `billing_approver`, `auditor`, `call_centre`, `consumer`. An admin can add custom roles.
+- `complaints.create` (log a complaint for a consumer) is held by `call_centre`, `officer` and `section_ae`. `admin`, `auditor` and `billing_approver` do not hold it by default.
 - Every staff account has one role and one or more scopes (unit ids). A scope covers that unit and everything below it. Consumers have the `consumer` role and no scopes.
 - Every staff route runs `require_perm(...)` and then a scope check. Something outside the caller's scope is a 404, not a 403, so its existence does not leak.
 - Permissions are read from the role on every request, so a role change applies at once.
@@ -74,7 +76,7 @@ interface Role { slug: string; name: string; description: string; permissions: s
 | `GET /api/admin/permissions` | `roles.manage` | | `{ code, label, group }[]` |
 | `GET /api/admin/roles` | `accounts.manage` | | `Role[]`, built-in first |
 | `POST /api/admin/roles` | `roles.manage` | `{ name, description?, permissions }` | `Role`, slug made from the name. 409 if it exists, 400 for an unknown permission, an empty list or a clash |
-| `PATCH /api/admin/roles/{slug}` | `roles.manage` | `{ name?, description?, permissions? }` | `Role`. Works on custom and built-in roles. 400 for the consumer role, for super admin without `roles.manage`, or for `roles.manage` together with `cases.decide`, `cases.approve`, `cases.mark_applied` or `self.bills` |
+| `PATCH /api/admin/roles/{slug}` | `roles.manage` | `{ name?, description?, permissions? }` | `Role`. Works on custom and built-in roles. 400 for the consumer role, for admin without `roles.manage`, or for `roles.manage` together with `cases.decide`, `cases.approve`, `cases.mark_applied` or `self.bills` |
 | `POST /api/admin/roles/{slug}/reset` | `roles.manage` | | `Role` back to its shipped name, description and permissions. 404 for a custom role |
 | `DELETE /api/admin/roles/{slug}` | `roles.manage` | | 204. 409 for a built-in role or one an account still holds |
 
@@ -89,7 +91,7 @@ interface Unit { id: string; kind: Scope['kind']; name: string; code: string | n
 
 | Method and path | Permission | Body / query | Returns |
 | --- | --- | --- | --- |
-| `GET /api/admin/units` | `units.manage` or `accounts.manage` | `parent_id?` (omit for the DISCOMs), `q?`, `kind?` | `Unit[]` in scope |
+| `GET /api/admin/units` | `units.manage`, `accounts.manage` or `complaints.create` | `parent_id?` (omit for the DISCOMs), `q?`, `kind?` | `Unit[]` in scope |
 | `POST /api/admin/units` | `units.manage` | `{ kind, name, code?, parent_id, ero_id?, aliases? (max 20) }` | `Unit`. 400 when the kind does not fit under the parent, 409 on a clash, 404 for a parent outside scope |
 | `PATCH /api/admin/units/{id}` | `units.manage` | any of `{ name, code, ero_id, aliases, active }` | `Unit` |
 | `POST /api/admin/units/import` | `units.manage` | multipart CSV, header `kind,name,code,parent_code,discom,ero_code,aliases` (aliases `;` separated), under 1 MB, at most 5000 rows | `{ created, updated, errors: { line, detail }[] }`. Rows for a DISCOM outside scope are errors |
@@ -118,6 +120,8 @@ interface Policy { discom: 'TGSPDCL' | 'TGNPDCL'; ae_limit: number | null; custo
 | `GET /api/bills/{id}` | `self.bills` or `chat.preview`, owner | `language?` | `BillReport`, 404 if not yours |
 | `POST /api/bills/{bill_id}/review-request` | `self.bills`, owner | `{ note? (max 500) }`, `language?` | `ReviewSummary`. 409 if a case is already open for the bill |
 | `POST /api/bills/{bill_id}/review-request/no-bills` | `self.bills`, owner | `language?` | `ReviewSummary`. Answers the open request for earlier bills with "I do not have them". 409 if no such request is open |
+| `POST /api/bills/by-usc/start` | `self.bills` | `{ discom: 'TGSPDCL' or 'TGNPDCL', service_number (5..16 digits) }`, `language?` | 202 `UscStarted`, the same body whether or not the number exists. 503 when the DISCOM lookup or the code sender is not configured, 429 after 5 starts per account or 3 per service number in an hour |
+| `POST /api/bills/by-usc/verify` | `self.bills` | `{ discom, service_number, code (6 digits; omit on a development server) }`, `language?` | `BillReport` of the fetched bill (saved as the caller's bill, `source = 'discom'`). 400 `{ detail: { message, attempts_left } }` for a wrong, expired or unknown code (all alike), 429 when locked (5 wrong codes lock for 30 minutes), 404 when no bill comes back, 503 not configured |
 
 ```ts
 interface BillRow { id: string; created_at: string; bill_month: string | null; discom: string | null; units: number | null;
@@ -137,6 +141,16 @@ interface ReviewSummary { ticket: string;
 
 The consumer side never names who reviews. `office` is the DISCOM.
 
+```ts
+interface UscStarted { status: 'accepted'; message: string; expires_in_seconds: number;   // 300
+  code_required: boolean }   // false only on a development server with OWNERSHIP_CHECK=false
+```
+
+Codes are stored hashed and work once. A fetched bill runs through the same capture checks and engine as an upload;
+one that fails them is not saved (404). Every start, verify and fetch is audited (`usc.start`, `usc.verify`,
+`usc.fetch`) with the masked number only. In development with `OWNERSHIP_CHECK=false` the bill comes from bills already
+stored for that number and no code is needed; `APP_ENV=production` refuses to start with that setting.
+
 ## Web chat and other signed in routes
 
 - `GET /api/health`, `GET /api/tariffs`, `GET /api/tariffs/calculate`, the WhatsApp webhook: public. Health also returns `whatsapp_number` (from `WHATSAPP_DISPLAY_NUMBER`, or null) so the dashboard can link to the chat.
@@ -147,7 +161,22 @@ The consumer side never names who reviews. `office` is the DISCOM.
 
 ## Complaints (general and the inbox)
 
-Statuses: `Open`, `In progress`, `Resolved`, `Rejected`. Tickets look like `BM-261016-7KQ2D` (date plus 5 random characters). General complaints are raised in the chat (WhatsApp or the web Assistant) and answered there. Wrong bill cases are complaints with `kind: 'wrong_reading'` and are worked in the review queue below.
+Statuses: `Open`, `In progress`, `Resolved`, `Rejected`. Tickets look like `BM-261016-7KQ2D` (date plus 5 random characters). General complaints are raised in the chat (WhatsApp or the web Assistant), on the consumer web page, or by staff for a caller; replies go to the consumer's channel. Wrong bill cases are complaints with `kind: 'wrong_reading'` and are worked in the review queue below. Types are in [complaints-contract.md](complaints-contract.md) section 1.
+
+```ts
+type TypeCode = 'high_bill' | 'wrong_reading' | 'estimated_bill' | 'wrong_category' | 'payment_not_updated'
+  | 'arrears_dispute' | 'bill_not_received' | 'meter_issue' | 'meter_burnt' | 'power_outage'
+  | 'voltage_fluctuation' | 'supply_other';
+type Priority = 'urgent' | 'high' | 'normal' | 'low';
+type Source = 'consumer_web' | 'consumer_chat' | 'whatsapp' | 'call_centre' | 'office' | 'field';
+interface ComplaintType { code: TypeCode; category: 'billing' | 'meter' | 'supply'; category_label: string;
+  label: string; label_key: string; needs_bill: boolean; priority: Priority;
+  target_days: number | null;   // null for wrong_reading: the DISCOM's review SLA applies
+  route: 'section' | 'division' | 'review' }
+```
+
+`GET /api/complaint-types?language=te|en|hi|ur` (public, default `en`) returns `ComplaintType[]` in catalogue order,
+labels in that language.
 
 ```ts
 type ComplaintStatus = 'Open' | 'In progress' | 'Resolved' | 'Rejected';
@@ -159,7 +188,15 @@ interface ComplaintRow {
   kind: 'general' | 'wrong_reading'; triage: 'overcharge' | 'bill_correct' | 'needs_check';
   delivery_failed: boolean; days_open: number; overdue: boolean;   // open longer than COMPLAINT_REPLY_DAYS
   messages_count: number; last_message_at: string | null;
+  type: TypeCode | null; type_label: string | null;   // English label for staff
+  priority: Priority | null; due_at: string | null;   // UTC "YYYY-MM-DD HH:MM:SS"
+  source: Source | null;
+  raised_by: string | null;    // staff name when staff logged it, null when the consumer raised it
+  ownership: 'verified' | 'unverified' | 'not_needed' | null;
+  demo: boolean;               // development demo row
+  section: string | null;      // matched section name, null in a DISCOM or division queue
 }
+// overdue: open and past due_at; rows without due_at fall back to COMPLAINT_REPLY_DAYS.
 interface ComplaintMessage {
   id: number; author_kind: 'consumer' | 'officer' | 'system'; author_name: string | null;
   body: string; created_at: string; media_url: string | null;
@@ -175,13 +212,19 @@ interface ComplaintDetail extends ComplaintRow {
   messages: ComplaintMessage[];
   reply_channel: 'whatsapp' | 'web';
   whatsapp_ready: boolean;    // false when the WhatsApp channel is not configured
+  description: string | null; // the raiser's own words
+  assignee: { id: string; name: string } | null;
+  assignable: { id: string; name: string }[];   // in-scope staff with complaints.view, max 50; [] unless the viewer holds complaints.assign
+  timeline: { at: string; actor: { kind: 'consumer' | 'system' | 'staff'; name: string | null }; text: string }[];   // oldest first
 }
 ```
 
 | Method and path | Permission | Body / query | Returns |
 | --- | --- | --- | --- |
-| `GET /api/console/complaints` | `complaints.view` | `page, page_size, status?, discom?, q?` (ticket), `sort=priority, newest or oldest`, `triage?`, `failed?`, `kind?` | `Page<ComplaintRow>` in scope |
-| `GET /api/console/complaints.csv` | `complaints.view` | `status?, discom?, q?, sort=newest or oldest, kind?` | CSV download, columns ticket, created_at, updated_at, status, discom, bill_month, service_masked, issue, amount, channel, days_open. Audited |
+| `GET /api/console/complaints` | `complaints.view` | `page, page_size, status?, discom?, q?` (ticket), `sort=priority, newest or oldest`, `triage?`, `failed?`, `kind?`, `type?`, `priority?`, `source?` (422 for an unknown value) | `Page<ComplaintRow>` in scope. `priority` sort: open, overdue, then urgent types first |
+| `POST /api/console/complaints` | `complaints.create` | `{ type, discom, section_id?, service_number? (5..16 digits), contact_mobile? (10 digit Indian mobile), description (3..1000), source: call_centre, office or field, bill_id? }` | 201 `ComplaintDetail`. 403 when the section (or, with no section, the DISCOM queue) is outside the raiser's scope, 422 for a section of another DISCOM. The mobile becomes the WhatsApp reply-to and is never returned. A `bill_id` is linked only when it belongs to that mobile's own WhatsApp account. Audited `complaint.create` with type and source only |
+| `POST /api/console/complaints/{ticket}/assign` | `complaints.assign` | `{ account_id }` | `ComplaintDetail`. General complaints only (409 for a reading check, which is assigned from its case, and when closed); 400 when the account is not in `assignable`. Audited `complaint.assign` |
+| `GET /api/console/complaints.csv` | `complaints.view` | `status?, discom?, q?, sort=newest or oldest, kind?, type?, priority?, source?` | CSV download, columns ticket, created_at, updated_at, status, discom, bill_month, service_masked, issue, amount, channel, days_open. Audited |
 | `GET /api/console/complaints/{ticket}` | `complaints.view` | | `ComplaintDetail`, 404 outside scope |
 | `GET /api/console/complaints/{ticket}/suggestion` | `complaints.view` | | `{ text, triage, worded_by: 'ai' or 'rules', quick: string[] }`. The draft comes from the bill check; a reworded draft must pass the number guard |
 | `POST /api/console/complaints/{ticket}/reply` | `complaints.reply` | `{ body (1..1000 chars), status? }` | `ComplaintDetail`. Sends to the consumer on their channel and records delivery |
@@ -189,6 +232,26 @@ interface ComplaintDetail extends ComplaintRow {
 | `POST /api/console/complaints/{ticket}/request` | `complaints.reply` | `{ kind: meter_photo, bill_photo, details, earlier_bills or note }` | `ComplaintDetail`; 409 when closed |
 | `POST /api/console/complaints/{ticket}/messages/{id}/retry` | `complaints.reply` | | `ComplaintDetail`; resends a failed message |
 | `POST /api/console/complaints/bulk` | `complaints.reply` | `{ tickets (1..25), status?, send_explanation? }` | `{ done: string[], skipped: { ticket, reason }[] }` |
+
+### The consumer's own complaints (web)
+
+| Method and path | Permission | Body / query | Returns |
+| --- | --- | --- | --- |
+| `POST /api/complaints` | `self.bills` | `{ type, discom, service_number?, bill_id?, description (3..1000) }`, `language?` | 201 `ConsumerComplaintDetail`. `bill_id` must be the caller's own (404). `wrong_reading` with a bill opens the review case (409 if one is open); without a bill it asks for the bill photo at once |
+| `GET /api/complaints` | `self.bills` | `page, page_size (5..50), language?, status?` (one of the neutral codes) | `Page<ConsumerComplaint>`, own only, newest first |
+| `GET /api/complaints/{ticket}` | `self.bills` | `language?` | `ConsumerComplaintDetail`, 404 unless it is the caller's |
+| `POST /api/complaints/{ticket}/reply` | `self.bills` | `{ body (3..1000) }`, `language?` | `ConsumerComplaintDetail`. 409 unless the complaint is `waiting_for_you` |
+
+```ts
+interface ConsumerComplaint { ticket: string; type: TypeCode | null; type_label: string;
+  status: 'received' | 'in_progress' | 'waiting_for_you' | 'resolved' | 'closed'; status_label: string;
+  created_at: string; updated_at: string; description: string | null;
+  service_masked: string | null; bill_month: string | null }
+interface ConsumerComplaintDetail extends ConsumerComplaint {
+  messages: { from: 'you' | 'bill_mitra'; body: string; at: string }[] }   // staff and system messages show as Bill Mitra
+```
+
+No staff name, assignee or role ever appears in the consumer view.
 
 WhatsApp only allows free text within 24 hours of the consumer's last message. Outside that window the reply is sent with the approved template in `WHATSAPP_COMPLAINT_TEMPLATE` when set; otherwise delivery is `failed` with that reason, and the officer sees it.
 

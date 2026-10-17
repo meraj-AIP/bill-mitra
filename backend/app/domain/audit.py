@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app.domain import meter_status
 from app.domain.bill import ExtractedBill
 from app.domain.tariff.engine import Computation, money, true_up_rate
 
@@ -68,6 +69,9 @@ def audit(bill: ExtractedBill, comp: Computation) -> AuditResult:
 
     if bill.export_units:
         notes.append("net_metering")
+    if meter_status.estimated(bill.present_status):
+        # The charges can match the tariff and still be wrong: the units themselves were not read this time.
+        notes.append("estimated_reading")
     if bill.arrears:
         notes.append("arrears")
     if comp.gruha_jyothi_applied:

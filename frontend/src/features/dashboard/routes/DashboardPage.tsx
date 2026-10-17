@@ -10,6 +10,7 @@ import { BillReportView } from '../components/BillReportView';
 import { BillsTable } from '../components/BillsTable';
 import { ReadingProgress } from '../components/ReadingProgress';
 import { UploadCard } from '../components/UploadCard';
+import { UscCard } from '../components/UscCard';
 import { useBillsParams } from '../hooks/useBillsParams';
 import { useBillUpload } from '../hooks/useBillUpload';
 import type { FilePreview } from '../hooks/useFilePreview';
@@ -67,6 +68,7 @@ export function DashboardPage() {
           <UploadCard language={flow.language} onLanguage={flow.setLanguage} onFile={flow.onFile}
             onDismiss={flow.startOver} error={flow.error} />
         )}
+        {!reading && !unsaved && !returnTo && <UscCard language={flow.language} />}
         <BillsTable query={params.query} pageSizes={params.pageSizes} onPage={params.setPage}
           onPageSize={params.setPageSize} onStatus={params.setStatus} onSort={params.setSort} />
       </Stack>

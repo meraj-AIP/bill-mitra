@@ -16,7 +16,7 @@ def _name() -> str:
 
 
 def test_catalogue_rules():
-    assert rbac.BUILTIN["super_admin"].permissions.isdisjoint(rbac.MONEY | {"self.bills"})
+    assert rbac.BUILTIN["admin"].permissions.isdisjoint(rbac.MONEY | {"self.bills"})
     assert rbac.validate(["audit.view", "roles.manage", "audit.view"]) == ["roles.manage", "audit.view"]
     # Viewing cases is fine next to role management; moving money is not.
     assert rbac.validate(["roles.manage", "cases.view"]) == ["roles.manage", "cases.view"]
@@ -37,7 +37,7 @@ def test_me_carries_role_permissions_and_scopes(sign_in):
 
 def test_custom_role_create_edit_delete(sign_in):
     with TestClient(app) as client:
-        sign_in(client, "super_admin")
+        sign_in(client, "admin")
         name = _name()
         made = client.post("/api/admin/roles", json={"name": name, "description": "Reads cases",
                                                      "permissions": ["cases.view", "console.view"]})
@@ -55,15 +55,15 @@ def test_custom_role_create_edit_delete(sign_in):
     assert {"role.create", "role.update", "role.delete"} <= set(actions)
 
 
-def test_role_refusals(sign_in):
+def test_role_refusals(sign_in, account_manager):
     with TestClient(app) as admin, TestClient(app) as manager:
-        sign_in(admin, "super_admin")
-        sign_in(manager, "admin")
+        sign_in(admin, "admin")
+        sign_in(manager, account_manager)
         mixed = {"name": _name(), "permissions": ["roles.manage", "cases.approve"]}
         assert admin.post("/api/admin/roles", json=mixed).status_code == 400
         assert admin.post("/api/admin/roles", json={"name": _name(), "permissions": ["x.y"]}).status_code == 400
         assert admin.patch("/api/admin/roles/consumer", json={"permissions": ["self.bills", "console.view"]}).status_code == 400
-        assert admin.patch("/api/admin/roles/super_admin", json={"permissions": ["console.view"]}).status_code == 400
+        assert admin.patch("/api/admin/roles/admin", json={"permissions": ["console.view"]}).status_code == 400
         assert admin.delete("/api/admin/roles/officer").status_code == 409
         held = admin.post("/api/admin/roles", json={"name": _name(), "permissions": ["cases.view"]}).json()
         made = admin.post("/api/admin/accounts", json={"role": held["slug"], "login": f"held-{held['slug']}@example.com",
@@ -76,10 +76,10 @@ def test_role_refusals(sign_in):
         assert manager.get("/api/admin/permissions").status_code == 403
 
 
-def test_account_manager_cannot_grant_outside_own_scope_or_role_powers(sign_in):
+def test_account_manager_cannot_grant_outside_own_scope_or_role_powers(sign_in, account_manager):
     t = tree()
     with TestClient(app) as client:
-        sign_in(client, "admin", scopes=[t.division.id])
+        sign_in(client, account_manager, scopes=[t.division.id])
         base = {"name": "Scoped", "password": "test-only-passphrase"}
         ok = client.post("/api/admin/accounts", json={**base, "role": "section_ae", "login": f"ae-{t.tag}@example.com",
                                                       "scopes": [t.section_a.id]})
@@ -87,7 +87,7 @@ def test_account_manager_cannot_grant_outside_own_scope_or_role_powers(sign_in):
         outside = client.post("/api/admin/accounts", json={**base, "role": "section_ae", "scopes": [t.circle.id],
                                                            "login": f"out-{t.tag}@example.com"})
         assert outside.status_code == 403
-        powers = client.post("/api/admin/accounts", json={**base, "role": "super_admin", "scopes": [t.section_a.id],
+        powers = client.post("/api/admin/accounts", json={**base, "role": "admin", "scopes": [t.section_a.id],
                                                           "login": f"sa-{t.tag}@example.com"})
         assert powers.status_code == 403
         assert client.post("/api/admin/accounts", json={**base, "role": "consumer", "scopes": [t.section_a.id],
@@ -101,21 +101,21 @@ def test_account_manager_cannot_grant_outside_own_scope_or_role_powers(sign_in):
         assert widen.status_code == 403
 
 
-def test_account_manager_cannot_touch_a_role_manager(sign_in):
+def test_account_manager_cannot_touch_a_role_manager(sign_in, account_manager):
     with TestClient(app) as owner, TestClient(app) as manager:
-        top = sign_in(owner, "super_admin")
-        sign_in(manager, "admin")
+        top = sign_in(owner, "admin")
+        sign_in(manager, account_manager)
         assert manager.patch(f"/api/admin/accounts/{top.id}", json={"active": False}).status_code == 403
         assert manager.post(f"/api/admin/accounts/{top.id}/reset-password",
                             json={"password": "another-test-passphrase"}).status_code == 403
 
 
 
-def test_super_admin_edits_a_builtin_role_and_resets_it(sign_in):
+def test_admin_edits_a_builtin_role_and_resets_it(sign_in):
     from app.store.db import _seed, tx
 
     with TestClient(app) as admin, TestClient(app) as officer:
-        sign_in(admin, "super_admin")
+        sign_in(admin, "admin")
         sign_in(officer, "officer")
         assert officer.get("/api/console/summary").status_code == 200
         try:
@@ -134,3 +134,23 @@ def test_super_admin_edits_a_builtin_role_and_resets_it(sign_in):
         assert admin.post("/api/admin/roles/not_a_role/reset").status_code == 404
         actions = [e["action"] for e in admin.get("/api/admin/audit", params={"page_size": 50}).json()["items"]]
         assert "role.update" in actions and "role.reset" in actions
+
+
+def test_super_admin_merges_into_admin_once_keeping_accounts_and_powers():
+    from app.store import accounts
+    from app.store import db as store_db
+
+    user = accounts.create("admin", f"merge-{secrets.token_hex(3)}@example.com", "Merge test", "test-only-passphrase")
+    with store_db.tx() as conn:
+        perms = sorted(rbac.default_permissions("admin"))
+        conn.execute("INSERT INTO roles (slug, name, description, permissions, builtin) VALUES ('super_admin', "
+                     "'Super admin', 'old', ?, 1)", (__import__("json").dumps(perms),))
+        conn.execute("UPDATE accounts SET role = 'super_admin' WHERE id = ?", (user.id,))
+        conn.execute("UPDATE roles SET permissions = '[\"accounts.manage\"]' WHERE slug = 'admin'")
+        store_db._seed(conn)
+        store_db._seed(conn)  # a second start changes nothing
+        assert conn.execute("SELECT 1 FROM roles WHERE slug = 'super_admin'").fetchone() is None
+        merges = conn.execute("SELECT COUNT(*) FROM audit_log WHERE action = 'role.merge'").fetchone()[0]
+    assert accounts.get(user.id).role == "admin"
+    assert set(accounts.get(user.id).permissions) == set(perms) and "roles.manage" in perms
+    assert merges >= 1

@@ -32,7 +32,6 @@ export const AUDIT_ACTIONS: Record<string, string> = {
 
 /** Built-in role names, for audit lines written before the role list loads. Custom roles show their slug. */
 export const BUILTIN_ROLE_NAME: Record<string, string> = {
-  super_admin: 'Super admin',
   admin: 'Admin',
   officer: 'DISCOM officer',
   section_ae: 'Section AE',

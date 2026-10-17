@@ -3,7 +3,7 @@
 Bill Mitra is AI Planet's entry for the Telangana Department of Energy EnergyTech Innovation Challenge (Personalized Billing Assistance, Agentic AI).
 A consumer sends a photo of the electricity bill on WhatsApp. Bill Mitra reads it, checks every line against the TGERC tariff with a rule engine, explains it in Telugu as a voice note and text, and predicts next month's bill.
 If the bill looks wrong, the consumer reports it with one tap. The case goes to the section office with an evidence pack already built, and an approved revision becomes the bill for that month.
-This repo is a web app with sign in and role-based access: a bill dashboard and a WhatsApp preview chat for consumers; the console, complaints inbox and review queue for DISCOM staff; roles, units, review policy and accounts for the super admin. There is no mock or sample data anywhere.
+This repo is a web app with sign in and role-based access: a bill dashboard and a WhatsApp preview chat for consumers; the console, complaints inbox and review queue for DISCOM staff; roles, units, review policy and accounts for the admin. There is no mock or sample data anywhere.
 Rules calculate, AI explains: no rupee figure ever comes from a language model, revised amounts included.
 
 ## Run it
@@ -17,13 +17,13 @@ cp .env.example .env    # set BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD
 
 Open http://localhost:8000. The first run creates `backend/.venv`, installs packages and builds the web app. After that it starts in a few seconds.
 
-Sign in. The first super admin is created at startup from `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` in `.env`, only when no super admin exists. Change that password after the first login. Consumers register themselves in the app with a mobile number and password.
+Sign in. The first admin is created at startup from `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` in `.env`, only when no admin exists. Change that password after the first login. Consumers register themselves in the app with a mobile number and password.
 
 ## Roles and access
 
-Access is by permission, and every staff account has a role plus one or more units it covers (a DISCOM, circle, division, subdivision, section or ERO). The built-in roles are super admin, admin, DISCOM officer, section AE, billing approver, auditor and consumer. A super admin can edit the built-in staff roles (not the consumer role), reset them to their defaults and create custom roles. Nobody approves or applies their own decision, and the super admin and admin roles hold no money permissions.
+Access is by permission, and every staff account has a role plus one or more units it covers (a DISCOM, circle, division, subdivision, section or ERO). The built-in roles are admin, DISCOM officer, section AE, call centre agent, billing approver, auditor and consumer. An admin can edit the built-in staff roles (not the consumer role), reset them to their defaults and create custom roles. Nobody approves or applies their own decision, and the admin role holds no money permissions.
 
-First steps as super admin: add the units under Manage, Units (or import a CSV), then create staff accounts with a role and their units. Bill sections are matched to section units by name or alias; a name nobody has mapped shows in the unmapped queue.
+First steps as admin: add the units under Manage, Units (or import a CSV), then create staff accounts with a role and their units. Bill sections are matched to section units by name or alias; a name nobody has mapped shows in the unmapped queue.
 
 ## Bill review in short
 
@@ -60,7 +60,7 @@ About seven minutes for the jury. The presenter brings two or three real bill ph
 5. **Bill looks wrong.** On the bill page, tap "Report a problem with this bill". The consumer sees "received" and, if months are missing, a request for earlier bills. Upload one of them and it joins the case.
 6. **Section AE.** Sign in as a section AE. Open the case in Review: bill, readings, evidence pack and timeline on one page. Enter a corrected reading, check the engine's preview and record the decision. Back as the consumer, the bill now shows the revised amount next to the original.
 7. **Officer.** Sign in as an officer. The Console shows the bills just read (trusted first time, re-reads, retakes). Open a complaint raised in the chat, reply and set it In progress. Complaints are recorded in Bill Mitra only, not in 1912.
-8. **How it works.** Play the journeys on the system map: a consumer sends a bill, and, as staff, a wrong bill reviewed and a super admin changing a role.
+8. **How it works.** Play the journeys on the system map: a consumer sends a bill, and, as staff, a wrong bill reviewed and an admin changing a role.
 
 ## Provider keys
 

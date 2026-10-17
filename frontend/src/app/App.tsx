@@ -26,6 +26,9 @@ const UnitsPage = lazy(() => import('@/features/admin').then((m) => ({ default: 
 const PolicyPage = lazy(() => import('@/features/admin').then((m) => ({ default: m.PolicyPage })));
 const ReviewQueuePage = lazy(() => import('@/features/review').then((m) => ({ default: m.ReviewQueuePage })));
 const CasePage = lazy(() => import('@/features/review').then((m) => ({ default: m.CasePage })));
+const MyComplaintsPage = lazy(() => import('@/features/my-complaints').then((m) => ({ default: m.MyComplaintsPage })));
+const MyComplaintPage = lazy(() => import('@/features/my-complaints').then((m) => ({ default: m.MyComplaintPage })));
+const RaiseComplaintPage = lazy(() => import('@/features/my-complaints').then((m) => ({ default: m.RaiseComplaintPage })));
 const HowItWorksPage = lazy(() => import('@/features/explorer').then((m) => ({ default: m.HowItWorksPage })));
 
 const queryClient = new QueryClient({
@@ -85,6 +88,9 @@ const router = createBrowserRouter([
           children: [
             { index: true, element: <DashboardPage /> },
             { path: 'bills/:id', element: <BillPage /> },
+            lazyRoute('complaints', <MyComplaintsPage />),
+            lazyRoute('complaints/new', <RaiseComplaintPage />),
+            lazyRoute('complaints/:ticket', <MyComplaintPage />),
           ],
         },
         gated(ASSISTANT, [lazyRoute('assistant', <AssistantPage />)]),

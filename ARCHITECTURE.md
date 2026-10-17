@@ -4,13 +4,13 @@
 
 Bill Mitra is a Telugu-first electricity bill assistant for households in Telangana, built to run on WhatsApp. A consumer sends a photo of the bill (or a PDF, an SMS, a typed unit count or a voice note) and gets back a voice note and a short text that explain the bill, check it against the TGERC tariff and estimate next month. If the bill looks wrong, the consumer taps "Bill looks wrong" in the chat (or "Report a problem with this bill" on the web) and the bill goes to the section office for review, with the evidence already gathered. An approved revision becomes the consumer's bill for that month.
 
-The web app has sign in with role-based access. Consumers get a bill dashboard and a WhatsApp preview chat. DISCOM staff get the console, the complaints inbox and the review queue, each limited to the units in their scope. A super admin manages roles, units, review policy and accounts. Access is decided by permissions, never by role names: there are six built-in staff roles plus the consumer role, and a super admin can create custom roles.
+The web app has sign in with role-based access. Consumers get a bill dashboard and a WhatsApp preview chat. DISCOM staff get the console, the complaints inbox and the review queue, each limited to the units in their scope. An admin manages roles, units, review policy and accounts. Access is decided by permissions, never by role names: there are six built-in staff roles plus the consumer role, and an admin can create custom roles.
 
 The backend has one channel-agnostic conversation engine, `core/service.handle(inbound, emit)`, and thin adapters for the web (NDJSON stream) and the WhatsApp Cloud API (webhook). The main rule is simple: rules calculate, AI explains. The tariff engine computes every rupee, including a revised amount after review. The language model only reads the photo and words the answer, and a number guard rejects any AI text that carries a figure the engine did not produce.
 
 ## 2. Diagrams
 
-The How it works page (`frontend/src/features/explorer`) has an interactive system map with journeys you can play step by step. Everyone sees "A consumer sends a bill". Staff also see "An officer resolves a complaint", "A wrong bill is reviewed" and "A super admin changes a role". Boxes are tagged built, planned or external, so the map also shows pilot items that are not in this build. The older pitch image is still at `frontend/public/architecture.png` but the page no longer uses it.
+The How it works page (`frontend/src/features/explorer`) has an interactive system map with journeys you can play step by step. Everyone sees "A consumer sends a bill". Staff also see "An officer resolves a complaint", "A wrong bill is reviewed" and "An admin changes a role". Boxes are tagged built, planned or external, so the map also shows pilot items that are not in this build. The older pitch image is still at `frontend/public/architecture.png` but the page no longer uses it.
 
 ### Components
 
@@ -307,29 +307,29 @@ Limits are enforced in `core/messages.py` by Pydantic, so a reply that breaks a 
 
 | Slug | What it is for |
 |---|---|
-| `super_admin` | Every permission except the three money ones (`cases.decide`, `cases.approve`, `cases.mark_applied`) and `self.bills` |
-| `admin` | Staff accounts in own scope, console, complaints (read), audit log, chat preview. No money permission |
+| `admin` | Every permission except the three money ones (`cases.decide`, `cases.approve`, `cases.mark_applied`), `self.bills` and `complaints.create`. The old super admin role was merged into it on 17 Oct 2026; `_seed` moves any `super_admin` accounts across once |
+| `call_centre` | Console, complaints: read, reply and log a complaint for a caller |
 | `officer` | Console, complaints (reply and assign), cases (read, ask the consumer, reassign, export), chat preview |
 | `section_ae` | Console, complaints, cases: read, ask, decide, reassign, see a full service number (audited) |
 | `billing_approver` | Cases: read, approve, mark applied, export, see a full service number |
 | `auditor` | Console, complaints and cases read only, export, audit log |
 | `consumer` | `self.bills`: own bills, chat and review requests |
 
-A super admin can also create custom roles from the catalogue. The exact permission lists are in `rbac.py` and [docs/review-contract.md](docs/review-contract.md). Where the contract and the code differ, the code wins.
+An admin can also create custom roles from the catalogue. The exact permission lists are in `rbac.py` and [docs/review-contract.md](docs/review-contract.md). Where the contract and the code differ, the code wins.
 
 **Every staff route checks twice.** First `require_perm(...)` in `api/deps.py` (401 signed out, 403 without the permission). Then a unit scope check: `in_scope(account, unit_id)` for a single unit, or the `viewer` filter in store queries for lists. A case or complaint outside the caller's scope is a 404, so its existence does not leak. Permissions are read from the `roles` table on every request through the session join, so a role change applies on the caller's next request, with no sign out.
 
 **Editing roles.**
 
-- A super admin can edit the permissions of any built-in role except `consumer`, which is locked.
-- The `super_admin` role must keep `roles.manage`, so nobody can lock every administrator out.
+- An admin can edit the permissions of any built-in role except `consumer`, which is locked.
+- The `admin` role must keep `roles.manage`, so nobody can lock every administrator out.
 - A role that holds `roles.manage` cannot also hold `cases.decide`, `cases.approve`, `cases.mark_applied` or `self.bills`.
 - A changed built-in role shows as `customised` and can be put back with `POST /api/admin/roles/{slug}/reset`.
 - Built-in roles cannot be deleted; a custom role can be deleted once no account holds it.
-- On every start, `_seed` in `store/db.py` inserts missing built-in roles but does not overwrite edited permissions. It only re-asserts the two locks: the consumer role's permissions and `roles.manage` on super admin.
+- On every start, `_seed` in `store/db.py` inserts missing built-in roles but does not overwrite edited permissions. It only re-asserts the two locks: the consumer role's permissions and `roles.manage` on admin.
 - Only a `roles.manage` holder can grant a role that carries `roles.manage`, `units.manage` or `policy.manage`, or touch an account that holds one.
 
-**Separation of duties.** Nobody approves or marks applied a decision they proposed, whatever their role (403). `super_admin` and `admin` hold no money permission. A consumer account can never be given a staff role.
+**Separation of duties.** Nobody approves or marks applied a decision they proposed, whatever their role (403). `admin` holds no money permission. A consumer account can never be given a staff role.
 
 **Units and scopes.** `store/units.py` holds the DISCOM tree: discom, circle, division, subdivision, section, plus an ERO that sits under a division and that sections can point to. The two DISCOM units are seeded. Every staff account has one or more scopes (`account_scopes`). A scope on a unit covers it and everything below it, and a scope on an ERO also covers the sections billed by that ERO. An account scoped on both DISCOMs is global. Sections carry aliases. A bill's printed section is matched by normalised name (upper case, letters and digits only) against section names and aliases in that DISCOM. A printed name that matches nothing goes on the unmapped queue with a count, and mapping it adds the alias and re-routes open cases. Units can also be imported from a CSV (`kind,name,code,parent_code,discom,ero_code,aliases`, up to 5000 rows and 1 MB). Nobody grants a scope outside their own.
 
@@ -480,7 +480,7 @@ Settings come from the environment or `.env` (repo root or `backend/`), read onl
 | `BILLING_RECORDS_URL`, `BILLING_RECORDS_TOKEN` | DISCOM billing records are not connected; the evidence pack says so and nothing is fetched. Both must be set |
 | `DATA_DIR`, `FRONTEND_DIST` | Defaults `backend/var`, `frontend/dist`; without a build only the API is served |
 | `CORS_ORIGINS` | Must include the Vite dev origin `http://localhost:5173` in dev |
-| `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` | No super admin is created; set both for the first start. Used only when no super admin exists |
+| `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` | No admin is created; set both for the first start. Used only when no admin exists |
 | `SESSION_HOURS`, `COOKIE_SECURE` | Defaults 12 hours and off; turn `COOKIE_SECURE` on behind HTTPS (also sends HSTS) |
 | `SESSION_COOKIE` | Default `bm_session`. Cookies ignore the port, so two instances on one host (dev and QA) need different names |
 | `PRIVACY_NOTICE_VERSION`, `PRIVACY_CONTACT` | Version and contact shown in the privacy notice |
@@ -511,7 +511,7 @@ Everything in this section is planned work. None of it is in this build.
 - `test_capture.py` and `test_vision.py`: the rule checks on a reading, the re-read that names only the failed check, crops for tall slips, PDF page choice, a non-bill never read in detail, HEIC photos.
 - `test_conversation.py`: end-to-end turns on the real bills: verified with no prompt in between, overcharge and complaint, a misread never trusted, unreadable photo then typed units, reading off without a key, meter projection, an earlier upload becoming history, SMS bill, what-if, STOP in every language, every scenario in all four languages, and WhatsApp limits on every reply.
 - `test_access_matrix.py`: each built-in role against 14 protected areas. It expects 200 where the role's permissions allow, 403 everywhere else and 401 signed out. The expectation is read from the role catalogue, so a route that forgets its check fails here.
-- `test_rbac.py`: catalogue rules, `me` with role, permissions and scopes, custom roles, refusals, account managers kept inside their scope and away from role powers, and a super admin editing and resetting a built-in role.
+- `test_rbac.py`: catalogue rules, `me` with role, permissions and scopes, custom roles, refusals, account managers kept inside their scope and away from role powers, and an admin editing and resetting a built-in role.
 - `test_units.py`: the hierarchy, alias matching, scopes over the tree and ERO sections, the unmapped queue, CSV import and the one-time rebuild of the old accounts table.
 - `test_review.py`: spike rules, routing and the division fallback, ERO scope, re-routing after a name is mapped, corrected reading priced by the engine, policy limits forcing approval, nobody approving or applying their own decision, withdraw and revision numbers, unmask auditing, overdue by policy, no service number or phone in audit details, reassign within scope.
 - `test_review_reports.py`: the web and chat reports, the evidence pack and month requests, connected and failing billing records (never logging the service number), dispute rules in four languages, attaching uploads, "I don't have them", no consumer string naming who checks, final amounts everywhere after approval, revised figures passing the guard, and the timeline order.

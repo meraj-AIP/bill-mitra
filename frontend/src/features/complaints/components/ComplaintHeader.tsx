@@ -1,61 +1,63 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { Box, Button, Chip, Stack, Typography } from '@mui/material';
-import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
-import { dateTime, monthLabel, rupees } from '@/shared/lib/format';
+import { dateTime } from '@/shared/lib/format';
 
 import type { ComplaintDetail, ComplaintStatus } from '../api/types';
-import { CHANNEL_LABEL, STATUS_TONE } from '../model/labels';
+import { PRIORITY, STATUS_TONE } from '../model/labels';
+import { DemoChip, DueChip } from './DueChip';
 
 export function StatusChip({ status, size = 'small' }: { status: ComplaintStatus; size?: 'small' | 'medium' }) {
   const tone = STATUS_TONE[status] ?? 'default';
   return <Chip size={size} label={status} color={tone} variant={status === 'Open' ? 'filled' : 'outlined'} />;
 }
 
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <Box sx={{ minWidth: 0 }}>
-      <Typography variant="caption" component="p" sx={{ color: 'text.secondary' }}>{label}</Typography>
-      <Typography variant="subtitle1" component="p" noWrap sx={{ fontVariantNumeric: 'tabular-nums' }}>{value}</Typography>
-    </Box>
-  );
+interface PriorityChipProps {
+  priority: ComplaintDetail['priority'];
+  size?: 'small' | 'medium';
+  /** Adds the word priority where no column header says it. */
+  spelled?: boolean;
+}
+
+export function PriorityChip({ priority, size = 'small', spelled = false }: PriorityChipProps) {
+  if (!priority) return null;
+  const p = PRIORITY[priority];
+  // Only urgent and high need to catch the eye; normal and low stay quiet.
+  return <Chip size={size} color={p.tone} variant={p.tone === 'default' ? 'outlined' : 'filled'} label={spelled ? `${p.label} priority` : p.label} />;
 }
 
 interface ComplaintHeaderProps {
   complaint: ComplaintDetail;
   backTo: string;
   backLabel: string;
-  actions?: ReactNode;
 }
 
-export function ComplaintHeader({ complaint, backTo, backLabel, actions }: ComplaintHeaderProps) {
-  const month = complaint.bill_month ?? complaint.bill?.bill_month ?? null;
+/** Ticket, what the complaint is about, and where it stands, in that order of reading. */
+export function ComplaintHeader({ complaint, backTo, backLabel }: ComplaintHeaderProps) {
+  const title = complaint.type_label ?? complaint.issue;
+  // The consumer's own words already sit under On file, so the lead only carries an issue with no description.
+  const lead = complaint.type_label && !complaint.description && complaint.issue !== complaint.type_label ? complaint.issue : null;
   return (
-    <Stack component="header" sx={{ gap: 2 }}>
+    <Stack component="header" sx={{ gap: 1.5 }}>
       <Box>
         <Button component={Link} to={backTo} startIcon={<ArrowBackIcon />} size="small" sx={{ ml: -1 }}>{backLabel}</Button>
       </Box>
-      <Stack direction={{ xs: 'column', md: 'row' }} sx={{ gap: 2, alignItems: { md: 'flex-start' } }}>
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Stack direction="row" sx={{ gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
-            <Typography variant="h1" sx={{ fontFamily: 'monospace', fontSize: { xs: '1.5rem', md: '1.875rem' }, letterSpacing: 0 }}>
-              {complaint.ticket}
-            </Typography>
-            <StatusChip status={complaint.status} size="medium" />
-          </Stack>
-          <Typography variant="body1" sx={{ color: 'text.secondary', mt: 0.75, maxWidth: '70ch' }}>{complaint.issue}</Typography>
-        </Box>
-        {actions}
+      <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Typography component="p" sx={{ fontFamily: 'monospace', fontSize: '0.875rem', fontWeight: 600, color: 'text.secondary', letterSpacing: '0.02em' }}>
+          {complaint.ticket}
+        </Typography>
+        <Typography component="span" aria-hidden sx={{ color: 'text.disabled' }}>/</Typography>
+        <Typography variant="caption" component="p" sx={{ color: 'text.secondary' }}>Raised {dateTime(complaint.created_at)}</Typography>
+        {complaint.demo && <DemoChip />}
       </Stack>
-      <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(3, minmax(0, 1fr))', md: 'repeat(5, minmax(0, 1fr))' },
-        p: 2, borderRadius: 2, bgcolor: 'background.paper', border: 1, borderColor: 'divider' }}>
-        <Fact label="DISCOM" value={complaint.discom ?? complaint.bill?.discom ?? 'Unknown'} />
-        <Fact label="Bill month" value={monthLabel(month)} />
-        <Fact label="Amount in question" value={complaint.amount ? rupees(complaint.amount) : 'Not stated'} />
-        <Fact label="Raised" value={dateTime(complaint.created_at)} />
-        <Fact label="Raised on" value={complaint.channel ? CHANNEL_LABEL[complaint.channel] : 'Unknown'} />
-      </Box>
+      <Typography variant="h1" sx={{ maxWidth: '28ch' }}>{title}</Typography>
+      {lead && <Typography variant="body1" sx={{ color: 'text.secondary', maxWidth: '65ch' }}>{lead}</Typography>}
+      <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap', alignItems: 'center', pt: 0.5 }}>
+        <StatusChip status={complaint.status} size="medium" />
+        <PriorityChip priority={complaint.priority} size="medium" spelled />
+        <DueChip c={complaint} size="medium" />
+      </Stack>
     </Stack>
   );
 }

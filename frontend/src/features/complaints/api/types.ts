@@ -3,6 +3,32 @@ export type Triage = 'overcharge' | 'needs_check' | 'bill_correct';
 export const TRIAGES: Triage[] = ['overcharge', 'needs_check', 'bill_correct'];
 export const COMPLAINT_STATUSES: ComplaintStatus[] = ['Open', 'In progress', 'Resolved', 'Rejected'];
 
+export type Priority = 'urgent' | 'high' | 'normal' | 'low';
+export const PRIORITIES: Priority[] = ['urgent', 'high', 'normal', 'low'];
+export type Source = 'consumer_web' | 'consumer_chat' | 'whatsapp' | 'call_centre' | 'office' | 'field';
+export const SOURCES: Source[] = ['consumer_web', 'consumer_chat', 'whatsapp', 'call_centre', 'office', 'field'];
+/** The sources a staff member can pick when they log a complaint. */
+export type StaffSource = Extract<Source, 'call_centre' | 'office' | 'field'>;
+export const STAFF_SOURCES: StaffSource[] = ['call_centre', 'office', 'field'];
+export type Ownership = 'verified' | 'unverified' | 'not_needed';
+
+/** One entry of GET /api/complaint-types, labels already in the language asked for. */
+export interface ComplaintType {
+  code: string;
+  category: string;
+  /** The category name in the language asked for. */
+  category_label?: string;
+  label: string;
+  label_key: string;
+  needs_bill: boolean;
+  priority: Priority;
+  /** Null for wrong_reading: the review policy sets its time. */
+  target_days: number | null;
+  route: 'section' | 'division' | 'review';
+}
+
+export interface Person { id: string; name: string }
+
 export interface ComplaintRow {
   ticket: string;
   created_at: string;
@@ -25,6 +51,14 @@ export interface ComplaintRow {
   overdue: boolean;
   messages_count: number;
   last_message_at: string | null;
+  // Added by the complaints contract. Optional so rows from an older server still render.
+  type?: string;
+  type_label?: string | null;
+  priority?: Priority | null;
+  due_at?: string | null;
+  source?: Source | null;
+  section?: string | null;
+  demo?: boolean;
 }
 
 export interface ComplaintMessage {
@@ -62,6 +96,27 @@ export interface ComplaintDetail extends ComplaintRow {
   messages: ComplaintMessage[];
   reply_channel: 'whatsapp' | 'web';
   whatsapp_ready: boolean;
+  description?: string | null;
+  /** Name of the staff member who logged it; null when the consumer raised it. */
+  raised_by?: string | null;
+  ownership?: Ownership | null;
+  timeline?: TimelineEntry[];
+  assignee?: Person | null;
+  /** People this complaint can move to. Present only for accounts allowed to assign. */
+  assignable?: Person[];
+}
+
+export interface TimelineEntry { at: string; actor: { kind: 'consumer' | 'system' | 'staff'; name: string | null }; text: string }
+
+export interface NewStaffComplaint {
+  type: string;
+  discom: string;
+  section_id: string | null;
+  service_number: string | null;
+  contact_mobile: string | null;
+  description: string;
+  source: StaffSource;
+  bill_id: string | null;
 }
 
 export const REPLY_LIMIT = 1000;

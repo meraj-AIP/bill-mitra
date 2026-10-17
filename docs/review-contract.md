@@ -31,12 +31,12 @@ Permission catalogue (fixed in code, `app/domain/rbac.py`):
 | `self.bills` | Consumer: own bills, chat, review requests |
 
 Built-in roles (seeded, `builtin = true`, cannot be deleted). The table is what ships. A `roles.manage` holder can change
-any built-in role except `consumer`, which is locked; `super_admin` must keep `roles.manage`. A changed built-in role reads
+any built-in role except `consumer`, which is locked; `admin` must keep `roles.manage`. A changed built-in role reads
 `customised: true` and `POST /api/admin/roles/{slug}/reset` puts it back. Server start never overwrites an edited role:
 
 | Slug | Name | Permissions |
 | --- | --- | --- |
-| `super_admin` | Super admin | everything EXCEPT `cases.decide`, `cases.approve`, `cases.mark_applied`, `self.bills` (separation of duties: whoever manages roles never moves money) |
+| `admin` | Admin (super admin merged in, 17 Oct 2026) | everything EXCEPT `cases.decide`, `cases.approve`, `cases.mark_applied`, `self.bills` (separation of duties: whoever manages roles never moves money) |
 | `admin` | Admin | `accounts.manage`, `console.view`, `complaints.view`, `audit.view`, `chat.preview` |
 | `officer` | DISCOM officer | `console.view`, `complaints.view`, `complaints.reply`, `complaints.assign`, `cases.view`, `cases.request_info`, `cases.reassign`, `cases.export`, `chat.preview` |
 | `section_ae` | Section AE | `console.view`, `complaints.view`, `complaints.reply`, `cases.view`, `cases.request_info`, `cases.decide`, `cases.reassign`, `consumer.unmask` |
@@ -49,7 +49,7 @@ Custom roles: created by `roles.manage` holders from the catalogue. Any role, bu
 permissions alongside role management). Hard rules enforced in code whatever the role: nobody approves or
 marks applied their own decision; a decision needs a reason code, a note of 20+ characters and at least one evidence item.
 
-Migration of existing accounts: `admin` accounts become `super_admin` (owner decision: both current admins), `officer` stays
+Migration of existing accounts (17 Oct 2026 update: `super_admin` was later merged into `admin`, which now holds its permissions): `admin` accounts become `super_admin` (owner decision: both current admins), `officer` stays
 `officer` with its DISCOM as scope, `consumer` stays `consumer`.
 
 ## 2. Units (hierarchy)

@@ -13,12 +13,17 @@ from pydantic import BaseModel, Field, StringConstraints, computed_field, model_
 from app.api.deps import require_perm, viewer
 from app.config import get_settings
 from app.core import csvsafe
+from app.domain import complaint_types
 from app.domain.complaint_reply import Triage
+from app.domain.complaint_types import Ownership, Priority, Source, TypeCode
 from app.flows.analysis import analyse
 from app.flows.complaint import LABEL_EN
+from app.flows.complaint_timeline import timeline
+from app.flows.evidence import TimelineEntry
 from app.services import notify
 from app.store import accounts, repos, units
 from app.store import complaints as store
+from app.store import review as review_store
 from app.store.accounts import Account
 from app.store.complaints import OPEN_STATUSES, Complaint, Kind, Sort, Status
 from app.store.db import DISCOM_UNITS
@@ -53,11 +58,28 @@ class ComplaintRow(BaseModel):
     overdue: bool = False
     messages_count: int
     last_message_at: str | None
+    type: TypeCode | None = None
+    type_label: str | None = None
+    priority: Priority | None = None
+    due_at: str | None = None
+    source: Source | None = None
+    raised_by: str | None = None  # the staff member's name when staff logged it; consumers raise their own
+    ownership: Ownership | None = None
+    demo: bool = False
+    section: str | None = None  # the matched section's name; None while it sits in a DISCOM or division queue
 
     @model_validator(mode="after")
     def _overdue(self) -> "ComplaintRow":
-        # One rule for the list, the detail and the console: open past the promised reply time.
-        self.overdue = self.status in OPEN_STATUSES and self.days_open > get_settings().complaint_reply_days
+        # One rule for the list, the detail and the console: open past its due date, or, for a complaint from
+        # before due dates existed, past the promised reply time.
+        if self.status not in OPEN_STATUSES:
+            self.overdue = False
+        elif self.due_at:
+            self.overdue = self.due_at < datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            self.overdue = self.days_open > get_settings().complaint_reply_days
+        if self.type in complaint_types.BY_CODE:
+            self.type_label = complaint_types.get(self.type).label
         return self
 
 
@@ -95,7 +117,16 @@ class AuditLineOut(BaseModel):
     status: str
 
 
+class Person(BaseModel):
+    id: str
+    name: str
+
+
 class ComplaintDetail(ComplaintRow):
+    description: str | None = None
+    assignee: Person | None = None
+    assignable: list[Person] = Field(default_factory=list)  # only for a viewer who may assign
+    timeline: list[TimelineEntry] = Field(default_factory=list)
     bill: BillSummary | None
     audit_lines: list[AuditLineOut]
     media_url: str | None
@@ -120,7 +151,20 @@ class StatusChange(BaseModel):
     status: Status
 
 
-def _detail(complaint: Complaint) -> ComplaintDetail:
+ASSIGNABLE_MAX = 50
+
+
+def assignable(complaint: Complaint) -> list[Person]:
+    """Active staff who can see complaints and hold a scope on the complaint's unit, a unit above it, or its ERO."""
+    anchor = complaint.section_id or complaint.unit_id or DISCOM_UNITS.get(complaint.discom or "")
+    if anchor is None:
+        return []
+    chain = units.ancestors(anchor)
+    ids = [u.id for u in chain] + [u.ero_id for u in chain[:1] if u.ero_id]
+    return [Person(**p) for p in review_store.staff_covering(ids, "complaints.view", ASSIGNABLE_MAX)]
+
+
+def _detail(complaint: Complaint, account: Account | None = None) -> ComplaintDetail:
     row = store.row(complaint.ticket)
     if row is None:
         raise HTTPException(404, NOT_FOUND)
@@ -134,7 +178,11 @@ def _detail(complaint: Complaint) -> ComplaintDetail:
         lines = [AuditLineOut(label=LABEL_EN.get(line.code, line.code), **line.model_dump())
                  for line in analyse(extracted, complaint.user_id).audit.lines]
         media_url = f"/api/media/{media_id}" if media_id else None
-    return ComplaintDetail(**row, bill=bill, audit_lines=lines, media_url=media_url,
+    assignee = Person(id=complaint.assigned_to, name=row["assignee_name"]) \
+        if complaint.assigned_to and row["assignee_name"] else None
+    people = assignable(complaint) if account and account.can("complaints.assign") else []
+    return ComplaintDetail(**row, bill=bill, audit_lines=lines, media_url=media_url, assignee=assignee,
+                           assignable=people, timeline=timeline(complaint.ticket, row),
                            messages=[ComplaintMessage(**m) for m in store.messages(complaint.ticket)],
                            reply_channel=notify.reply_channel(complaint),  # type: ignore[arg-type]
                            whatsapp_ready=get_settings().whatsapp_enabled)
@@ -173,10 +221,11 @@ async def _change_status(complaint: Complaint, new_status: Status, account: Acco
 async def console_list(account: Viewer, page: PageNo = 1, page_size: PageSize = 10, status: Status | None = None,
                        discom: Discom | None = None, q: Annotated[str | None, Query(max_length=40)] = None,
                        sort: Sort = "priority", triage: Triage | None = None, failed: bool = False,
-                       kind: Kind | None = None) -> store.Page:
+                       kind: Kind | None = None, type: TypeCode | None = None, priority: Priority | None = None,
+                       source: Source | None = None) -> store.Page:
     return store.page(page, page_size, status=status, discom=discom, q=q, sort=sort, triage=triage,
                       failed_only=failed, overdue_days=get_settings().complaint_reply_days, viewer=viewer(account),
-                      kind=kind)
+                      kind=kind, more=store.Filters(type=type, priority=priority, source=source))
 
 
 CSV_COLUMNS = ("ticket", "created_at", "updated_at", "status", "discom", "bill_month", "service_masked", "issue",
@@ -186,8 +235,11 @@ CSV_COLUMNS = ("ticket", "created_at", "updated_at", "status", "discom", "bill_m
 @router.get("/api/console/complaints.csv")
 async def console_export(account: Viewer, status: Status | None = None, discom: Discom | None = None,
                          q: Annotated[str | None, Query(max_length=40)] = None,
-                         sort: Literal["newest", "oldest"] = "newest", kind: Kind | None = None) -> StreamingResponse:
-    rows = store.export(status=status, discom=discom, q=q, newest=sort == "newest", viewer=viewer(account), kind=kind)
+                         sort: Literal["newest", "oldest"] = "newest", kind: Kind | None = None,
+                         type: TypeCode | None = None, priority: Priority | None = None,
+                         source: Source | None = None) -> StreamingResponse:
+    rows = store.export(status=status, discom=discom, q=q, newest=sort == "newest", viewer=viewer(account), kind=kind,
+                        more=store.Filters(type=type, priority=priority, source=source))
     accounts.audit(account.id, "complaint.export", None, f"{len(rows)} rows")
     name = f"bill-mitra-complaints-{datetime.now(UTC):%Y%m%d}.csv"
     return StreamingResponse(csvsafe.stream(CSV_COLUMNS, rows), media_type="text/csv; charset=utf-8",
@@ -196,7 +248,7 @@ async def console_export(account: Viewer, status: Status | None = None, discom: 
 
 @router.get("/api/console/complaints/{ticket}", response_model=ComplaintDetail)
 async def console_detail(ticket: str, account: Viewer) -> ComplaintDetail:
-    return _detail(_for_staff(account, ticket))
+    return _detail(_for_staff(account, ticket), account)
 
 
 @router.post("/api/console/complaints/{ticket}/reply", response_model=ComplaintDetail)
@@ -207,11 +259,11 @@ async def console_reply(ticket: str, body: OfficerReply, account: Replier) -> Co
     accounts.audit(account.id, "complaint.reply", ticket, f"delivery {outcome.delivery}")
     if body.status:
         await _change_status(complaint, body.status, account)
-    return _detail(complaint)
+    return _detail(complaint, account)
 
 
 @router.post("/api/console/complaints/{ticket}/status", response_model=ComplaintDetail)
 async def console_status(ticket: str, body: StatusChange, account: Replier) -> ComplaintDetail:
     complaint = _for_staff(account, ticket)
     await _change_status(complaint, body.status, account)
-    return _detail(complaint)
+    return _detail(complaint, account)

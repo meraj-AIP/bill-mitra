@@ -49,6 +49,12 @@ def set_awaiting(user_id: str, awaiting: str | None) -> None:
                      "SET awaiting = excluded.awaiting, updated_at = CURRENT_TIMESTAMP", (user_id, channel, awaiting))
 
 
+def clear_awaiting(user_id: str, value: str) -> None:
+    """Clear what the chat waits for, only if it is still `value`, so a newer question is not lost."""
+    with tx() as conn:
+        conn.execute("UPDATE users SET awaiting = NULL WHERE user_id = ? AND awaiting = ?", (user_id, value))
+
+
 class StoredBill(BaseModel):
     id: str
     bill: ExtractedBill
@@ -63,7 +69,8 @@ class BillPage(BaseModel):
     page_size: int
 
 
-def save_bill(user_id: str, bill: ExtractedBill, media_id: str | None, audit_status: str, overcharge: float) -> str:
+def save_bill(user_id: str, bill: ExtractedBill, media_id: str | None, audit_status: str, overcharge: float,
+              source: str = "upload") -> str:
     """Store a checked bill. Uploading the same month for the same connection again replaces the earlier copy."""
     bill_id = f"b_{secrets.token_hex(8)}"
     with tx() as conn:
@@ -74,9 +81,9 @@ def save_bill(user_id: str, bill: ExtractedBill, media_id: str | None, audit_sta
                          (user_id, bill.service_number, bill.bill_month))
         conn.execute(
             "INSERT INTO bills (id, user_id, service_number, extraction, media_id, bill_month, units, total_payable, "
-            "discom, audit_status, overcharge) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "discom, audit_status, overcharge, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (bill_id, user_id, bill.service_number, bill.model_dump_json(), media_id, bill.bill_month,
-             bill.net_units(), bill.total_payable, bill.discom, audit_status, overcharge),
+             bill.net_units(), bill.total_payable, bill.discom, audit_status, overcharge, source),
         )
     return bill_id
 
@@ -135,6 +142,14 @@ def list_bills(user_id: str, page: int, page_size: int, audit_status: str | None
     return BillPage(items=items, total=total, page=page, page_size=page_size)
 
 
+def newest_for_service(discom: str, service_number: str) -> ExtractedBill | None:
+    """Development stand-in for the DISCOM: the newest bill stored for a connection, whoever uploaded it."""
+    with tx() as conn:
+        row = conn.execute("SELECT extraction FROM bills WHERE service_number = ? AND discom = ? AND source != 'demo' "
+                           "ORDER BY bill_month DESC, created_at DESC LIMIT 1", (service_number, discom)).fetchone()
+    return ExtractedBill.model_validate_json(row["extraction"]) if row else None
+
+
 def bills_for_service(user_id: str, service_number: str) -> list[ExtractedBill]:
     """This consumer's own earlier uploads for one connection. Another user's bills are never mixed in."""
     with tx() as conn:
@@ -151,6 +166,8 @@ def erase_chat(conn: sqlite3.Connection, user_id: str) -> list[str]:
     conn.execute("DELETE FROM consents WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM bills WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM chat_messages WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM chat_drafts WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM usc_codes WHERE user_id = ?", (user_id,))
     conn.execute("UPDATE complaints SET reply_to = NULL WHERE user_id = ?", (user_id,))
     return used
 

@@ -88,12 +88,12 @@ export const JOURNEYS: Journey[] = [
     ],
   },
   {
-    name: 'A super admin changes a role',
+    name: 'An admin changes a role',
     staffOnly: true,
     steps: [
-      { title: 'Super admin opens Roles', body: 'Built-in and custom roles are listed with how many accounts hold each one.',
+      { title: 'Admin opens Roles', body: 'Built-in and custom roles are listed with how many accounts hold each one.',
         edges: ['officer>sso', 'sso>staffapi', 'staffapi>rbac'], payload: 'GET /api/admin/roles\nrequire_perm("roles.manage")' },
-      { title: 'Permissions changed', body: 'Any role can be edited except the consumer role. Super admin must keep role management, and no role can both manage roles and move money.',
+      { title: 'Permissions changed', body: 'Any role can be edited except the consumer role. Admin must keep role management, and no role can both manage roles and move money.',
         edges: ['officer>desk', 'desk>staffapi', 'staffapi>rbac'], payload: 'PATCH /api/admin/roles/{slug} { permissions: [...] }\n400 if the rules above are broken' },
       { title: 'It applies on the next request', body: 'Permissions are read from the role on every request, so nobody needs to sign out. A changed built-in role can be reset to its default.',
         edges: ['staffapi>actions', 'actions>db'], payload: 'audit_log += role.update | role.reset\nPOST /api/admin/roles/{slug}/reset' },

@@ -44,6 +44,15 @@ export function useRetry(ticket: string) {
   });
 }
 
+/** Contract section 6 lists assign among the actions; the route mirrors the review case one. */
+export function useAssign(ticket: string) {
+  const apply = useApplyDetail(ticket);
+  return useMutation({
+    mutationFn: (accountId: string) => sendJson<ComplaintDetail>(`${path(ticket)}/assign`, { account_id: accountId }),
+    onSuccess: apply,
+  });
+}
+
 export interface BulkResult { done: string[]; skipped: Array<{ ticket: string; reason: string }> }
 
 export function useBulk() {

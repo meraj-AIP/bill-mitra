@@ -9,6 +9,7 @@ export const PERMISSION_HINT: Record<string, string> = {
   'console.view': 'See the department console: bills read, questions asked and complaints raised.',
   'complaints.view': 'Open the complaints inbox and read each complaint.',
   'complaints.reply': 'Reply to consumers on a complaint.',
+  'complaints.create': 'Log a complaint for a consumer (phone, walk-in) or from the field.',
   'complaints.assign': 'Move a complaint to another officer.',
   'cases.view': 'See wrong-reading cases in their units.',
   'cases.request_info': 'Ask the consumer for earlier bills, a meter photo or a note.',

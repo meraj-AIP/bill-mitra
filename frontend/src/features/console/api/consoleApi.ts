@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import type { ComplaintDetail, ComplaintRow, ComplaintStatus, Triage } from '@/features/complaints';
+import type { ComplaintDetail, ComplaintRow, ComplaintStatus, Priority, Source, Triage } from '@/features/complaints';
 import { getJson, isStatus, sendJson } from '@/shared/api/http';
 import { queryKeys } from '@/shared/api/queryKeys';
 import type { Discom, Page } from '@/shared/api/types';
@@ -59,6 +59,7 @@ export function exportUrl(query: InboxQuery): string {
   if (query.status) params.set('status', query.status);
   if (query.discom) params.set('discom', query.discom);
   if (query.q) params.set('q', query.q);
+  addCatalogue(params, query);
   return `/api/console/complaints.csv?${params.toString()}`;
 }
 
@@ -71,6 +72,15 @@ export interface InboxQuery {
   sort: 'priority' | 'newest' | 'oldest';
   triage: Triage | '';
   failed: boolean;
+  type: string;
+  priority: Priority | '';
+  source: Source | '';
+}
+
+function addCatalogue(params: URLSearchParams, query: InboxQuery) {
+  if (query.type) params.set('type', query.type);
+  if (query.priority) params.set('priority', query.priority);
+  if (query.source) params.set('source', query.source);
 }
 
 export function useInbox(query: InboxQuery) {
@@ -80,6 +90,7 @@ export function useInbox(query: InboxQuery) {
   if (query.failed) params.set('failed', 'true');
   if (query.discom) params.set('discom', query.discom);
   if (query.q) params.set('q', query.q);
+  addCatalogue(params, query);
   return useQuery({
     queryKey: queryKeys.consoleComplaintList(query),
     queryFn: ({ signal }) => getJson<Page<ComplaintRow>>(`/api/console/complaints?${params.toString()}`, signal),

@@ -5,6 +5,12 @@ import { UNIT_KIND_LABEL, type Unit, type UnitKind, type UnitRef } from '@/share
 import { useUnits } from '@/shared/api/units';
 import { useDebounced } from '@/shared/hooks/useDebounced';
 
+function emptyText(q: string, failed: boolean): string {
+  // A 403 means this account may not search units, so say so instead of claiming no match.
+  if (failed) return 'Section search is not open to your account. Leave it empty.';
+  return q.length < 2 ? 'Type two or more letters' : 'No unit by that name';
+}
+
 const toRef = (u: Unit): UnitRef => ({ unit_id: u.id, name: u.name, kind: u.kind });
 const sameUnit = (a: UnitRef, b: UnitRef) => a.unit_id === b.unit_id;
 
@@ -16,6 +22,8 @@ interface BaseProps {
   kind?: UnitKind;
   size?: 'small' | 'medium';
   disabled?: boolean;
+  /** Only units of this DISCOM are offered. */
+  discom?: string;
 }
 
 interface MultiProps extends BaseProps { multiple: true; value: UnitRef[]; onChange: (value: UnitRef[]) => void }
@@ -34,11 +42,11 @@ function Option({ unit, discom }: { unit: UnitRef; discom: string | undefined })
 
 /** Searches units on the server as the person types; nothing is loaded until two letters are in. */
 export function UnitPicker(props: MultiProps | SingleProps) {
-  const { label, helperText, error = false, kind, size = 'medium', disabled = false } = props;
+  const { label, helperText, error = false, kind, size = 'medium', disabled = false, discom } = props;
   const [text, setText] = useState('');
   const q = useDebounced(text.trim(), 300);
   const search = useUnits({ q, kind: kind ?? '' }, q.length >= 2 && !disabled);
-  const found = search.data ?? [];
+  const found = (search.data ?? []).filter((u) => !discom || u.discom === discom);
   const discomOf = new Map(found.map((u) => [u.id, u.discom]));
   const options = found.map(toRef);
   const common = {
@@ -50,7 +58,7 @@ export function UnitPicker(props: MultiProps | SingleProps) {
     getOptionLabel: (o: UnitRef) => o.name,
     loading: search.isFetching,
     onInputChange: (_e: unknown, v: string) => setText(v),
-    noOptionsText: q.length < 2 ? 'Type two or more letters' : 'No unit by that name',
+    noOptionsText: emptyText(q, search.isError),
     renderOption: (attrs: HTMLAttributes<HTMLLIElement> & { key: Key }, o: UnitRef) => {
       const { key, ...rest } = attrs;
       return <li key={key} {...rest}><Option unit={o} discom={discomOf.get(o.unit_id)} /></li>;

@@ -4,6 +4,9 @@ import { useId, useState, type FormEvent, type ReactNode } from 'react';
 
 import { REPLY_LIMIT } from '../api/types';
 
+const STACKED = { direction: 'column', sx: { gap: 1.5, alignItems: 'stretch' } } as const;
+const INLINE = { direction: { xs: 'column', sm: 'row' }, sx: { gap: 1.5, alignItems: { sm: 'center' } } } as const;
+
 interface ReplyBoxProps {
   label: string;
   placeholder: string;
@@ -17,9 +20,11 @@ interface ReplyBoxProps {
   allowEmpty?: boolean;
   /** Starting text. Change the component key to load a new one. */
   initial?: string;
+  /** Lays the counter, extras and Send in one column, for a narrow side panel. */
+  stacked?: boolean;
 }
 
-export function ReplyBox({ label, placeholder, pending, error, onSend, extra, allowEmpty = false, initial = '' }: ReplyBoxProps) {
+export function ReplyBox({ label, placeholder, pending, error, onSend, extra, allowEmpty = false, initial = '', stacked }: ReplyBoxProps) {
   const [body, setBody] = useState(initial);
   const counterId = useId();
   const length = body.trim().length;
@@ -43,7 +48,7 @@ export function ReplyBox({ label, placeholder, pending, error, onSend, extra, al
         onChange={(e) => setBody(e.target.value)} error={over}
         onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void submit(e); }}
         slotProps={{ htmlInput: { 'aria-describedby': counterId } }} />
-      <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1.5, alignItems: { sm: 'center' } }}>
+      <Stack {...(stacked ? STACKED : INLINE)}>
         <Typography id={counterId} variant="caption" aria-live="polite"
           sx={{ color: over ? 'error.main' : 'text.secondary', fontVariantNumeric: 'tabular-nums', flex: 1 }}>
           {body.length} of {REPLY_LIMIT} characters{over ? ', too long to send' : ''}. Ctrl and Enter sends.

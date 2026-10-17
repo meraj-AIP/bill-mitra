@@ -10,7 +10,7 @@ from app.core.messages import Inbound, TextOut
 from app.core.trace import Emit, Event, Tracer
 from app.flows import bill as bill_flow
 from app.flows import complaint as complaint_flow
-from app.flows import question
+from app.flows import complaint_chat, question, usc_chat
 from app.flows.turn import Turn
 from app.services import stt
 from app.store import chat, media, repos
@@ -83,7 +83,12 @@ async def _dispatch(turn: Turn, inbound: Inbound) -> None:
     elif inbound.kind == "audio":
         await _voice(turn, inbound)
     elif inbound.kind == "button_reply" and inbound.reply_id:
-        await question.handle_button(turn, inbound.reply_id)
+        if not (await complaint_chat.on_button(turn, inbound.reply_id) or
+                await usc_chat.on_button(turn, inbound.reply_id)):
+            await question.handle_button(turn, inbound.reply_id)
+    elif inbound.text and (await complaint_chat.on_text(turn, inbound.text) or
+                           await usc_chat.on_text(turn, inbound.text)):
+        return
     elif inbound.text:
         detected = detect_language(inbound.text)
         if detected and inbound.channel == "whatsapp":

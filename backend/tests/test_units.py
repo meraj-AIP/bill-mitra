@@ -4,6 +4,7 @@ import sqlite3
 
 from fastapi.testclient import TestClient
 
+from app.domain import rbac
 from app.main import app
 from app.store import db, units
 from app.store.db import DISCOM_UNITS
@@ -13,7 +14,7 @@ from tests.review_kit import tree
 def test_hierarchy_rules_and_alias_matching(sign_in):
     t = tree()
     with TestClient(app) as client:
-        sign_in(client, "super_admin")
+        sign_in(client, "admin")
         wrong = client.post("/api/admin/units", json={"kind": "section", "name": "Misplaced", "parent_id": t.circle.id})
         assert wrong.status_code == 400
         assert client.post("/api/admin/units", json={"kind": "discom", "name": "X", "parent_id": t.circle.id}
@@ -47,7 +48,7 @@ def test_unmapped_names_are_listed_then_mapped(sign_in):
     units.record_unmapped("TGSPDCL", printed)
     units.record_unmapped("TGSPDCL", printed.upper())
     with TestClient(app) as client:
-        sign_in(client, "super_admin")
+        sign_in(client, "admin")
         listed = {u["name"]: u for u in client.get("/api/admin/units/unmapped").json()}
         assert listed[printed]["count"] == 2 and listed[printed]["discom"] == "TGSPDCL"
         mapped = client.post("/api/admin/units/unmapped/map",
@@ -69,7 +70,7 @@ def test_csv_import_creates_updates_and_reports_lines(sign_in):
             f"section,Nowhere {tag},SN{tag},MISSING{tag},TGSPDCL,,\n"
             f"circle,North {tag},CN{tag},,TGNPDCL,,\n")
     with TestClient(app) as client:
-        sign_in(client, "super_admin")
+        sign_in(client, "admin")
         result = client.post("/api/admin/units/import", files={"file": ("units.csv", body.encode(), "text/csv")}).json()
         assert result["created"] == 2 and result["updated"] == 1
         assert [e["line"] for e in result["errors"]] == [4]
@@ -83,7 +84,7 @@ def test_scoped_unit_manager_cannot_import_another_discom(sign_in):
     t = tree()
     body = f"kind,name,code,parent_code,discom,ero_code,aliases\ncircle,Far {t.tag},CF{t.tag},,TGNPDCL,,\n"
     with TestClient(app) as client:
-        sign_in(client, "super_admin", scopes=[DISCOM_UNITS["TGSPDCL"]])
+        sign_in(client, "admin", scopes=[DISCOM_UNITS["TGSPDCL"]])
         result = client.post("/api/admin/units/import", files={"file": ("u.csv", body.encode(), "text/csv")}).json()
     assert result["created"] == 0 and result["errors"][0]["detail"] == "This DISCOM is outside your scope."
 
@@ -115,7 +116,7 @@ def test_old_accounts_table_is_rebuilt_keeping_ids_hashes_and_times():
     shape = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'accounts'").fetchone()[0]
     assert "CHECK" not in shape and "discom" not in shape
     got = {r["id"]: dict(r) for r in conn.execute("SELECT * FROM accounts")}
-    assert {i: got[i]["role"] for i in got} == {"a1": "super_admin", "o1": "officer", "o2": "officer", "c1": "consumer"}
+    assert {i: got[i]["role"] for i in got} == {"a1": "admin", "o1": "officer", "o2": "officer", "c1": "consumer"}
     assert all(got[i]["password_hash"] == f"scrypt$fake-hash-{i}" and got[i]["created_at"] == "2026-01-02 03:04:05"
                and got[i]["last_login_at"] == "2026-02-03 04:05:06" for i in got)
     scopes = {}
@@ -124,7 +125,7 @@ def test_old_accounts_table_is_rebuilt_keeping_ids_hashes_and_times():
     both = set(DISCOM_UNITS.values())
     assert scopes == {"a1": both, "o1": {DISCOM_UNITS["TGSPDCL"]}, "o2": both}
     roles = {r[0] for r in conn.execute("SELECT slug FROM roles WHERE builtin = 1")}
-    assert roles == {"super_admin", "admin", "officer", "section_ae", "billing_approver", "auditor", "consumer"}
+    assert roles == {r.slug for r in rbac.BUILTIN_ROLES}
     assert conn.execute("SELECT COUNT(*) FROM units WHERE kind = 'discom'").fetchone()[0] == 2
     assert conn.execute("SELECT COUNT(*) FROM review_policy WHERE ae_limit IS NULL AND custom_needs_approval = 0"
                         ).fetchone()[0] == 2

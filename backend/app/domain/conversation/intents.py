@@ -7,13 +7,13 @@ from typing import Literal
 Intent = Literal[
     "why_high", "next_bill", "save", "complain", "dispute", "explain_fsa", "explain_fixed",
     "explain_customer", "explain_duty", "explain_true_up", "gruha_jyothi", "due",
-    "what_if", "greeting", "thanks", "power_cut", "new_connection", "help", "stop", "off_topic",
+    "what_if", "greeting", "thanks", "power_cut", "new_connection", "help", "stop", "off_topic", "fetch_bill",
 ]
 
 INTENTS: tuple[Intent, ...] = (
     "why_high", "next_bill", "save", "complain", "dispute", "explain_fsa", "explain_fixed",
     "explain_customer", "explain_duty", "explain_true_up", "gruha_jyothi", "due",
-    "what_if", "greeting", "thanks", "power_cut", "new_connection", "help", "stop", "off_topic",
+    "what_if", "greeting", "thanks", "power_cut", "new_connection", "help", "stop", "off_topic", "fetch_bill",
 )
 
 # Ordered: the first matching rule wins. English, Telugu (script and romanised), Hindi, Urdu.
@@ -28,6 +28,10 @@ _RULES: tuple[tuple[Intent, tuple[str, ...]], ...] = (
                  "गलत रीडिंग", "बहुत ज़्यादा बिल", "बिल बहुत ज़्यादा", "بل غلط", "غلط بل", "ریڈنگ غلط", "غلط ریڈنگ",
                  "بہت زیادہ بل", "بل بہت زیادہ")),
     ("complain", ("complain", "complaint", "ఫిర్యాదు", "firyadu", "शिकायत", "شکایت")),
+    # Asking for the bill by service number, before the charge words so "get my bill" is not read as a question.
+    ("fetch_bill", ("get my bill", "fetch my bill", "bill by usc", "bill with usc", "bill by service number",
+                    "సర్వీస్ నంబర్‌తో బిల్లు", "నా బిల్లు తెప్పించ", "सर्विस नंबर से बिल", "मेरा बिल मँगा",
+                    "سروس نمبر سے بل", "میرا بل منگوا")),
     ("explain_true_up", ("true-up", "true up", "trueup", "ట్రూ", "ट्रू", "ٹرو")),
     ("explain_fsa", ("fsa", "fuel", "ఇంధన", "ईंधन", "ایندھن")),
     ("explain_fixed", ("fixed", "ఫిక్స్", "फ़िक्स्ड", "फिक्स्ड", "فکسڈ")),

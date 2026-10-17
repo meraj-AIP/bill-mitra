@@ -2,8 +2,9 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -43,6 +44,9 @@ class Settings(BaseSettings):
     # First admin, created at startup only when no admin exists yet. Change the password after first login.
     bootstrap_admin_email: str = ""
     bootstrap_admin_password: str = ""
+    # Demo servers only. When set, one sample login per role is kept with this password and the sign in page lists
+    # the logins (never the password). Leave empty on any server that holds real consumers' bills.
+    demo_accounts_password: str = ""
     session_hours: int = 12
     # Cookies ignore the port, so two instances on one host (dev and QA) need different names.
     session_cookie: str = "bm_session"
@@ -70,6 +74,35 @@ class Settings(BaseSettings):
     digest_hour_ist: int = Field(default=8, ge=0, le=23)
     pattern_window_days: int = Field(default=90, ge=1)
     pattern_min_cases: int = Field(default=3, ge=2)
+
+    # development (default) or production. In production the ownership check cannot be switched off.
+    app_env: Literal["development", "production"] = "development"
+    # Off only in development: bills by service number come from this database and nobody proves ownership.
+    ownership_check: bool = True
+    # Mixed into service number and mobile hashes, so a leaked table cannot be reversed by trying every number.
+    hash_pepper: str = ""
+    # DISCOM bill and registered mobile lookup by service number. Both empty means not connected.
+    discom_bills_url: str = ""
+    discom_bills_token: str = ""
+    # Approved WhatsApp authentication template that carries a one-time code. Empty means codes cannot be sent.
+    whatsapp_code_template: str = ""
+
+    @model_validator(mode="after")
+    def _production_keeps_ownership(self) -> "Settings":
+        if self.app_env == "production" and not self.ownership_check:
+            raise ValueError("OWNERSHIP_CHECK=false is refused when APP_ENV=production.")
+        if self.app_env == "production" and not self.hash_pepper:
+            raise ValueError("HASH_PEPPER must be set when APP_ENV=production.")
+        return self
+
+    @property
+    def dev_bills(self) -> bool:
+        """Development shortcut: stored bills stand in for the DISCOM and ownership is not checked."""
+        return self.app_env == "development" and not self.ownership_check
+
+    @property
+    def discom_bills_live(self) -> bool:
+        return bool(self.discom_bills_url and self.discom_bills_token)
 
     @property
     def vision_live(self) -> bool:

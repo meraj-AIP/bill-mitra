@@ -48,6 +48,22 @@ function useSignedIn() {
   };
 }
 
+export interface DemoLogin {
+  role: string;
+  role_name: string;
+  login: string;
+}
+
+/** Sample logins on a demo server. Always empty in production, so the sign in page shows nothing extra. */
+export function useDemoLogins() {
+  return useQuery({
+    queryKey: ['auth', 'demo-accounts'],
+    queryFn: ({ signal }) => getJson<DemoLogin[]>('/api/auth/demo-accounts', signal),
+    staleTime: Infinity,
+    retry: false,
+  });
+}
+
 export function useLogin() {
   const signedIn = useSignedIn();
   return useMutation({

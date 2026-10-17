@@ -71,6 +71,18 @@ def sign_in() -> Callable[..., accounts.Account]:
     return go
 
 
+@pytest.fixture
+def account_manager() -> str:
+    """A custom role that manages staff accounts but not roles, the narrow admin a DISCOM may set up for a circle."""
+    from app.store import roles
+
+    slug = "test_account_manager"
+    if roles.get(slug) is None:
+        roles.create("Test account manager", "Manages staff accounts only.",
+                     ["accounts.manage", "console.view", "complaints.view", "audit.view"])
+    return slug
+
+
 @pytest.fixture(autouse=True)
 def fresh_rate_limits() -> None:
     """Each test starts with empty request counters, so limits never leak between tests."""

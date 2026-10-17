@@ -89,3 +89,26 @@ async def _deliver(complaint: Complaint, message: str, template_status: str | No
         log.warning("complaint %s: template not accepted by WhatsApp", complaint.ticket)
         return Outcome("failed", TEMPLATE_REJECTED)
 
+
+
+def can_send_code() -> bool:
+    """One-time codes go out as an approved WhatsApp authentication template. No SMS provider is wired yet."""
+    settings = get_settings()
+    return settings.whatsapp_enabled and bool(settings.whatsapp_code_template)
+
+
+async def send_code(mobile: str, code: str, language: str) -> bool:
+    """Send a one-time code to a 10 digit Indian mobile. The number and the code are never logged."""
+    if not can_send_code():
+        return False
+    params = [{"type": "text", "text": code}]
+    template = {"name": get_settings().whatsapp_code_template, "language": {"code": language},
+                "components": [{"type": "body", "parameters": params},
+                               {"type": "button", "sub_type": "url", "index": "0", "parameters": params}]}
+    try:
+        await client.send({"messaging_product": "whatsapp", "recipient_type": "individual", "to": f"91{mobile}",
+                           "type": "template", "template": template})
+        return True
+    except httpx.HTTPError:
+        log.warning("one-time code template not accepted by WhatsApp")
+        return False

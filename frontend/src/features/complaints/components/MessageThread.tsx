@@ -79,7 +79,7 @@ interface ThreadProps {
 export function MessageThread({ messages, viewer, onRetry }: ThreadProps) {
   if (messages.length === 0) {
     return <EmptyState icon={<ForumOutlinedIcon />} title="No messages yet"
-      hint={viewer === 'staff' ? 'Your reply below starts the conversation with the consumer.' : 'An officer will reply here.'} />;
+      hint={viewer === 'staff' ? 'Your reply below starts the conversation with the consumer.' : 'We will reply here.'} />;
   }
   return (
     <Stack component="ol" aria-label="Messages" sx={{ listStyle: 'none', m: 0, p: 0, gap: 1.5 }}>

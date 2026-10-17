@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import COOKIE, AnyAccount
 from app.config import get_settings
 from app.core.ratelimit import per_ip
-from app.store import accounts
+from app.store import accounts, demo_accounts
 from app.store.accounts import MIN_PASSWORD, Account
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -53,6 +53,12 @@ async def login(body: LoginRequest, response: Response) -> Account:
     _sign_in(response, account)
     accounts.audit(account.id, "auth.login", account.id)
     return account
+
+
+@router.get("/demo-accounts", response_model=list[demo_accounts.DemoLogin])
+async def demo_logins() -> list[demo_accounts.DemoLogin]:
+    """Sample logins for a demo server; empty everywhere else. Passwords are never sent."""
+    return demo_accounts.listing()
 
 
 @router.post("/register", response_model=Account, dependencies=[Depends(per_ip("register", 5))])

@@ -15,7 +15,7 @@ export function formatCount(value: number): string {
 }
 
 /** The API sends UTC timestamps, sometimes without a zone suffix. */
-function parseUtc(iso: string): Date {
+export function parseUtc(iso: string): Date {
   const text = iso.replace(' ', 'T');
   return new Date(/[zZ]$|[+-]\d\d:?\d\d$/.test(text) ? text : `${text}Z`);
 }

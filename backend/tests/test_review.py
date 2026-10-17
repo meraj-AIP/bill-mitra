@@ -119,7 +119,7 @@ def test_ero_approver_sees_only_sections_billed_by_the_ero(sign_in, area):
 
 def test_unmapped_section_case_moves_once_the_name_is_mapped(sign_in, area):
     _, ae_id = _staff(sign_in, "section_ae", area.section_b.id)
-    admin, _ = _staff(sign_in, "super_admin")
+    admin, _ = _staff(sign_in, "admin")
     consumer, user = _consumer(sign_in)
     old_name = f"Gandhi Nagar {area.tag}"
     _, ticket = _case(consumer, printed(SPIKED, old_name), user)
@@ -195,7 +195,7 @@ def test_custom_reduction_and_policy_limits_force_approval(sign_in, area, south_
 
 
 def test_nobody_approves_or_applies_their_own_decision(sign_in, area, south_policy):
-    admin, _ = _staff(sign_in, "super_admin")
+    admin, _ = _staff(sign_in, "admin")
     both = admin.post("/api/admin/roles", json={"name": f"Decide and approve {area.tag}",
                                                 "permissions": ["cases.view", "cases.decide", "cases.approve",
                                                                 "cases.mark_applied"]}).json()
@@ -335,14 +335,14 @@ def test_audit_details_never_hold_a_service_number_or_phone(sign_in):
 
 
 def test_policy_is_per_discom_and_scoped(sign_in, south_policy):
-    owner, _ = _staff(sign_in, "super_admin")
+    owner, _ = _staff(sign_in, "admin")
     policies = owner.get("/api/admin/policy").json()
     assert [p["discom"] for p in policies] == ["TGSPDCL", "TGNPDCL"]
     assert policies[0]["ae_limit"] is None and policies[0]["custom_needs_approval"] is False
     saved = owner.put("/api/admin/policy/TGSPDCL", json={"ae_limit": 2500, "decision_sla_days": 5}).json()
     assert saved["ae_limit"] == 2500 and saved["decision_sla_days"] == 5 and saved["spike_ratio"] == 2.0
     assert owner.put("/api/admin/policy/TGSPDCL", json={"spike_ratio": 0.5}).status_code == 422
-    south_only, _ = _staff(sign_in, "super_admin", "u_tgspdcl")
+    south_only, _ = _staff(sign_in, "admin", "u_tgspdcl")
     assert south_only.put("/api/admin/policy/TGNPDCL", json={}).status_code == 403
     officer, _ = _staff(sign_in, "officer")
     assert officer.get("/api/admin/policy").status_code == 403

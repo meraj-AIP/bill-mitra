@@ -1,4 +1,4 @@
-import type { ComplaintMessage, ComplaintStatus, Triage } from '../api/types';
+import type { ComplaintMessage, ComplaintStatus, Ownership, Priority, Source, Triage } from '../api/types';
 
 type Tone = 'warning' | 'info' | 'success' | 'default';
 
@@ -24,4 +24,26 @@ export const TRIAGE: Record<Triage, { label: string; hint: string; tone: 'error'
   overcharge: { label: 'Overcharge', hint: 'A charge is above the TGERC tariff', tone: 'error' },
   needs_check: { label: 'Needs a look', hint: 'The check could not confirm every line', tone: 'warning' },
   bill_correct: { label: 'Bill is correct', hint: 'Every charge matches the tariff', tone: 'success' },
+};
+
+export const PRIORITY: Record<Priority, { label: string; tone: 'error' | 'warning' | 'default' }> = {
+  urgent: { label: 'Urgent', tone: 'error' },
+  high: { label: 'High', tone: 'warning' },
+  normal: { label: 'Normal', tone: 'default' },
+  low: { label: 'Low', tone: 'default' },
+};
+
+export const SOURCE_LABEL: Record<Source, string> = {
+  consumer_web: 'Consumer, web app',
+  consumer_chat: 'Consumer, web chat',
+  whatsapp: 'Consumer, WhatsApp',
+  call_centre: 'Call centre (1912)',
+  office: 'Walk-in at office',
+  field: 'Field visit',
+};
+
+export const OWNERSHIP_LABEL: Record<Ownership, string> = {
+  verified: 'Verified with the registered mobile',
+  unverified: 'Not verified',
+  not_needed: 'Not needed for this type',
 };

@@ -5,6 +5,10 @@ export const queryKeys = {
   tariffs: ['tariffs'] as const,
   calculate: (units: number, month: string, gruhaJyothi: boolean) =>
     ['tariffs', 'calculate', units, month, gruhaJyothi] as const,
+  complaintTypes: (language: string) => ['complaint-types', language] as const,
+  myComplaints: ['my-complaints'] as const,
+  myComplaintList: (query: object) => ['my-complaints', 'list', query] as const,
+  myComplaint: (ticket: string) => ['my-complaints', 'one', ticket] as const,
   consoleSummary: ['console', 'summary'] as const,
   consoleComplaints: ['console', 'complaints'] as const,
   consoleComplaintList: (query: object) => ['console', 'complaints', 'list', query] as const,

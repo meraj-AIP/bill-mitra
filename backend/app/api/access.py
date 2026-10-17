@@ -23,7 +23,8 @@ router = APIRouter(prefix="/api/admin", tags=["access"])
 Discom = Literal["TGSPDCL", "TGNPDCL"]
 RoleManager = Annotated[Account, Depends(require_perm("roles.manage"))]
 UnitManager = Annotated[Account, Depends(require_perm("units.manage"))]
-UnitReader = Annotated[Account, Depends(require_perm("units.manage", "accounts.manage"))]
+# Staff who log complaints pick a section in their scope, so they read units too (results stay scoped).
+UnitReader = Annotated[Account, Depends(require_perm("units.manage", "accounts.manage", "complaints.create"))]
 PolicyManager = Annotated[Account, Depends(require_perm("policy.manage"))]
 RoleReader = Annotated[Account, Depends(require_perm("accounts.manage"))]
 Name = Annotated[str, Field(min_length=1, max_length=80)]

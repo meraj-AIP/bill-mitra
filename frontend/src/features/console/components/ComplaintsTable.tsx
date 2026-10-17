@@ -1,7 +1,7 @@
 import { Checkbox, Chip, Link as MuiLink, Skeleton, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material';
 import { Link, useNavigate } from 'react-router-dom';
 
-import { CHANNEL_LABEL, StatusChip, TRIAGE, type ComplaintRow } from '@/features/complaints';
+import { CHANNEL_LABEL, DemoChip, DueChip, PriorityChip, SOURCE_LABEL, StatusChip, TRIAGE, type ComplaintRow } from '@/features/complaints';
 import { dateTime, monthLabel, rupees } from '@/shared/lib/format';
 
 interface ComplaintsTableProps {
@@ -18,11 +18,38 @@ function Flags({ c }: { c: ComplaintRow }) {
   return (
     <Stack sx={{ gap: 0.5, alignItems: 'flex-start' }}>
       <StatusChip status={c.status} />
+      <DueChip c={c} />
       <Chip size="small" variant="outlined" color={triage.tone} label={triage.label} title={triage.hint} />
-      {c.overdue && <Chip size="small" color="error" variant="outlined" label={`Overdue, ${c.days_open} days`} />}
       {c.delivery_failed && <Chip size="small" color="error" label="Reply not delivered" />}
     </Stack>
   );
+}
+
+/** Type, priority, source and place: the columns the complaints contract added. */
+function DetailCells({ c }: { c: ComplaintRow }) {
+  return (
+    <>
+      <TableCell sx={{ minWidth: 220, maxWidth: 340 }}>
+        {c.type_label && <Typography variant="subtitle2" component="p">{c.type_label}</Typography>}
+        <Typography variant="body2" sx={{ color: c.type_label ? 'text.secondary' : 'text.primary', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+          {c.issue}
+        </Typography>
+      </TableCell>
+      <TableCell>{c.priority ? <PriorityChip priority={c.priority} /> : '-'}</TableCell>
+      <TableCell sx={{ minWidth: 120 }}>
+        <Typography variant="body2">{source(c)}</Typography>
+      </TableCell>
+      <TableCell sx={{ whiteSpace: 'nowrap' }}>
+        {c.discom ?? 'Unknown'}
+        <Typography variant="caption" component="p" sx={{ color: 'text.secondary' }}>{c.section ?? monthLabel(c.bill_month)}</Typography>
+      </TableCell>
+    </>
+  );
+}
+
+function source(c: ComplaintRow): string {
+  if (c.source) return SOURCE_LABEL[c.source];
+  return c.channel ? CHANNEL_LABEL[c.channel] : 'Unknown';
 }
 
 export function complaintPath(ticket: string): string {
@@ -32,7 +59,7 @@ export function complaintPath(ticket: string): string {
 /** Rows open the complaint on click; the ticket is also a real link so keyboards and new tabs work. */
 export function ComplaintsTable({ rows, loadingRows, dimmed = false, selection }: ComplaintsTableProps) {
   const navigate = useNavigate();
-  const columns = selection ? 8 : 7;
+  const columns = selection ? 9 : 8;
   const tickets = rows?.map((r) => r.ticket) ?? [];
   const allOn = tickets.length > 0 && tickets.every((t) => selection?.selected.has(t));
   return (
@@ -48,9 +75,10 @@ export function ComplaintsTable({ rows, loadingRows, dimmed = false, selection }
             )}
             <TableCell>Ticket</TableCell>
             <TableCell>Status</TableCell>
-            <TableCell>Issue</TableCell>
+            <TableCell>Type and issue</TableCell>
+            <TableCell>Priority</TableCell>
+            <TableCell>Source</TableCell>
             <TableCell>DISCOM</TableCell>
-            <TableCell>Bill month</TableCell>
             <TableCell align="right">Amount</TableCell>
             <TableCell>Last activity</TableCell>
           </TableRow>
@@ -73,18 +101,11 @@ export function ComplaintsTable({ rows, loadingRows, dimmed = false, selection }
                   sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
                   {c.ticket}
                 </MuiLink>
-                <Typography variant="caption" component="p" sx={{ color: 'text.secondary' }}>
-                  {dateTime(c.created_at)}{c.channel ? `, ${CHANNEL_LABEL[c.channel]}` : ''}
-                </Typography>
+                <Typography variant="caption" component="p" sx={{ color: 'text.secondary' }}>{dateTime(c.created_at)}</Typography>
+                {c.demo && <DemoChip />}
               </TableCell>
               <TableCell><Flags c={c} /></TableCell>
-              <TableCell sx={{ minWidth: 220, maxWidth: 360 }}>
-                <Typography variant="body2" sx={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                  {c.issue}
-                </Typography>
-              </TableCell>
-              <TableCell>{c.discom ?? 'Unknown'}</TableCell>
-              <TableCell sx={{ whiteSpace: 'nowrap' }}>{monthLabel(c.bill_month)}</TableCell>
+              <DetailCells c={c} />
               <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{c.amount ? rupees(c.amount) : '-'}</TableCell>
               <TableCell sx={{ whiteSpace: 'nowrap' }}>
                 {c.last_message_at ? dateTime(c.last_message_at) : 'No messages'}
