@@ -226,10 +226,11 @@ interface ComplaintDetail extends ComplaintRow {
 | `POST /api/console/complaints/{ticket}/assign` | `complaints.assign` | `{ account_id }` | `ComplaintDetail`. General complaints only (409 for a reading check, which is assigned from its case, and when closed); 400 when the account is not in `assignable`. Audited `complaint.assign` |
 | `GET /api/console/complaints.csv` | `complaints.view` | `status?, discom?, q?, sort=newest or oldest, kind?, type?, priority?, source?` | CSV download, columns ticket, created_at, updated_at, status, discom, bill_month, service_masked, issue, amount, channel, days_open. Audited |
 | `GET /api/console/complaints/{ticket}` | `complaints.view` | | `ComplaintDetail`, 404 outside scope |
-| `GET /api/console/complaints/{ticket}/suggestion` | `complaints.view` | | `{ text, triage, worded_by: 'ai' or 'rules', quick: string[] }`. The draft comes from the bill check; a reworded draft must pass the number guard |
-| `POST /api/console/complaints/{ticket}/reply` | `complaints.reply` | `{ body (1..1000 chars), status? }` | `ComplaintDetail`. Sends to the consumer on their channel and records delivery |
+| `GET /api/console/complaints/{ticket}/options` | `complaints.view` | | `{ triage, options: [{ key, label, text, why, asks }], requests: [{ kind, label, text, why }] }`. Two to four replies chosen by type, status, bill check and thread state (`app/domain/complaint_options.py`); rules only, no model call. Figures only in bill options, from the engine |
+| `POST /api/console/complaints/{ticket}/draft` | `complaints.reply` | `{ option_key }` | `{ text, worded_by: 'ai' or 'rules' }`. The option reworded by the model on request; any figure not in the option, any staff word, or no model gives the template. 404 for an option not offered |
+| `POST /api/console/complaints/{ticket}/reply` | `complaints.reply` | `{ body (1..1000 chars), status?, asks? }` | `ComplaintDetail`. Sends to the consumer on their channel and records delivery. `asks` (a request kind, from an option) files their next answer under the complaint |
 | `POST /api/console/complaints/{ticket}/status` | `complaints.reply` | `{ status }` | `ComplaintDetail`; the consumer gets a short status message |
-| `POST /api/console/complaints/{ticket}/request` | `complaints.reply` | `{ kind: meter_photo, bill_photo, details, earlier_bills or note }` | `ComplaintDetail`; 409 when closed |
+| `POST /api/console/complaints/{ticket}/request` | `complaints.reply` | `{ kind: meter_photo, bill_photo, details, earlier_bills or payment_proof }` | `ComplaintDetail`; 409 when closed, 422 when the kind does not fit the complaint type |
 | `POST /api/console/complaints/{ticket}/messages/{id}/retry` | `complaints.reply` | | `ComplaintDetail`; resends a failed message |
 | `POST /api/console/complaints/bulk` | `complaints.reply` | `{ tickets (1..25), status?, send_explanation? }` | `{ done: string[], skipped: { ticket, reason }[] }` |
 

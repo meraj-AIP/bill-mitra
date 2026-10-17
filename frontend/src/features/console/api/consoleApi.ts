@@ -5,6 +5,8 @@ import { getJson, isStatus, sendJson } from '@/shared/api/http';
 import { queryKeys } from '@/shared/api/queryKeys';
 import type { Discom, Page } from '@/shared/api/types';
 
+import type { InfoKind } from './actionsApi';
+
 export interface Summary {
   days: number;
   discom: string | null;
@@ -114,6 +116,8 @@ export function useApplyDetail(ticket: string) {
   const client = useQueryClient();
   return (detail: ComplaintDetail) => {
     client.setQueryData(queryKeys.consoleComplaint(ticket), detail);
+    // What fits the complaint moves with the thread: an answered ask, a new status.
+    void client.invalidateQueries({ queryKey: [...queryKeys.consoleComplaint(ticket), 'options'] });
     void client.invalidateQueries({ queryKey: [...queryKeys.consoleComplaints, 'list'] });
     void client.invalidateQueries({ queryKey: queryKeys.consoleSummary });
   };
@@ -122,7 +126,7 @@ export function useApplyDetail(ticket: string) {
 export function useReply(ticket: string) {
   const apply = useApplyDetail(ticket);
   return useMutation({
-    mutationFn: (body: { body: string; status?: ComplaintStatus }) => sendJson<ComplaintDetail>(`${path(ticket)}/reply`, body),
+    mutationFn: (body: { body: string; status?: ComplaintStatus; asks?: InfoKind }) => sendJson<ComplaintDetail>(`${path(ticket)}/reply`, body),
     onSuccess: apply,
   });
 }

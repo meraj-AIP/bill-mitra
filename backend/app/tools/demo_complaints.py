@@ -1,6 +1,6 @@
 """Demo complaints for a development server, so the console has a month of realistic work to show.
 
-    python -m app.tools.demo_complaints seed     # replaces any earlier demo rows
+    python -m app.tools.demo_complaints seed     # replaces any earlier demo rows, review cases included
     python -m app.tools.demo_complaints remove
 
 Refuses when APP_ENV=production. Every row carries demo = 1 (bills: source = 'demo'), service numbers are fake (99
@@ -26,6 +26,7 @@ from app.services.notify import status_label
 from app.store import complaints, demo, repos, units
 from app.store.complaints import General, Placement
 from app.store.db import DISCOM_UNITS, connection
+from app.tools import demo_review
 
 CATEGORY = "1B(i) DOMESTIC"
 UNIT_TREE = (("circle", "Sangareddy", "DEMO-C-SGR"), ("division", "Sangareddy", "DEMO-D-SGR"),
@@ -212,13 +213,15 @@ def _thread(ticket: str, spec: Spec, created: datetime, words: str, bill: Extrac
     demo.finish(ticket, spec.status, _ts(last), escalated)
 
 
-def seed() -> list[tuple[str, int]]:
-    demo.remove()
+def seed() -> tuple[list[tuple[str, int]], list[tuple[str, str]]]:
+    """Counts of demo complaints by type, and the demo review cases as (what it shows, ticket)."""
+    demo.remove(demo_review.LOGIN)
     sections = _sections()
     now = datetime.now(UTC)
     for n, spec in enumerate(SPECS):
         _one(spec, n, sections, now)
-    return demo.counts()
+    review = demo_review.seed(sections)
+    return demo.counts(), review
 
 
 def main(argv: list[str]) -> int:
@@ -230,11 +233,13 @@ def main(argv: list[str]) -> int:
         return 1
     connection()
     if argv[0] == "remove":
-        removed, bills = demo.remove()
+        removed, bills = demo.remove(demo_review.LOGIN)
         print(f"Removed {removed} demo complaints and {bills} demo bills.")
         return 0
-    counts = seed()
+    counts, review = seed()
     print(f"Seeded {sum(c for _, c in counts)} demo complaints: " + ", ".join(f"{t} {c}" for t, c in counts))
+    for label, ticket in review:
+        print(f"Review case {ticket}: {label}")
     return 0
 
 

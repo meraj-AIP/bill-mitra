@@ -14,8 +14,9 @@ from app.api.deps import require_perm, viewer
 from app.config import get_settings
 from app.core import csvsafe
 from app.domain import complaint_types
-from app.domain.complaint_reply import Triage
+from app.domain.complaint_reply import AskKind, Triage
 from app.domain.complaint_types import Ownership, Priority, Source, TypeCode
+from app.flows import complaint as complaint_flow
 from app.flows.analysis import analyse
 from app.flows.complaint import LABEL_EN
 from app.flows.complaint_timeline import timeline
@@ -145,6 +146,7 @@ class RowPage(BaseModel):
 class OfficerReply(BaseModel):
     body: Text1000
     status: Status | None = None
+    asks: AskKind | None = None  # the reply asks for something, so the consumer's answer is filed under it
 
 
 class StatusChange(BaseModel):
@@ -256,7 +258,10 @@ async def console_reply(ticket: str, body: OfficerReply, account: Replier) -> Co
     complaint = _for_staff(account, ticket)
     outcome = await notify.reply(complaint, body.body)
     store.add_message(ticket, "officer", account.id, body.body, outcome.delivery, outcome.note)
-    accounts.audit(account.id, "complaint.reply", ticket, f"delivery {outcome.delivery}")
+    asks = body.asks if body.asks and complaint.status in OPEN_STATUSES else None
+    if asks:
+        complaint_flow.expect_answer(complaint, asks, account.id)
+    accounts.audit(account.id, "complaint.reply", ticket, f"delivery {outcome.delivery}" + (f", asks {asks}" if asks else ""))
     if body.status:
         await _change_status(complaint, body.status, account)
     return _detail(complaint, account)

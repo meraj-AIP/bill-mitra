@@ -1,4 +1,4 @@
-"""Console shortcuts: suggested replies, triage, asking for a photo, retrying a failed send and bulk actions.
+"""Console shortcuts: reply options, triage, asking for a photo, retrying a failed send and bulk actions.
 
 Only the real boundaries are faked: the vision reading, the text model and the WhatsApp HTTP call."""
 
@@ -36,24 +36,26 @@ def signed_in(account: accounts.Account) -> TestClient:
     return client
 
 
-def test_suggested_reply_is_the_checked_draft_and_the_guard_rejects_new_figures(reader, staff, monkeypatch):
+def test_reply_options_carry_the_checked_draft_and_the_guard_rejects_new_figures(reader, staff, monkeypatch):
     ticket = chat_complaint(reader, "web")
     officer = signed_in(staff["south"])
-    plain = officer.get(f"/api/console/complaints/{ticket}/suggestion").json()
-    assert plain["triage"] == "overcharge" and plain["worded_by"] == "rules" and "140" in plain["text"]
-    assert len(plain["quick"]) == 4
+    plain = officer.get(f"/api/console/complaints/{ticket}/options").json()
+    over = next(o for o in plain["options"] if o["key"] == "overcharge")
+    assert plain["triage"] == "overcharge" and "140" in over["text"] and 2 <= len(plain["options"]) <= 4
 
     async def invents(*_: object) -> str:
         return "Your bill is Rs 999 too high."
 
-    monkeypatch.setattr(llm, "polish_reply", invents)
-    assert officer.get(f"/api/console/complaints/{ticket}/suggestion").json()["worded_by"] == "rules"
+    monkeypatch.setattr(llm, "word_reply", invents)
+    drafted = officer.post(f"/api/console/complaints/{ticket}/draft", json={"option_key": "overcharge"}).json()
+    assert drafted == {"text": over["text"], "worded_by": "rules"}
 
-    async def faithful(draft: str, _language: str) -> str:
+    async def faithful(draft: str, *_: object) -> str:
         return "Sorry for the trouble. " + draft
 
-    monkeypatch.setattr(llm, "polish_reply", faithful)
-    assert officer.get(f"/api/console/complaints/{ticket}/suggestion").json()["worded_by"] == "ai"
+    monkeypatch.setattr(llm, "word_reply", faithful)
+    drafted = officer.post(f"/api/console/complaints/{ticket}/draft", json={"option_key": "overcharge"}).json()
+    assert drafted["worded_by"] == "ai" and drafted["text"].startswith("Sorry")
 
 
 def test_triage_filters_and_needs_you_first(reader, staff):

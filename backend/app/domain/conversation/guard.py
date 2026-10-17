@@ -48,7 +48,16 @@ def numbers_in(text: str) -> set[float]:
 
 def check(text: str, facts: Facts, extra: set[float] | None = None) -> GuardResult:
     """extra holds figures the caller already traced to the engine, such as those in a checked template."""
-    allowed = allowed_numbers(facts) | (extra or set())
+    return _against(text, allowed_numbers(facts) | (extra or set()))
+
+
+def check_figures(text: str, allowed: set[float]) -> GuardResult:
+    """Stricter form for a staff reply option: only the option's own figures may appear, not even the small
+    numbers a bill explanation is allowed, so a reworded reply cannot add a time or a count."""
+    return _against(text, allowed)
+
+
+def _against(text: str, allowed: set[float]) -> GuardResult:
     found = _NUMBER.findall(text.translate(_NATIVE_DIGITS))
     unmatched = []
     for raw in found:

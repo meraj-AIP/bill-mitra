@@ -8,23 +8,40 @@ import { useApplyDetail } from './consoleApi';
 
 const path = (ticket: string) => `/api/console/complaints/${encodeURIComponent(ticket)}`;
 
-export interface Suggestion {
-  /** Null when the bill behind the complaint is no longer stored. */
-  text: string | null;
-  triage: Triage | null;
-  /** 'ai' when the model reworded the checked draft and the number guard passed it. */
-  worded_by: 'ai' | 'rules' | null;
-  quick: string[];
+export type InfoKind = 'meter_photo' | 'bill_photo' | 'details' | 'earlier_bills' | 'payment_proof';
+
+/** A reply that fits this complaint. `text` is in the consumer's language; label and why are for staff. */
+export interface ReplyOption {
+  key: string;
+  label: string;
+  text: string;
+  why: string;
+  /** Sending this reply also waits for the consumer's answer, like a request. */
+  asks: InfoKind | null;
 }
 
-export type InfoKind = 'meter_photo' | 'bill_photo' | 'details';
+export interface RequestOption { kind: InfoKind; label: string; text: string; why: string }
 
-export function useSuggestion(ticket: string, enabled: boolean) {
+export interface ReplyOptions {
+  triage: Triage | null;
+  options: ReplyOption[];
+  requests: RequestOption[];
+}
+
+/** 'rules': the template as built from the complaint. 'ai': reworded by the model, every number checked. */
+export interface Draft { text: string; worded_by: 'ai' | 'rules' }
+
+/** Rules only, so it is cheap to load with the page. Refetched with the complaint after every change. */
+export function useReplyOptions(ticket: string) {
   return useQuery({
-    queryKey: [...queryKeys.consoleComplaint(ticket), 'suggestion'],
-    queryFn: ({ signal }) => getJson<Suggestion>(`${path(ticket)}/suggestion`, signal),
-    enabled,
-    staleTime: Infinity,
+    queryKey: [...queryKeys.consoleComplaint(ticket), 'options'],
+    queryFn: ({ signal }) => getJson<ReplyOptions>(`${path(ticket)}/options`, signal),
+  });
+}
+
+export function useDraftOption(ticket: string) {
+  return useMutation({
+    mutationFn: (optionKey: string) => sendJson<Draft>(`${path(ticket)}/draft`, { option_key: optionKey }),
   });
 }
 

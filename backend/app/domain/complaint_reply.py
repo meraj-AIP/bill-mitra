@@ -12,12 +12,12 @@ from app.domain.conversation.facts import Facts, rs
 from app.domain.conversation.lang import pack, text
 
 Triage = Literal["overcharge", "bill_correct", "needs_check"]
-RequestKind = Literal["meter_photo", "bill_photo", "details", "earlier_bills", "note"]
+AskKind = Literal["meter_photo", "bill_photo", "details", "earlier_bills", "payment_proof"]
+RequestKind = AskKind | Literal["note"]
 
-QUICK_KEYS = ("quick_received", "quick_correction", "quick_visit", "quick_1912")
 REQUEST_KEYS: dict[RequestKind, str] = {"meter_photo": "request_meter", "bill_photo": "request_bill",
                                         "details": "request_details", "earlier_bills": "request_earlier_bills",
-                                        "note": "request_details"}
+                                        "payment_proof": "request_payment_proof", "note": "request_details"}
 
 
 def triage(audit: AuditResult) -> Triage:
@@ -40,10 +40,6 @@ def draft(facts: Facts, audit: AuditResult, language: str) -> str:
     if kind == "bill_correct":
         return text(language, "reply_bill_correct", month=month, units=facts.units, amount=rs(facts.bill_amount))
     return text(language, "reply_needs_check", month=month)
-
-
-def quick_replies(language: str) -> list[str]:
-    return [text(language, key) for key in QUICK_KEYS]
 
 
 def request_text(kind: RequestKind, language: str, ticket: str) -> str:

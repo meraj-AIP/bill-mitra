@@ -37,7 +37,7 @@ def reader(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
 
     monkeypatch.setattr(llm, "explain", no_model)
     monkeypatch.setattr(llm, "classify", no_model)
-    monkeypatch.setattr(llm, "polish_reply", no_model)
+    monkeypatch.setattr(llm, "word_reply", no_model)
 
     def script(*readings: vision.Reading | Exception) -> None:
         queue = list(readings)

@@ -243,12 +243,14 @@ def test_demo_seed_and_remove_touch_only_demo_rows(sign_in):
                                                     "description": "A real one."}).json()["ticket"]
     assert demo_complaints.main(["seed"]) == 0
     conn = db.connection()
-    counts = dict(conn.execute("SELECT type, COUNT(*) FROM complaints WHERE demo = 1 GROUP BY type").fetchall())
+    counts = dict(conn.execute("SELECT type, COUNT(*) FROM complaints WHERE demo = 1 AND kind = 'general' "
+                               "GROUP BY type").fetchall())
     assert sum(counts.values()) == len(demo_complaints.SPECS) and counts["power_outage"] == 1
     assert counts.get("high_bill", 0) + counts.get("wrong_reading", 0) >= 6
     assert conn.execute("SELECT COUNT(*) FROM complaints WHERE demo = 1 AND escalated_at IS NOT NULL").fetchone()[0] == 2
     db.purge_mock_data()  # the startup purge keeps them
-    assert conn.execute("SELECT COUNT(*) FROM complaints WHERE demo = 1").fetchone()[0] == len(demo_complaints.SPECS)
+    assert conn.execute("SELECT COUNT(*) FROM complaints WHERE demo = 1 AND kind = 'general'").fetchone()[0] == \
+        len(demo_complaints.SPECS)
     assert demo_complaints.main(["remove"]) == 0
     assert conn.execute("SELECT COUNT(*) FROM complaints WHERE demo = 1").fetchone()[0] == 0
     assert conn.execute("SELECT COUNT(*) FROM bills WHERE source = 'demo'").fetchone()[0] == 0

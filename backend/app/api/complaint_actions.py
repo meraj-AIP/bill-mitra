@@ -1,19 +1,21 @@
-"""Console shortcuts that save officers a round trip: a ready reply, asking for a photo, retrying a failed
+"""Console shortcuts that save officers a round trip: replies that fit the complaint, asking for a photo, retrying a failed
 delivery and acting on many complaints at once. Every write is audited like a single reply."""
 
-from typing import Annotated
+from dataclasses import asdict
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
 from app.api.complaints import ComplaintDetail, Replier, Viewer, _change_status, _detail, _for_staff, assignable
 from app.api.deps import require_perm
-from app.domain import complaint_reply
-from app.domain.complaint_reply import RequestKind, Triage
+from app.domain import complaint_options
+from app.domain.complaint_reply import AskKind, Triage
 from app.flows import complaint as complaint_flow
 from app.services import notify
 from app.store import accounts
 from app.store import complaints as store
+from app.store import review as review_store
 from app.store.accounts import Account
 from app.store.complaints import OPEN_STATUSES, Placement, Status
 
@@ -21,15 +23,38 @@ router = APIRouter(prefix="/api/console/complaints", tags=["complaints"])
 BULK_MAX = 25
 
 
-class Suggestion(BaseModel):
-    text: str | None
+class ReplyOption(BaseModel):
+    key: str
+    label: str
+    text: str
+    why: str
+    asks: AskKind | None
+
+
+class RequestOption(BaseModel):
+    kind: AskKind
+    label: str
+    text: str
+    why: str
+
+
+class Options(BaseModel):
     triage: Triage | None
-    worded_by: str | None
-    quick: list[str]
+    options: list[ReplyOption]
+    requests: list[RequestOption]
+
+
+class DraftBody(BaseModel):
+    option_key: str = Field(min_length=1, max_length=40)
+
+
+class Draft(BaseModel):
+    text: str
+    worded_by: Literal["ai", "rules"]
 
 
 class InfoRequest(BaseModel):
-    kind: RequestKind
+    kind: AskKind
 
 
 class AssignBody(BaseModel):
@@ -57,15 +82,22 @@ class BulkResult(BaseModel):
     skipped: list[dict[str, str]]
 
 
-@router.get("/{ticket}/suggestion", response_model=Suggestion)
-async def suggestion(ticket: str, account: Viewer) -> Suggestion:
-    complaint = _for_staff(account, ticket)
-    language = complaint.language or "te"
-    found = await complaint_flow.suggest_reply(complaint)
-    quick = complaint_reply.quick_replies(language)
+@router.get("/{ticket}/options", response_model=Options)
+async def options(ticket: str, account: Viewer) -> Options:
+    """Replies and requests that fit this complaint. Rules only: no model is called when the page opens."""
+    ctx = complaint_flow.options_context(_for_staff(account, ticket))
+    return Options(triage=ctx.triage,
+                   options=[ReplyOption(**asdict(o)) for o in complaint_options.reply_options(ctx)],
+                   requests=[RequestOption(**asdict(o)) for o in complaint_options.ask_options(ctx)])
+
+
+@router.post("/{ticket}/draft", response_model=Draft)
+async def draft(ticket: str, body: DraftBody, account: Replier) -> Draft:
+    """One option reworded on request. Its figures are held to the option's own; any failure gives the template."""
+    found = await complaint_flow.word_option(_for_staff(account, ticket), body.option_key)
     if found is None:
-        return Suggestion(text=None, triage=None, worded_by=None, quick=quick)
-    return Suggestion(text=found.text, triage=found.triage, worded_by=found.worded_by, quick=quick)
+        raise HTTPException(404, "That reply option is not offered for this complaint.")
+    return Draft(text=found.text, worded_by="ai" if found.worded_by == "ai" else "rules")
 
 
 @router.post("/{ticket}/request", response_model=ComplaintDetail)
@@ -73,7 +105,10 @@ async def request_info(ticket: str, body: InfoRequest, account: Replier) -> Comp
     complaint = _for_staff(account, ticket)
     if complaint.status not in OPEN_STATUSES:
         raise HTTPException(409, "This complaint is closed. Reopen it before asking the consumer for more.")
+    if body.kind not in complaint_options.allowed_asks(complaint_flow.options_context(complaint)):
+        raise HTTPException(422, "That request does not fit this complaint.")
     outcome = await complaint_flow.ask(complaint, body.kind, account.id)
+    review_store.add_request(ticket, body.kind, None, account.id)
     accounts.audit(account.id, "complaint.request", ticket, f"{body.kind}, delivery {outcome.delivery}")
     return _detail(complaint, account)
 

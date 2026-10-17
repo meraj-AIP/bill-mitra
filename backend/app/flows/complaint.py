@@ -2,11 +2,14 @@
 
 There is no 1912 integration yet, so the consumer is told plainly to also call 1912 with the reference."""
 
+import re
 from dataclasses import dataclass
 
 from app.config import get_settings
 from app.domain import complaint_reply
-from app.domain.complaint_reply import RequestKind, Triage
+from app.domain.complaint_options import ASKS, STAFF_WORDS, Context, reply_options, type_of
+from app.domain.complaint_reply import AskKind, RequestKind
+from app.domain.complaint_types import BY_CODE
 from app.domain.conversation import guard
 from app.domain.conversation.composer import month_label
 from app.domain.conversation.facts import rs
@@ -65,29 +68,81 @@ async def submit(turn: Turn, a: Analysis) -> None:
 
 
 INFO_PREFIX = "info:"
+BACKGROUND_MAX = 500
 PHOTO_NOTE = "Photo from the consumer, sent after the officer asked."
 
 
 @dataclass(frozen=True)
-class Suggestion:
+class Worded:
     text: str
-    triage: Triage
-    worded_by: str  # "ai" when the model reworded the checked draft and the guard passed it, else "rules"
+    worded_by: str  # "ai" when the model reworded the option and every check passed, else "rules"
 
 
-async def suggest_reply(complaint: Complaint) -> Suggestion | None:
-    """A reply the officer can send as is, in the consumer's language. None when the bill is gone."""
-    found = repos.get_bill(complaint.bill_id) if complaint.bill_id else None
-    if not found:
-        return None
-    a = analyse(found[0], complaint.user_id)
+def _thread_state(ticket: str, language: str) -> tuple[set[str], set[str], bool, bool]:
+    """What we asked for, what is still unanswered, and whether the consumer's last message answers us."""
+    prefixes = {k: complaint_reply.request_text(k, language, ticket) for k in ASKS}
+    asked: set[str] = set()
+    pending: set[str] = set()
+    contacted = answered = photo = False
+    for m in complaints.messages(ticket):
+        if m["author_kind"] == "consumer":
+            pending.clear()
+            answered, photo = contacted, contacted and bool(m["media_id"])
+            continue
+        kinds = {k for k, prefix in prefixes.items() if m["body"].startswith(prefix)}
+        asked |= kinds
+        pending |= kinds
+        if m["author_kind"] == "officer" or kinds:  # a status line alone is not us writing to them
+            contacted = True
+            answered = photo = False
+    for r in review_store.requests(ticket):
+        asked.add(r["kind"])
+        if r["status"] == "open":
+            pending.add(r["kind"])
+    return asked, pending, answered, photo
+
+
+def options_context(complaint: Complaint) -> Context:
+    """Everything the reply options are chosen from. Reads only; no model is called."""
     language = complaint.language or "te"
-    checked = complaint_reply.draft(a.facts, a.audit, language)
-    kind = complaint_reply.triage(a.audit)
-    worded = await llm.polish_reply(checked, language)
-    if worded and guard.check(worded, a.facts, guard.numbers_in(checked)).passed:
-        return Suggestion(worded, kind, "ai")
-    return Suggestion(checked, kind, "rules")
+    found = repos.get_bill(complaint.bill_id) if complaint.bill_id else None
+    a = analyse(found[0], complaint.user_id) if found else None
+    asked, pending, answered, photo = _thread_state(complaint.ticket, language)
+    return Context(ticket=complaint.ticket, type=type_of(complaint.type, complaint.kind), status=complaint.status,
+                   language=language, facts=a.facts if a else None, audit=a.audit if a else None,
+                   asked=frozenset(asked), waiting=frozenset(pending), answered=answered, sent_photo=photo)
+
+
+_LONG_NUMBER = re.compile(r"\d[\d\s-]{3,}\d")
+_EMAIL = re.compile(r"\S+@\S+")
+
+
+def _background(ticket: str) -> str:
+    """The consumer's own words, minus anything shaped like a phone, service or account number or an email:
+    the model needs the gist, not their details."""
+    row = complaints.row(ticket) or {}
+    said = _EMAIL.sub("[email]", _LONG_NUMBER.sub("[number]", row.get("description") or ""))
+    return said[:BACKGROUND_MAX]
+
+
+async def word_option(complaint: Complaint, key: str) -> Worded | None:
+    """The chosen option reworded by the model, or its template when the model is off or any check fails.
+    None when the option is not one this complaint is offered."""
+    ctx = options_context(complaint)
+    option = next((o for o in reply_options(ctx) if o.key == key), None)
+    if option is None:
+        return None
+    worded = await llm.word_reply(option.text, ctx.language, BY_CODE[ctx.type].label, _background(complaint.ticket))
+    if worded and guard.check_figures(worded, guard.numbers_in(option.text)).passed and not STAFF_WORDS.search(worded):
+        return Worded(worded, "ai")
+    return Worded(option.text, "rules")
+
+
+def expect_answer(complaint: Complaint, kind: AskKind, account_id: str) -> None:
+    """A reply that asks for something: the next photo or message is filed under the complaint, and the ask
+    stays open until it comes."""
+    review_store.add_request(complaint.ticket, kind, None, account_id)
+    repos.set_awaiting(complaint.user_id, INFO_PREFIX + complaint.ticket)
 
 
 def checked_reply(complaint: Complaint) -> str | None:
