@@ -6,8 +6,11 @@ import type { Language } from '@/shared/lib/languages';
 import { useUploadBill, validateFile } from '../api/billsApi';
 import { useFilePreview } from './useFilePreview';
 
-/** The dashboard upload flow: validate, preview, read, then open the saved report on its own page. */
-export function useBillUpload() {
+/**
+ * The dashboard upload flow: validate, preview, read, then open the saved report on its own page.
+ * With returnTo (a bill uploaded for a report), it goes back to the reported bill instead.
+ */
+export function useBillUpload(returnTo: string | null = null) {
   const navigate = useNavigate();
   const upload = useUploadBill();
   const { preview, show, clear } = useFilePreview();
@@ -21,7 +24,8 @@ export function useBillUpload() {
     show(file);
     upload.mutate({ file, language }, {
       onSuccess: (report) => {
-        if (report.id) navigate(`/bills/${encodeURIComponent(report.id)}?lang=${language}`);
+        // An unsaved report (not a bill, retake) stays here so the consumer can try again.
+        if (report.id) navigate(`/bills/${encodeURIComponent(returnTo ?? report.id)}?lang=${language}`);
       },
     });
   };

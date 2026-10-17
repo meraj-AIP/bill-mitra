@@ -13,7 +13,7 @@ import { ChargesCheck } from './ChargesCheck';
 import { HistoryChart } from './HistoryChart';
 import { LanguageSelect } from './LanguageSelect';
 import { OutcomeBanner, RetakeHelp } from './OutcomeBanner';
-import { QuietReviewAsk, SpikeBanner } from './ReviewRequest';
+import { QuietReport, SpikeNote } from './ReviewRequest';
 import { ReviewStatus } from './ReviewStatus';
 import { Explanation, Outlook } from './Outlook';
 import { SlabBreakdown } from './SlabBreakdown';
@@ -50,7 +50,7 @@ function Analysed({ report, language, onLanguage, reloading }: Pick<BillReportVi
   const { bill, capture, analysis } = report;
   return (
     <>
-      {bill && <BillFacts bill={bill} />}
+      {bill && <BillFacts bill={bill} final={report.final} />}
       {capture && <CaptureReport capture={capture} confidence={bill?.confidence ?? null} />}
       {analysis && (
         <>
@@ -69,20 +69,20 @@ function Analysed({ report, language, onLanguage, reloading }: Pick<BillReportVi
   );
 }
 
-/** An open or finished AE review takes the place of the spike note; the note only offers to start one. */
+/** A report on this bill takes the place of the spike note; the note only offers to start one. */
 function Review({ report, language }: { report: BillReport; language: Language }) {
-  if (report.review) return <ReviewStatus review={report.review} />;
+  if (report.review) return <ReviewStatus review={report.review} billId={report.id} />;
   const spike = report.analysis?.spike;
-  return spike?.flagged ? <SpikeBanner spike={spike} billId={report.id} language={language} /> : null;
+  return spike?.flagged ? <SpikeNote spike={spike} billId={report.id} language={language} /> : null;
 }
 
-/** Next steps on a checked bill. An unflagged bill with no case still gets a quiet way to ask the AE. */
+/** Next steps on a checked bill. An unflagged bill with no report still gets a quiet way to report a problem. */
 function Checked({ report, language, onRetry }: { report: BillReport; language: Language; onRetry: () => void }) {
   const quiet = report.id && !report.review && !report.analysis?.spike?.flagged;
   return (
     <>
       <Actions onRetry={onRetry} />
-      {quiet && <QuietReviewAsk billId={report.id ?? ''} language={language} />}
+      {quiet && <QuietReport billId={report.id ?? ''} language={language} />}
     </>
   );
 }

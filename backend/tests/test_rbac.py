@@ -18,7 +18,9 @@ def _name() -> str:
 def test_catalogue_rules():
     assert rbac.BUILTIN["super_admin"].permissions.isdisjoint(rbac.MONEY | {"self.bills"})
     assert rbac.validate(["audit.view", "roles.manage", "audit.view"]) == ["roles.manage", "audit.view"]
-    for bad in (["cases.nope"], [], ["roles.manage", "cases.decide"], ["roles.manage", "cases.view"]):
+    # Viewing cases is fine next to role management; moving money is not.
+    assert rbac.validate(["roles.manage", "cases.view"]) == ["roles.manage", "cases.view"]
+    for bad in (["cases.nope"], [], ["roles.manage", "cases.decide"], ["roles.manage", "self.bills"]):
         with pytest.raises(ValueError):
             rbac.validate(bad)
     assert rbac.slugify("  Billing Clerk (North) ") == "billing_clerk_north"
@@ -60,7 +62,8 @@ def test_role_refusals(sign_in):
         mixed = {"name": _name(), "permissions": ["roles.manage", "cases.approve"]}
         assert admin.post("/api/admin/roles", json=mixed).status_code == 400
         assert admin.post("/api/admin/roles", json={"name": _name(), "permissions": ["x.y"]}).status_code == 400
-        assert admin.patch("/api/admin/roles/officer", json={"permissions": ["cases.view"]}).status_code == 400
+        assert admin.patch("/api/admin/roles/consumer", json={"permissions": ["self.bills", "console.view"]}).status_code == 400
+        assert admin.patch("/api/admin/roles/super_admin", json={"permissions": ["console.view"]}).status_code == 400
         assert admin.delete("/api/admin/roles/officer").status_code == 409
         held = admin.post("/api/admin/roles", json={"name": _name(), "permissions": ["cases.view"]}).json()
         made = admin.post("/api/admin/accounts", json={"role": held["slug"], "login": f"held-{held['slug']}@example.com",
@@ -106,3 +109,28 @@ def test_account_manager_cannot_touch_a_role_manager(sign_in):
         assert manager.post(f"/api/admin/accounts/{top.id}/reset-password",
                             json={"password": "another-test-passphrase"}).status_code == 403
 
+
+
+def test_super_admin_edits_a_builtin_role_and_resets_it(sign_in):
+    from app.store.db import _seed, tx
+
+    with TestClient(app) as admin, TestClient(app) as officer:
+        sign_in(admin, "super_admin")
+        sign_in(officer, "officer")
+        assert officer.get("/api/console/summary").status_code == 200
+        try:
+            edited = admin.patch("/api/admin/roles/officer", json={"permissions": ["cases.view"]}).json()
+            assert edited["customised"] is True and edited["permissions"] == ["cases.view"]
+            # Permissions are read on every request, so the change applies to signed-in officers at once.
+            assert officer.get("/api/console/summary").status_code == 403
+            with tx() as conn:  # a restart re-seeds built-in roles but must keep an edit
+                _seed(conn)
+            assert admin.get("/api/admin/roles").json()[0]["slug"] and next(
+                r for r in admin.get("/api/admin/roles").json() if r["slug"] == "officer")["permissions"] == ["cases.view"]
+        finally:
+            reset = admin.post("/api/admin/roles/officer/reset").json()
+        assert reset["customised"] is False and "console.view" in reset["permissions"]
+        assert officer.get("/api/console/summary").status_code == 200
+        assert admin.post("/api/admin/roles/not_a_role/reset").status_code == 404
+        actions = [e["action"] for e in admin.get("/api/admin/audit", params={"page_size": 50}).json()["items"]]
+        assert "role.update" in actions and "role.reset" in actions

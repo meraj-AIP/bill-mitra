@@ -7,7 +7,6 @@ import { Box, Button, Dialog, IconButton, Stack, ToggleButton, ToggleButtonGroup
 import { useEffect, useRef, useState, type RefObject } from 'react';
 
 import { STEP_MS, type JourneyControl } from '../hooks/useJourney';
-import { JOURNEYS } from '../model/journeys';
 import { SystemMap } from './SystemMap';
 
 const mono = { fontFamily: 'monospace', fontSize: '0.8rem' };
@@ -31,7 +30,7 @@ function Progress({ control }: { control: JourneyControl }) {
 }
 
 function Caption({ control }: { control: JourneyControl }) {
-  const step = JOURNEYS[control.journey]?.steps[control.step];
+  const step = control.journeys[control.journey]?.steps[control.step];
   if (!step) return null;
   return (
     <Box key={`${control.journey}-${control.step}`}
@@ -80,7 +79,7 @@ function useKeys(open: boolean, control: JourneyControl, toggleScreen: () => voi
         ArrowLeft: () => control.goTo(control.step - 1), PageUp: () => control.goTo(control.step - 1),
         ' ': control.toggle, Home: () => control.goTo(0), End: () => control.goTo(control.count - 1),
         f: toggleScreen, F: toggleScreen,
-        ...Object.fromEntries(JOURNEYS.map((_, i) => [String(i + 1), () => control.selectJourney(i)])),
+        ...Object.fromEntries(control.journeys.map((_, i) => [String(i + 1), () => control.selectJourney(i)])),
       };
       const act = actions[e.key];
       if (act) { e.preventDefault(); act(); }
@@ -94,7 +93,7 @@ export function ArchitecturePresenter({ open, onClose, control }: { open: boolea
   const stage = useRef<HTMLDivElement>(null);
   const screen = useBrowserFullscreen(stage, open);
   useKeys(open, control, screen.toggle);
-  const step = JOURNEYS[control.journey]?.steps[control.step];
+  const step = control.journeys[control.journey]?.steps[control.step];
 
   return (
     <Dialog fullScreen open={open} onClose={onClose} slots={{ transition: Zoom }} aria-label="Architecture presentation"
@@ -104,7 +103,7 @@ export function ArchitecturePresenter({ open, onClose, control }: { open: boolea
           <Typography variant="h3" component="h2" sx={{ mr: 'auto' }}>Bill Mitra, end to end</Typography>
           <ToggleButtonGroup exclusive size="small" value={control.journey} aria-label="Journey"
             onChange={(_, v: number | null) => { if (v !== null) control.selectJourney(v); }}>
-            {JOURNEYS.map((j, i) => <ToggleButton key={j.name} value={i}>{j.name}</ToggleButton>)}
+            {control.journeys.map((j, i) => <ToggleButton key={j.name} value={i}>{j.name}</ToggleButton>)}
           </ToggleButtonGroup>
           <Tooltip title={screen.on ? 'Leave full screen (F)' : 'Full screen (F)'}>
             <Button size="small" variant="outlined" onClick={screen.toggle}>{screen.on ? 'Exit full screen' : 'Full screen'}</Button>

@@ -10,7 +10,7 @@ import type { Analysis, HistorySource } from '../api/types';
 import { HISTORY_SOURCE } from '../model/labels';
 import { ReportSection } from './ReportSection';
 
-const SOURCES: HistorySource[] = ['printed', 'uploaded', 'this_bill'];
+const SOURCES: HistorySource[] = ['printed', 'uploaded', 'discom', 'this_bill'];
 
 /** Units per month. One series per source, stacked, so each bar carries exactly one colour and one legend entry. */
 export function HistoryChart({ history, tariffId }: { history: Analysis['history']; tariffId: string }) {
@@ -19,9 +19,12 @@ export function HistoryChart({ history, tariffId }: { history: Analysis['history
   const colours: Record<HistorySource, string> = {
     printed: theme.palette.chart.printed,
     uploaded: theme.palette.chart.uploaded,
+    discom: theme.palette.chart.discom,
     this_bill: theme.palette.chart.thisBill,
   };
-  const caption = 'From the usage table printed on this bill and your own earlier uploads';
+  const caption = history.some((h) => h.source === 'discom')
+    ? 'From the usage table printed on this bill, your own earlier uploads and DISCOM billing records'
+    : 'From the usage table printed on this bill and your own earlier uploads';
 
   if (history.length < 2) {
     return (

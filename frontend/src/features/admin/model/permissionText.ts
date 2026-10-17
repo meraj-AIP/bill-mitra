@@ -2,7 +2,7 @@ import type { PermissionInfo } from '../api/rolesApi';
 
 /** What each permission lets a person do, said the way an administrator would explain it to a colleague. */
 export const PERMISSION_HINT: Record<string, string> = {
-  'roles.manage': 'Create, change and delete custom roles.',
+  'roles.manage': 'Create roles and change what any role can do, built-in ones included.',
   'units.manage': 'Add and edit circles, divisions, sections and EROs, import them from a file, and map new section names.',
   'policy.manage': 'Set each DISCOM\'s AE limit, spike rules and the days allowed to decide.',
   'accounts.manage': 'Create and edit staff accounts inside their own units.',
@@ -23,15 +23,15 @@ export const PERMISSION_HINT: Record<string, string> = {
   'self.bills': 'Consumers only: their own bills, chat and review requests.',
 };
 
-// Role management never sits with money: these are the only permissions allowed alongside roles.manage.
-const WITH_ROLES = new Set(['roles.manage', 'units.manage', 'policy.manage', 'accounts.manage', 'audit.view', 'console.view']);
+// Mirrors rbac.NOT_WITH_ROLE_MANAGEMENT: whoever shapes roles never also moves money or acts as a consumer.
+const NOT_WITH_ROLES = new Set(['cases.decide', 'cases.approve', 'cases.mark_applied', 'self.bills']);
 
 /** The contract's separation of duties rule, checked before the server refuses it. */
 export function separationProblem(permissions: string[]): string | null {
   if (!permissions.includes('roles.manage')) return null;
-  const clash = permissions.filter((p) => !WITH_ROLES.has(p));
-  return clash.length === 0 ? null
-    : 'A role that manages roles can only also manage units, policy and accounts, view the console and read the audit log. Remove the other permissions or untick Manage roles.';
+  return permissions.some((p) => NOT_WITH_ROLES.has(p))
+    ? 'A role that manages roles cannot also decide, approve or mark revisions applied. Untick those or untick Manage roles.'
+    : null;
 }
 
 /** Consumers' own permission is never granted to a staff role. */

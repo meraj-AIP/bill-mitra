@@ -112,6 +112,15 @@ async def patch_role(slug: str, body: RolePatch, actor: RoleManager) -> Role:
     return role
 
 
+@router.post("/roles/{slug}/reset", response_model=Role)
+async def reset_role(slug: str, actor: RoleManager) -> Role:
+    role = roles.reset(slug)
+    if role is None:
+        raise HTTPException(404, "Only a built-in role can be reset.")
+    accounts.audit(actor.id, "role.reset", slug)
+    return role
+
+
 @router.delete("/roles/{slug}", status_code=204)
 async def delete_role(slug: str, actor: RoleManager) -> Response:
     try:

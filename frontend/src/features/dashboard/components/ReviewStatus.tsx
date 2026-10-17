@@ -1,11 +1,10 @@
-import ChatOutlinedIcon from '@mui/icons-material/ChatOutlined';
-import { Alert, AlertTitle, Box, Button, Chip, Paper, Stack, Typography } from '@mui/material';
-import { Link } from 'react-router-dom';
+import { Alert, AlertTitle, Box, Chip, Paper, Stack, Typography } from '@mui/material';
 
 import type { ReviewSummary } from '@/features/review';
 import { dateTime, rupees } from '@/shared/lib/format';
 
-import { REVIEW_TEXT } from '../model/labels';
+import { FINAL_STATUS, REPORT_TEXT } from '../model/labels';
+import { RequestedBills } from './RequestedBills';
 
 type Revision = NonNullable<ReviewSummary['revision']>;
 
@@ -13,7 +12,7 @@ function Amount({ label, value, struck = false }: { label: string; value: number
   return (
     <Box>
       <Typography variant="caption" component="p" sx={{ color: 'text.secondary' }}>{label}</Typography>
-      <Typography component="p" sx={{ fontSize: '1.5rem', fontWeight: 600, lineHeight: 1.25, fontVariantNumeric: 'tabular-nums',
+      <Typography component="p" sx={{ fontSize: struck ? '1.125rem' : '1.5rem', fontWeight: 600, lineHeight: 1.25, fontVariantNumeric: 'tabular-nums',
         textDecoration: struck ? 'line-through' : 'none', color: struck ? 'text.secondary' : 'success.dark' }}>
         {rupees(value)}
       </Typography>
@@ -21,43 +20,42 @@ function Amount({ label, value, struck = false }: { label: string; value: number
   );
 }
 
-/** The revision as the AE recorded it. The original bill is never changed; this is the amount that now applies. */
+/** The revised bill. The original is never edited; these figures are what the consumer now pays for the month. */
 function RevisedBillCard({ r, ticket }: { r: Revision; ticket: string }) {
-  const applied = r.status === 'applied';
+  const status = FINAL_STATUS[r.status];
   return (
     <Paper component="section" variant="outlined" aria-labelledby="revised-bill" sx={{ p: { xs: 2, sm: 2.5 }, borderTop: 3, borderTopColor: 'success.main' }}>
       <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
         <Typography id="revised-bill" variant="h3" component="h2" sx={{ flex: 1 }}>Revised bill</Typography>
-        <Chip size="small" color={applied ? 'success' : 'warning'} variant={applied ? 'filled' : 'outlined'}
-          label={applied ? 'Applied in your official bill' : 'Pending update in your official bill'} />
+        <Chip size="small" color={status.tone} variant={r.status === 'applied' ? 'filled' : 'outlined'} label={status.label} />
       </Stack>
-      <Stack direction="row" sx={{ gap: 4, mt: 1.5, flexWrap: 'wrap' }}>
-        <Amount label="Original amount" value={r.original_amount} struck />
-        <Amount label="Revised amount" value={r.revised_amount} />
+      <Stack direction="row" sx={{ gap: { xs: 3, sm: 5 }, mt: 1.5, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        {r.revised_total !== null && <Amount label="Total to pay" value={r.revised_total} />}
+        <Amount label="Bill amount" value={r.revised_amount} />
+        <Amount label="Printed bill amount" value={r.original_amount} struck />
+        {r.original_total !== null && <Amount label="Printed total" value={r.original_total} struck />}
       </Stack>
-      <Typography variant="body1" sx={{ mt: 1.5 }}>{r.reason}</Typography>
+      <Typography variant="body1" sx={{ mt: 1.5, maxWidth: '65ch' }}>{r.reason}</Typography>
       <Typography variant="caption" component="p" sx={{ color: 'text.secondary', mt: 1 }}>
-        Decided by {r.decided_by}, {dateTime(r.decided_at)}. Reference {ticket}.
-        {applied ? '' : ' Until the DISCOM updates the official bill, keep this page as proof of the revised amount.'}
+        Revised by {r.office}, {dateTime(r.decided_at)}. Reference {ticket}.
+        {r.status === 'applied' ? '' : ' Until your official bill is updated, keep this page as proof of the revised amount.'}
       </Typography>
     </Paper>
   );
 }
 
-/** Where the AE review stands, in the consumer's terms. */
-export function ReviewStatus({ review }: { review: ReviewSummary }) {
-  const text = REVIEW_TEXT[review.state];
-  const correctAsPrinted = review.state === 'decided' && !review.revision;
+/** Where the consumer's report stands, in their terms. It never says who reviews the bill. */
+export function ReviewStatus({ review, billId }: { review: ReviewSummary; billId: string | null }) {
+  const text = REPORT_TEXT[review.state];
   return (
     <Stack sx={{ gap: 2 }}>
-      <Alert severity={text.tone} sx={{ border: 1, borderColor: 'divider' }}
-        action={review.state === 'info_requested'
-          ? <Button color="inherit" size="small" component={Link} to="/assistant" startIcon={<ChatOutlinedIcon />}>Open chat</Button> : undefined}>
+      <Alert severity={text.tone} sx={{ border: 1, borderColor: 'divider' }}>
         <AlertTitle sx={{ fontWeight: 600 }}>{text.title}</AlertTitle>
-        {correctAsPrinted ? 'The AE found the reading and the bill correct as printed.' : text.body}
-        <Typography variant="caption" component="p" sx={{ mt: 0.5 }}>Case {review.ticket}</Typography>
+        {text.body}
+        <Typography variant="caption" component="p" sx={{ mt: 0.5 }}>Reference {review.ticket}</Typography>
       </Alert>
-      {review.revision && <RevisedBillCard r={review.revision} ticket={review.ticket} />}
+      {review.state === 'waiting_for_you' && <RequestedBills review={review} billId={billId} />}
+      {review.state === 'revised' && review.revision && <RevisedBillCard r={review.revision} ticket={review.ticket} />}
     </Stack>
   );
 }

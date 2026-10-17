@@ -32,9 +32,8 @@ PERMISSIONS: dict[str, tuple[str, str]] = {
 MONEY = frozenset({"cases.decide", "cases.approve", "cases.mark_applied"})
 # Granting a role that carries one of these is reserved for roles.manage holders.
 PRIVILEGED = frozenset({"roles.manage", "units.manage", "policy.manage"})
-# Whoever manages roles never moves money, so roles.manage only sits with these.
-ROLE_MANAGER_COMPANIONS = frozenset({"roles.manage", "units.manage", "policy.manage", "accounts.manage",
-                                     "audit.view", "console.view"})
+# Whoever manages roles never moves money and is never a consumer: separation of duties.
+NOT_WITH_ROLE_MANAGEMENT = MONEY | {"self.bills"}
 
 
 @dataclass(frozen=True)
@@ -79,10 +78,24 @@ def validate(permissions: list[str]) -> list[str]:
         raise ValueError(f"Unknown permission: {', '.join(unknown)}.")
     if not chosen:
         raise ValueError("A role needs at least one permission.")
-    if "roles.manage" in chosen and not set(chosen) <= ROLE_MANAGER_COMPANIONS:
-        extra = sorted(set(chosen) - ROLE_MANAGER_COMPANIONS)
-        raise ValueError(f"roles.manage cannot be combined with {', '.join(extra)}.")
+    clash = sorted(set(chosen) & NOT_WITH_ROLE_MANAGEMENT) if "roles.manage" in chosen else []
+    if clash:
+        raise ValueError(f"A role that manages roles cannot also hold {', '.join(clash)}.")
     return [p for p in PERMISSIONS if p in chosen]
+
+
+def check_builtin_edit(slug: str, permissions: list[str]) -> None:
+    """The two locks on editing a built-in role: households keep exactly their access, and the super admin role
+    always keeps role management, so nobody can lock every administrator out."""
+    if slug == CONSUMER:
+        raise ValueError("The consumer role is fixed: every household relies on it.")
+    if slug == SUPER_ADMIN and "roles.manage" not in permissions:
+        raise ValueError("The super admin role must keep role management.")
+
+
+def default_permissions(slug: str) -> list[str] | None:
+    role = BUILTIN.get(slug)
+    return [p for p in PERMISSIONS if p in role.permissions] if role else None
 
 
 def slugify(name: str) -> str:

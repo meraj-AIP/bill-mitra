@@ -8,7 +8,7 @@ const STAGES: Array<{ name: string; mode: Mode; line: string }> = [
   { name: 'Check', mode: 'rules', line: 'Rule checks on every line against the TGERC order' },
   { name: 'Explain', mode: 'ai', line: 'Plain words in the consumer\'s language, every figure guarded' },
   { name: 'Reply', mode: 'channel', line: 'Text and buttons, with a voice note when voice is on' },
-  { name: 'Follow up', mode: 'staff', line: 'Complaints go to officers in the complaints inbox' },
+  { name: 'Follow up', mode: 'staff', line: 'Complaints are answered and a wrong bill is checked by the section office' },
 ];
 
 const MODE_LABEL: Record<Mode, string> = { channel: 'Channel', ai: 'AI', rules: 'Rules', staff: 'Staff' };

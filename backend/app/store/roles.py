@@ -18,6 +18,8 @@ class Role(BaseModel):
     permissions: list[str]
     builtin: bool
     accounts: int
+    customised: bool  # a built-in role whose permissions differ from its default
+    locked: bool  # permissions cannot be changed (the consumer role)
 
 
 _ROLE = ("SELECT r.*, (SELECT COUNT(*) FROM accounts a WHERE a.role = r.slug) AS accounts FROM roles r")
@@ -25,8 +27,11 @@ _ROLE = ("SELECT r.*, (SELECT COUNT(*) FROM accounts a WHERE a.role = r.slug) AS
 
 def _role(row: sqlite3.Row) -> Role:
     data = dict(row)
-    return Role(slug=data["slug"], name=data["name"], description=data["description"],
-                permissions=json.loads(data["permissions"]), builtin=bool(data["builtin"]), accounts=data["accounts"])
+    perms = json.loads(data["permissions"])
+    default = rbac.default_permissions(data["slug"]) if data["builtin"] else None
+    return Role(slug=data["slug"], name=data["name"], description=data["description"], permissions=perms,
+                builtin=bool(data["builtin"]), accounts=data["accounts"],
+                customised=default is not None and perms != default, locked=data["slug"] == rbac.CONSUMER)
 
 
 def get(slug: str) -> Role | None:
@@ -58,13 +63,24 @@ def update(slug: str, *, name: str | None, description: str | None, permissions:
     current = get(slug)
     if current is None:
         return None
-    if permissions is not None and current.builtin:
-        raise ValueError("Built-in roles keep their permissions. Create a custom role instead.")
     perms = rbac.validate(permissions) if permissions is not None else current.permissions
+    if permissions is not None and current.builtin:
+        rbac.check_builtin_edit(slug, perms)
     with tx() as conn:
         conn.execute("UPDATE roles SET name = ?, description = ?, permissions = ? WHERE slug = ?",
                      ((name or current.name).strip(),
                       (current.description if description is None else description).strip(), json.dumps(perms), slug))
+    return get(slug)
+
+
+def reset(slug: str) -> Role | None:
+    """Put a built-in role back to its shipped name, description and permissions."""
+    shipped = rbac.BUILTIN.get(slug)
+    if shipped is None:
+        return None
+    with tx() as conn:
+        conn.execute("UPDATE roles SET name = ?, description = ?, permissions = ? WHERE slug = ?",
+                     (shipped.name, shipped.description, json.dumps(rbac.default_permissions(slug)), slug))
     return get(slug)
 
 

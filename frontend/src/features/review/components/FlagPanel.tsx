@@ -5,18 +5,20 @@ import { ChartsReferenceLine } from '@mui/x-charts/ChartsReferenceLine';
 
 import { formatCount, monthLabel, rupees } from '@/shared/lib/format';
 
-import type { CaseDetail } from '../api/types';
+import type { CaseDetail, HistorySource } from '../api/types';
 import { ratioText } from '../model/labels';
 import { Figure, Panel } from './Panel';
 
-type Source = CaseDetail['history'][number]['source'];
-const SOURCES: Source[] = ['printed', 'uploaded', 'this_bill'];
-const SOURCE_LABEL: Record<Source, string> = { printed: 'Printed on the bill', uploaded: 'Earlier upload', this_bill: 'This bill' };
+const SOURCES: HistorySource[] = ['printed', 'uploaded', 'discom', 'this_bill'];
+const SOURCE_LABEL: Record<HistorySource, string> = {
+  printed: 'Printed on the bill', uploaded: 'Earlier upload', discom: 'DISCOM records', this_bill: 'This bill',
+};
 
 /** One series per source, stacked, so each bar carries one colour and the legend says where each month came from. */
 function HistoryBars({ c }: { c: CaseDetail }) {
   const theme = useTheme();
-  const colour: Record<Source, string> = { printed: theme.palette.chart.printed, uploaded: theme.palette.chart.uploaded, this_bill: theme.palette.chart.thisBill };
+  const { chart } = theme.palette;
+  const colour: Record<HistorySource, string> = { printed: chart.printed, uploaded: chart.uploaded, discom: chart.discom, this_bill: chart.thisBill };
   const history = c.history;
   const median = c.spike.median_units;
   if (history.length < 2) {

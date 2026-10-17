@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.domain.bill import ExtractedBill, mask
+from app.domain.review import final_total
 from app.store import media
 from app.store.db import tx
 
@@ -69,7 +70,7 @@ def save_bill(user_id: str, bill: ExtractedBill, media_id: str | None, audit_sta
         if bill.service_number and bill.bill_month:
             # A copy a complaint or case points at stays, because that record is about that exact bill.
             conn.execute("DELETE FROM bills WHERE user_id = ? AND service_number = ? AND bill_month = ? AND id NOT IN "
-                         "(SELECT bill_id FROM complaints WHERE bill_id IS NOT NULL)",
+                         "(SELECT bill_id FROM complaints WHERE bill_id IS NOT NULL) AND id NOT IN (SELECT bill_id FROM case_bills)",
                          (user_id, bill.service_number, bill.bill_month))
         conn.execute(
             "INSERT INTO bills (id, user_id, service_number, extraction, media_id, bill_month, units, total_payable, "
@@ -117,13 +118,19 @@ def list_bills(user_id: str, page: int, page_size: int, audit_status: str | None
         total = conn.execute(f"SELECT COUNT(*) FROM bills {where}", params).fetchone()[0]
         rows = conn.execute(
             f"SELECT id, created_at, bill_month, discom, units, total_payable, audit_status, overcharge, "
-            f"service_number, {_REVIEW_COLUMNS} FROM bills {where} ORDER BY created_at {order}, id LIMIT ? OFFSET ?",
+            f"service_number, json_extract(extraction, '$.arrears') AS arrears, {_REVIEW_COLUMNS} FROM bills {where} ORDER BY created_at {order}, id LIMIT ? OFFSET ?",
             [*params, page_size, (page - 1) * page_size]).fetchall()
     items = []
     for row in rows:
         item = dict(row)
         item["service_masked"] = mask(item.pop("service_number"))
         item["under_review"] = bool(item["under_review"])
+        # total_payable is what the consumer owes now: the revised amount plus the printed arrears once revised.
+        item["original_total_payable"] = item["total_payable"]
+        if item["revised_amount"] is not None:
+            item["total_payable"] = final_total(item["revised_amount"], item.pop("arrears") or 0.0,
+                                                item["original_total_payable"])
+        item.pop("arrears", None)
         items.append(item)
     return BillPage(items=items, total=total, page=page, page_size=page_size)
 

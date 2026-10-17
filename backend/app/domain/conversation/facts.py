@@ -55,6 +55,9 @@ class Facts(BaseModel):
     cliff_200: float
     due_date: str | None
     rates: list[float]
+    # Set only once a revision is approved: bill_amount and total_payable then hold the revised figures.
+    printed_bill_amount: float | None = None
+    printed_total_payable: float | None = None
 
 
 def build_facts(bill: ExtractedBill, comp: Computation, result: AuditResult,
@@ -89,6 +92,14 @@ def build_facts(bill: ExtractedBill, comp: Computation, result: AuditResult,
         cliff_100=cliff.get(100, 0.0), cliff_200=cliff.get(200, 0.0),
         due_date=bill.due_date, rates=rates,
     )
+
+
+def with_revision(facts: Facts, revised_amount: float) -> Facts:
+    """The facts a chat answer may quote after an approved revision: the revised amount, and the revised amount plus
+    the printed arrears as the total. The printed figures stay in the facts, so the number guard still knows them."""
+    return facts.model_copy(update={
+        "printed_bill_amount": facts.bill_amount, "printed_total_payable": facts.total_payable,
+        "bill_amount": round(revised_amount, 2), "total_payable": round(revised_amount + facts.arrears, 2)})
 
 
 def rs(value: float | None) -> str:

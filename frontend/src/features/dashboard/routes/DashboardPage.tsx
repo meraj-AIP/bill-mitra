@@ -1,8 +1,10 @@
-import { Alert, Container, Grid, Stack } from '@mui/material';
+import { Alert, Button, Container, Grid, Stack } from '@mui/material';
+import { Link, useSearchParams } from 'react-router-dom';
 
 import { useHealth } from '@/shared/api/health';
 import { BillImage } from '@/shared/components/BillImage';
 import { PageHeader } from '@/shared/components/PageHeader';
+import { monthLabel } from '@/shared/lib/format';
 
 import { BillReportView } from '../components/BillReportView';
 import { BillsTable } from '../components/BillsTable';
@@ -33,9 +35,20 @@ function ReadingOffNotice() {
   );
 }
 
+/** Shown when the consumer came here to send an earlier bill that a report asked for. */
+function ReturnNotice({ billId, month }: { billId: string; month: string | null }) {
+  return (
+    <Alert severity="info" action={<Button color="inherit" size="small" component={Link} to={`/bills/${encodeURIComponent(billId)}`}>Cancel</Button>}>
+      {month ? `Upload your ${monthLabel(month)} bill.` : 'Upload your earlier bill.'} When it is read, we take you back to the bill you reported.
+    </Alert>
+  );
+}
+
 export function DashboardPage() {
   const params = useBillsParams();
-  const flow = useBillUpload();
+  const [search] = useSearchParams();
+  const returnTo = search.get('for');
+  const flow = useBillUpload(returnTo);
   const { preview, reading, unsaved } = flow;
 
   return (
@@ -44,6 +57,7 @@ export function DashboardPage() {
         <PageHeader title="Check your electricity bill"
           lead="Upload a photo or PDF of your TGSPDCL or TGNPDCL bill. We check each charge against the TGERC tariff and explain it in your language." />
         <ReadingOffNotice />
+        {returnTo && !reading && <ReturnNotice billId={returnTo} month={search.get('month')} />}
         {reading && <Reading preview={reading} />}
         {unsaved && (
           <BillReportView report={unsaved} language={flow.language} onLanguage={flow.setLanguage} onRetry={flow.startOver}

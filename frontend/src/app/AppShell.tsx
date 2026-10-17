@@ -26,7 +26,8 @@ function Brand({ home }: { home: string }) {
 
 function Footer({ hiddenOnPhone }: { hiddenOnPhone: boolean }) {
   return (
-    <Box component="footer" sx={{ borderTop: 1, borderColor: 'divider', bgcolor: 'background.paper', display: { xs: hiddenOnPhone ? 'none' : 'block', md: 'block' } }}>
+    <Box component="footer" sx={{ borderTop: 1, borderColor: 'divider', bgcolor: 'background.paper', display: { xs: hiddenOnPhone ? 'none' : 'block', md: 'block' },
+      '@media print': { display: 'none' } }}>
       <Container maxWidth="lg">
         <Stack direction="row" sx={{ py: 2, gap: 2, alignItems: 'center', justifyContent: 'space-between' }}>
           <Stack direction="row" sx={{ gap: 1, alignItems: 'center' }}>
@@ -73,12 +74,13 @@ export function AppShell() {
   const home = landingFor(account);
   const staff = Boolean(account) && !isConsumer(account);
   return (
-    <Box sx={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
+    <Box sx={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default', '@media print': { bgcolor: 'background.paper' } }}>
       <MuiLink href="#main" sx={{ position: 'absolute', left: 8, top: -48, zIndex: 'tooltip', bgcolor: 'background.paper', px: 2, py: 1,
-        borderRadius: 1, '&:focus': { top: 8 } }}>
+        borderRadius: 1, '&:focus': { top: 8 }, '@media print': { display: 'none' } }}>
         Skip to content
       </MuiLink>
-      <AppBar position="sticky" color="inherit" elevation={0} sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper' }}>
+      <AppBar position="sticky" color="inherit" elevation={0}
+        sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper', '@media print': { display: 'none' } }}>
         <Box sx={{ height: 3, bgcolor: 'primary.main' }} />
         <Container maxWidth="lg">
           <Stack direction="row" sx={{ pt: { xs: 1.5, md: 2 }, pb: 1, gap: 2, alignItems: 'center', justifyContent: 'space-between' }}>

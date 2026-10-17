@@ -18,7 +18,7 @@ export function ComplainOnWhatsApp() {
           Open WhatsApp
         </Button>
       ) : undefined}>
-      Want this corrected? Send this bill to Bill Mitra on WhatsApp and tap Raise complaint. The officer replies there.
+      Want this corrected? Send this bill to Bill Mitra on WhatsApp and tap Raise complaint. We reply there.
     </Alert>
   );
 }

@@ -1,8 +1,9 @@
-import { Box, Paper, Typography } from '@mui/material';
+import { Box, Chip, Paper, Stack, Typography } from '@mui/material';
 
 import { calendarDate, formatCount, monthLabel, rupees } from '@/shared/lib/format';
 
-import type { Bill } from '../api/types';
+import type { Bill, FinalAmounts } from '../api/types';
+import { FINAL_STATUS } from '../model/labels';
 
 function Fact({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
   return (
@@ -44,21 +45,58 @@ function ConnectionFacts({ bill }: { bill: Bill }) {
   );
 }
 
-/** The headline figures as printed on the bill, before any check. */
-export function BillFacts({ bill }: { bill: Bill }) {
-  const solar = bill.export_units !== null;
+function Revised({ label, value, printed }: { label: string; value: number; printed: number | null }) {
   return (
-    <Paper variant="outlined" component="dl"
-      sx={{ m: 0, p: { xs: 2, sm: 2.5 }, display: 'grid', gap: 2, gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(4, 1fr)' } }}>
-      <Fact strong label="Total payable" value={bill.total_payable === null ? 'Not read' : rupees(bill.total_payable)} />
-      <Fact strong label={solar ? 'Billed units (net)' : 'Units'} value={count(solar ? netUnits(bill) : bill.units)} />
-      <Fact label="Bill month" value={monthLabel(bill.bill_month)} />
-      <Fact label="Due date" value={bill.due_date ? calendarDate(bill.due_date) : 'Not read'} />
-      <Fact label="DISCOM" value={bill.discom === 'UNKNOWN' ? 'Not read' : bill.discom} />
-      <Fact label="Service no." value={bill.service_masked ?? 'Not read'} />
-      <Fact label="Meter readings" value={readingsText(bill)} />
-      <Fact label={bill.arrears < 0 ? 'Credit from earlier bills' : 'Arrears'} value={rupees(Math.abs(bill.arrears))} />
-      <ConnectionFacts bill={bill} />
+    <Box sx={{ minWidth: 0 }}>
+      <Typography variant="caption" component="dt" sx={{ color: 'text.secondary' }}>{label}</Typography>
+      <Typography component="dd" sx={{ m: 0, fontWeight: 600, fontSize: '1.375rem', lineHeight: 1.3, fontVariantNumeric: 'tabular-nums', color: 'success.dark' }}>
+        {rupees(value)}
+        {printed !== null && (
+          <Box component="s" aria-label={`Printed ${rupees(printed)}`}
+            sx={{ ml: 1, fontSize: '0.9375rem', fontWeight: 500, color: 'text.secondary', whiteSpace: 'nowrap' }}>
+            {rupees(printed)}
+          </Box>
+        )}
+      </Typography>
+    </Box>
+  );
+}
+
+/** After an approved revision the revised figures are the bill; the printed ones stay visible, struck through. */
+function FinalFacts({ bill, final }: { bill: Bill; final: FinalAmounts }) {
+  const status = final.status ? FINAL_STATUS[final.status] : null;
+  return (
+    <Box sx={{ pb: 2, mb: 2, borderBottom: 1, borderColor: 'divider' }}>
+      <Stack direction="row" sx={{ gap: 1, alignItems: 'center', flexWrap: 'wrap', mb: 1 }}>
+        <Typography variant="subtitle2" component="p" sx={{ flex: 1 }}>Revised bill</Typography>
+        {status && <Chip size="small" color={status.tone} variant={final.status === 'applied' ? 'filled' : 'outlined'} label={status.label} />}
+      </Stack>
+      <Box component="dl" sx={{ m: 0, display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' } }}>
+        {final.total_payable !== null && <Revised label="Total to pay" value={final.total_payable} printed={bill.total_payable} />}
+        <Revised label="Bill amount" value={final.bill_amount} printed={bill.bill_amount} />
+      </Box>
+    </Box>
+  );
+}
+
+/** The headline figures from the bill. A revised bill leads with the revised amounts to pay. */
+export function BillFacts({ bill, final }: { bill: Bill; final?: FinalAmounts | null | undefined }) {
+  const solar = bill.export_units !== null;
+  const revised = final?.revised ? final : null;
+  return (
+    <Paper variant="outlined" sx={{ p: { xs: 2, sm: 2.5 } }}>
+      {revised && <FinalFacts bill={bill} final={revised} />}
+      <Box component="dl" sx={{ m: 0, display: 'grid', gap: 2, gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(4, 1fr)' } }}>
+        {!revised && <Fact strong label="Total payable" value={bill.total_payable === null ? 'Not read' : rupees(bill.total_payable)} />}
+        <Fact strong label={solar ? 'Billed units (net)' : 'Units'} value={count(solar ? netUnits(bill) : bill.units)} />
+        <Fact label="Bill month" value={monthLabel(bill.bill_month)} />
+        <Fact label="Due date" value={bill.due_date ? calendarDate(bill.due_date) : 'Not read'} />
+        <Fact label="DISCOM" value={bill.discom === 'UNKNOWN' ? 'Not read' : bill.discom} />
+        <Fact label="Service no." value={bill.service_masked ?? 'Not read'} />
+        <Fact label="Meter readings" value={readingsText(bill)} />
+        <Fact label={bill.arrears < 0 ? 'Credit from earlier bills' : 'Arrears'} value={rupees(Math.abs(bill.arrears))} />
+        <ConnectionFacts bill={bill} />
+      </Box>
     </Paper>
   );
 }

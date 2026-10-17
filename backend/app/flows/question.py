@@ -2,11 +2,11 @@
 
 from app.domain.conversation import composer
 from app.domain.conversation.facts import rs
-from app.domain.conversation.intents import Intent, classify, parse_units
+from app.domain.conversation.intents import Intent, classify, parse_units, says_no_bills
 from app.domain.conversation.lang import text
 from app.domain.tariff.engine import compute
 from app.flows import bill as bill_flow
-from app.flows import cases, complaint
+from app.flows import case_bills, cases, complaint
 from app.flows.analysis import Analysis, analyse, gruha_jyothi_eligible
 from app.flows.turn import Turn
 from app.services import llm, sms_parser
@@ -21,7 +21,8 @@ def _current(turn: Turn) -> Analysis | None:
     if not turn.state.current_bill_id:
         return None
     stored = repos.get_bill(turn.state.current_bill_id)
-    return analyse(stored[0], turn.state.user_id) if stored else None
+    # A revised bill is answered with its revised figures, which the facts carry for the number guard.
+    return cases.with_final(analyse(stored[0], turn.state.user_id), turn.state.current_bill_id) if stored else None
 
 
 def _answer(intent: Intent, a: Analysis, lang: str, units: int | None) -> str:
@@ -88,6 +89,8 @@ async def handle_text(turn: Turn, message: str) -> None:
             return
         await bill_flow.handle_bill(turn, parsed, None)
         return
+    if says_no_bills(message) and await case_bills.no_bills_from_chat(turn):
+        return
     intent, what_if_units = await _classify(turn, message)
     await answer_intent(turn, intent, what_if_units)
 
@@ -103,6 +106,9 @@ async def answer_intent(turn: Turn, intent: Intent, units: int | None = None) ->
         return
     if intent == "complain":
         await complaint.preview(turn, a)
+        return
+    if intent == "dispute":
+        await cases.report_from_chat(turn, a)
         return
     async with turn.tracer.step("Answer from the engine's figures", "rules") as step:
         body = _answer(intent, a, turn.lang, units)
@@ -124,8 +130,8 @@ async def handle_button(turn: Turn, reply_id: str) -> None:
         return
     if reply_id == "complaint_send":
         await complaint.submit(turn, a)
-    elif reply_id == "review_request":
-        await cases.request_from_chat(turn, a)
+    elif reply_id == "report_bill":
+        await cases.report_from_chat(turn, a)
     elif reply_id == "complaint_cancel":
         turn.state.awaiting = None
         await turn.say_key("complaint_cancel")

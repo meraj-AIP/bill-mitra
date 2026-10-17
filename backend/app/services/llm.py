@@ -33,6 +33,7 @@ Return JSON: {{"text": "..."}}"""
 CLASSIFY_SYSTEM = """Classify a consumer's message about their electricity bill into exactly one intent from this list:
 {intents}
 The message may be in Telugu, Hindi, Urdu, English or romanised Telugu.
+Use "dispute" when the consumer says the bill or the meter reading is wrong or far too high.
 Return JSON: {{"intent": "<one intent>", "units": <integer or null, only for what_if>}}"""
 
 

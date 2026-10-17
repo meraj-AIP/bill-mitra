@@ -1,7 +1,7 @@
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import {
   Chip, MenuItem, Paper, Skeleton, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TablePagination, TableRow,
-  TextField, Typography,
+  TextField, Tooltip, Typography,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 
@@ -24,6 +24,24 @@ interface BillsTableProps {
   onSort: (sort: BillListQuery['sort']) => void;
 }
 
+/** total_payable is already the final amount; the printed one is a hover away. */
+function RevisedChip({ original }: { original: number | null }) {
+  const chip = <Chip size="small" color="success" variant="outlined" label="Revised" sx={{ ml: 1 }} />;
+  return original === null ? chip : <Tooltip title={`Printed total ${rupees(original)}`} describeChild>{chip}</Tooltip>;
+}
+
+function MonthCell({ bill }: { bill: BillSummary }) {
+  const original = bill.original_total_payable ?? null;
+  const revised = bill.revised_amount !== null || original !== null;
+  return (
+    <TableCell sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
+      {monthLabel(bill.bill_month)}
+      {revised && <RevisedChip original={original} />}
+      {!revised && bill.under_review && <Chip size="small" color="info" variant="outlined" label="Under review" sx={{ ml: 1 }} />}
+    </TableCell>
+  );
+}
+
 function BillRow({ bill }: { bill: BillSummary }) {
   const navigate = useNavigate();
   const status = auditStatus(bill.audit_status);
@@ -33,16 +51,7 @@ function BillRow({ bill }: { bill: BillSummary }) {
       onKeyDown={(e) => {
         if (e.key === 'Enter') open();
       }}>
-      <TableCell sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
-        {monthLabel(bill.bill_month)}
-        {bill.revised_amount !== null && (
-          <Chip size="small" color="success" variant="outlined" label="Revised" sx={{ ml: 1 }}
-            title={`Revised to ${rupees(bill.revised_amount)}`} />
-        )}
-        {bill.revised_amount === null && bill.under_review && (
-          <Chip size="small" color="info" variant="outlined" label="Under review" sx={{ ml: 1 }} />
-        )}
-      </TableCell>
+      <MonthCell bill={bill} />
       <TableCell>{bill.discom === 'UNKNOWN' ? '' : bill.discom}</TableCell>
       <TableCell align="right">{bill.units === null ? '' : formatCount(bill.units)}</TableCell>
       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{bill.total_payable === null ? '' : rupees(bill.total_payable)}</TableCell>

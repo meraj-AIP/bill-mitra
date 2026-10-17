@@ -1,4 +1,4 @@
-import { dateTime } from '@/shared/lib/format';
+import { dateTime, formatCount, monthLabel, rupees } from '@/shared/lib/format';
 
 import type { CaseDetail, DecisionKind, Evidence, NewDecision, Preview, ReasonCode, ReviewState } from '../api/types';
 import { MIN_NOTE } from './labels';
@@ -20,9 +20,20 @@ export const OPEN_FOR_DECISION: ReadonlySet<ReviewState> = new Set(['awaiting_re
 
 const evidenceKey = (e: Pick<Evidence, 'kind' | 'id'>) => `${e.kind}:${e.id}`;
 
-/** What an AE can cite: the bill itself, and anything the consumer sent into the thread. */
+function attachedLabel(b: CaseDetail['evidence_pack']['attached_bills'][number]): string {
+  const parts = [`Earlier bill, ${monthLabel(b.month)}`];
+  if (b.units !== null) parts.push(`${formatCount(b.units)} units`);
+  if (b.amount !== null) parts.push(rupees(b.amount));
+  return parts.join(', ');
+}
+
+/** What an AE can cite: the bill itself, earlier bills attached to the case, and anything the consumer sent into the thread. */
 export function evidenceOptions(c: CaseDetail): Array<Evidence & { key: string; photo: string | null }> {
   const bill = c.bill_id ? [{ kind: 'bill' as const, id: c.bill_id, label: 'The bill as uploaded', photo: null }] : [];
+  // No file type comes with an attached bill and it may be a PDF, so no thumbnail is drawn for it.
+  const attached = c.evidence_pack.attached_bills
+    .filter((b) => b.bill_id !== c.bill_id)
+    .map((b) => ({ kind: 'bill' as const, id: b.bill_id, label: attachedLabel(b), photo: null }));
   const messages = c.messages
     .filter((m) => m.author_kind === 'consumer')
     .map((m) => ({
@@ -31,7 +42,7 @@ export function evidenceOptions(c: CaseDetail): Array<Evidence & { key: string; 
       label: m.media_url ? `Photo from the consumer, ${dateTime(m.created_at)}` : `Consumer reply, ${dateTime(m.created_at)}: ${m.body.slice(0, 80)}`,
       photo: m.media_url,
     }));
-  return [...bill, ...messages].map((e) => ({ ...e, key: evidenceKey(e) }));
+  return [...bill, ...attached, ...messages].map((e) => ({ ...e, key: evidenceKey(e) }));
 }
 
 export function parseAmount(text: string): number | null {

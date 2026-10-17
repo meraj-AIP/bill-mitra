@@ -164,7 +164,7 @@ def test_corrected_reading_is_priced_by_the_engine_and_the_consumer_is_told(sign
     assert "revision 1" in detail["messages"][-1]["body"]
 
     summary = consumer.get(f"/api/bills/{bill_id}", params={"language": "en"}).json()["review"]
-    assert summary["state"] == "decided" and summary["revision"]["status"] == "pending_update"
+    assert summary["state"] == "revised" and summary["revision"]["status"] == "pending_update"
     assert summary["revision"]["revised_amount"] == expected
     assert summary["revision"]["reason"] == "The meter photo was misread"
     assert consumer.post(f"/api/bills/{bill_id}/review-request", json={}).status_code == 409
@@ -232,7 +232,7 @@ def test_withdraw_before_applied_then_revisions_count_up(sign_in, area):
     assert f"Rs {rs(SPIKED.bill_amount - 60)}" in applied["messages"][-1]["body"]
 
     summary = consumer.get(f"/api/bills/{bill_id}", params={"language": "en"}).json()["review"]
-    assert summary["state"] == "applied" and summary["revision"]["status"] == "applied"
+    assert summary["state"] == "revised" and summary["revision"]["status"] == "applied"
 
     exporter, _ = _staff(sign_in, "billing_approver", area.section_a.id)
     sheet = exporter.get("/api/review/revisions.csv", params={"ero_id": area.ero.id})
@@ -282,7 +282,7 @@ async def _ignore(_: Event) -> None:
     return None
 
 
-def test_flagged_bill_in_chat_offers_the_review_button(reader, area, sign_in):
+def test_flagged_bill_in_chat_offers_the_report_button(reader, area, sign_in):
     _, ae_id = _staff(sign_in, "section_ae", area.section_a.id)
     officer, _ = _staff(sign_in, "officer", area.division.id)
     user = f"wa:{secrets.token_hex(10)}"
@@ -298,21 +298,21 @@ def test_flagged_bill_in_chat_offers_the_review_button(reader, area, sign_in):
 
     reader(reading(printed(SPIKED, area.section_a.name)))
     say(kind="image", media_id=media.save(b"synthetic-photo", "image/jpeg"), mime_type="image/jpeg")
-    offers = [m for m in sent if m["type"] == "buttons" and m["buttons"][0]["id"] == "review_request"]
+    offers = [m for m in sent if m["type"] == "buttons" and m["buttons"][0]["id"] == "report_bill"]
     assert len(offers) == 1 and "480 units" in offers[0]["body"] and len(offers[0]["buttons"]) == 1
     assert len(offers[0]["buttons"][0]["title"]) <= 20
-    say(kind="button_reply", reply_id="review_request")
+    say(kind="button_reply", reply_id="report_bill")
     filed = sent[-1]["body"]
-    ticket = filed.split("request ")[1].split(" ")[0]
+    ticket = filed.split("report ")[1].split(" ")[0]
     row = officer.get(f"/api/review/cases/{ticket}").json()
     assert row["channel"] == "whatsapp" and row["assignee"]["id"] == ae_id and row["units"] == 480
-    say(kind="button_reply", reply_id="review_request")
-    assert ticket in sent[-1]["body"] and "already open" in sent[-1]["body"]
+    say(kind="button_reply", reply_id="report_bill")
+    assert ticket in sent[-1]["body"] and "already being checked" in sent[-1]["body"]
 
     sent.clear()
     reader(reading(printed(NORMAL, area.section_a.name)))
     say(kind="image", media_id=media.save(b"synthetic-photo-2", "image/jpeg"), mime_type="image/jpeg")
-    assert not [m for m in sent if m["type"] == "buttons" and m["buttons"][0]["id"] == "review_request"]
+    assert not [m for m in sent if m["type"] == "buttons" and m["buttons"][0]["id"] == "report_bill"]
 
 
 def test_overdue_follows_the_policy_sla(sign_in, area):

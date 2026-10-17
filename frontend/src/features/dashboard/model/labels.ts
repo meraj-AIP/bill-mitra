@@ -1,4 +1,4 @@
-import type { ReviewState } from '@/features/review';
+import type { ReportState } from '@/features/review';
 
 import type { AuditStatus, Classification, HistorySource, LineStatus, Outcome } from '../api/types';
 
@@ -70,6 +70,7 @@ export const QUALITY: Record<Classification['quality'], string> = {
 export const HISTORY_SOURCE: Record<HistorySource, string> = {
   printed: 'Printed on this bill',
   uploaded: 'Your earlier upload',
+  discom: 'DISCOM records',
   this_bill: 'This bill',
 };
 
@@ -87,12 +88,15 @@ export const READING_STAGES: Array<{ from: number; label: string }> = [
   { from: 24, label: 'Checking against the TGERC tariff' },
 ];
 
-/** The consumer's view of a review case. A rejected decision is internal, so it reads as still under review. */
-export const REVIEW_TEXT: Record<ReviewState, { title: string; body: string; tone: 'info' | 'success' | 'warning' }> = {
-  awaiting_review: { title: 'The section AE is checking this bill', body: 'You will get a message when there is a decision.', tone: 'info' },
-  info_requested: { title: 'The AE has asked you for something', body: 'Reply in the chat with what they asked for, so they can finish the check.', tone: 'warning' },
-  awaiting_approval: { title: 'A correction is waiting for approval', body: 'The AE has decided; a billing officer is confirming it.', tone: 'info' },
-  rejected: { title: 'The section AE is checking this bill', body: 'You will get a message when there is a decision.', tone: 'info' },
-  decided: { title: 'The AE has checked this bill', body: 'The decision is below.', tone: 'success' },
-  applied: { title: 'Your official bill has been revised', body: 'The revised amount is in the DISCOM billing system.', tone: 'success' },
+/** The consumer's view of a report. Neutral on purpose: consumers are never told who reviews a bill. */
+export const REPORT_TEXT: Record<ReportState, { title: string; body: string; tone: 'info' | 'success' | 'warning' }> = {
+  received: { title: 'We are reviewing this bill', body: 'We check the meter reading against your earlier bills and tell you the outcome.', tone: 'info' },
+  waiting_for_you: { title: 'We need your earlier bills', body: 'Send a photo of each bill below, so we can compare this month with them.', tone: 'warning' },
+  revised: { title: 'This bill has been revised', body: 'The revised amount below is what you pay for this month.', tone: 'success' },
+  no_change: { title: 'We checked this bill', body: 'It is correct as printed. The amount to pay stays the same.', tone: 'success' },
+};
+
+export const FINAL_STATUS: Record<'pending_update' | 'applied', { label: string; tone: 'success' | 'warning' }> = {
+  pending_update: { label: 'Pending update in your official bill', tone: 'warning' },
+  applied: { label: 'Applied in your official bill', tone: 'success' },
 };

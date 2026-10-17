@@ -4,7 +4,7 @@ export type Outcome = 'checked' | 'not_a_bill' | 'retake' | 'reading_off' | 'rea
 export type Discom = 'TGSPDCL' | 'TGNPDCL' | 'OTHER' | 'UNKNOWN';
 export type AuditStatus = 'verified' | 'mismatch' | 'partial' | 'not_checkable' | 'calculated';
 export type LineStatus = 'match' | 'over' | 'under' | 'missing' | 'not_checkable';
-export type HistorySource = 'printed' | 'uploaded' | 'this_bill';
+export type HistorySource = 'printed' | 'uploaded' | 'discom' | 'this_bill';
 
 export interface Classification {
   document_type: 'electricity_bill' | 'meter' | 'other_bill' | 'other';
@@ -127,8 +127,17 @@ export interface BillReport {
   bill: Bill | null;
   capture: Capture | null;
   analysis: Analysis | null;
-  /** The AE review case for this bill, when one exists. */
+  /** The consumer's report on this bill, when they made one. */
   review?: ReviewSummary | null;
+  /** The amounts to pay. After an approved revision these are the revised figures, not the printed ones. */
+  final?: FinalAmounts | null;
+}
+
+export interface FinalAmounts {
+  bill_amount: number;
+  total_payable: number | null;
+  revised: boolean;
+  status: 'pending_update' | 'applied' | null;
 }
 
 export interface BillSummary {
@@ -137,13 +146,16 @@ export interface BillSummary {
   bill_month: string | null;
   discom: string;
   units: number | null;
+  /** The final total: the revised one once a revision is approved. */
   total_payable: number | null;
+  /** The printed total, kept when a revision changed it. */
+  original_total_payable?: number | null;
   audit_status: string;
   overcharge: number;
   service_masked: string | null;
   /** The latest approved revision of this bill, or null when it has none. */
   revised_amount: number | null;
-  /** An AE reading check is open for this bill. */
+  /** A report on this bill is still being reviewed. */
   under_review: boolean;
 }
 

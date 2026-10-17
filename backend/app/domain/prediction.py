@@ -16,7 +16,7 @@ class MonthUsage(BaseModel):
     month: str  # YYYY-MM
     units: int
     amount: float
-    source: Literal["printed", "uploaded", "this_bill"] = "printed"
+    source: Literal["printed", "uploaded", "discom", "this_bill"] = "printed"
 
 
 class Prediction(BaseModel):

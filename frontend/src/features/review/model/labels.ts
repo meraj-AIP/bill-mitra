@@ -1,4 +1,4 @@
-import type { DecisionKind, DecisionStatus, ReasonCode, RequestKind, ReviewState } from '../api/types';
+import type { DecisionKind, DecisionStatus, EvidenceStatus, ReasonCode, RequestKind, ReviewState, TimelineEntry } from '../api/types';
 
 type Tone = 'warning' | 'info' | 'success' | 'error' | 'default' | 'primary';
 
@@ -39,6 +39,20 @@ export const REQUEST_KIND: Record<RequestKind, { label: string; hint: string }> 
   meter_photo: { label: 'Meter photo', hint: 'A clear photo of the meter display today' },
   note: { label: 'A note', hint: 'Anything else, in your own words below' },
 };
+
+export const EVIDENCE_STATUS: Record<EvidenceStatus, { label: string; tone: Tone }> = {
+  included: { label: 'Included', tone: 'success' },
+  partial: { label: 'Partial', tone: 'warning' },
+  missing: { label: 'Missing', tone: 'error' },
+  not_connected: { label: 'Not connected', tone: 'default' },
+};
+
+/** Automatic steps have no person behind them, so they read as System. */
+export function actorName(actor: TimelineEntry['actor']): string {
+  if (actor.kind === 'system') return 'System';
+  if (actor.kind === 'consumer') return 'Consumer';
+  return actor.name ?? 'Staff';
+}
 
 export const MIN_NOTE = 20;
 

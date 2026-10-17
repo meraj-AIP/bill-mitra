@@ -1,4 +1,4 @@
-import { Alert, Button, Container, Grid, Paper, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, Container, Grid, Paper, Stack, Typography } from '@mui/material';
 import { Link, useParams } from 'react-router-dom';
 
 import { DetailSkeleton } from '@/features/complaints';
@@ -14,8 +14,10 @@ import { CaseHeader } from '../components/CaseHeader';
 import { ConversationPanel } from '../components/ConversationPanel';
 import { DecisionHistory } from '../components/DecisionHistory';
 import { DecisionPanel } from '../components/DecisionPanel';
+import { EvidencePackPanel } from '../components/EvidencePackPanel';
 import { FlagPanel } from '../components/FlagPanel';
 import { ReadingsPanel } from '../components/ReadingsPanel';
+import { TimelinePanel } from '../components/TimelinePanel';
 import { OPEN_FOR_DECISION } from '../model/decision';
 
 const WAITING: Partial<Record<CaseDetail['state'], string>> = {
@@ -23,6 +25,9 @@ const WAITING: Partial<Record<CaseDetail['state'], string>> = {
   decided: 'Decided. Any revision now waits to be entered in the DISCOM billing system.',
   applied: 'Closed. The revision is in the official bill and the consumer has been told.',
 };
+
+// Printing this page prints the evidence pack alone.
+const SCREEN_ONLY = { '@media print': { display: 'none' } };
 
 function Bill({ c }: { c: CaseDetail }) {
   if (!c.media_url) {
@@ -44,6 +49,7 @@ function Workspace({ c }: { c: CaseDetail }) {
         <Stack sx={{ gap: 2 }}>
           <Bill c={c} />
           <ReadingsPanel c={c} />
+          <TimelinePanel c={c} />
         </Stack>
       </Grid>
       <Grid size={{ xs: 12, md: 7 }}>
@@ -78,8 +84,9 @@ export function CasePage() {
       {result.isError && !isStatus(result.error, 404) && <ErrorState message={result.error.message} onRetry={() => void result.refetch()} />}
       {c && (
         <Stack sx={{ gap: 3 }}>
-          <CaseHeader c={c} />
-          <Workspace c={c} />
+          <Box sx={SCREEN_ONLY}><CaseHeader c={c} /></Box>
+          <EvidencePackPanel c={c} />
+          <Box sx={SCREEN_ONLY}><Workspace c={c} /></Box>
         </Stack>
       )}
     </Container>

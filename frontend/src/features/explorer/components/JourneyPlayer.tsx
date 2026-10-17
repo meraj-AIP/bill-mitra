@@ -5,7 +5,6 @@ import { Box, Button, Chip, List, ListItemButton, Paper, Stack, ToggleButton, To
 import { useState } from 'react';
 
 import type { JourneyControl } from '../hooks/useJourney';
-import { JOURNEYS } from '../model/journeys';
 import { NODE_BY_ID, type NodeStatus } from '../model/systemMap';
 import { ArchitecturePresenter } from './ArchitecturePresenter';
 import { SystemMap } from './SystemMap';
@@ -40,7 +39,7 @@ function NodeDetail({ id, onBack }: { id: string; onBack: () => void }) {
 export function JourneyPlayer({ control }: { control: JourneyControl }) {
   const [node, setNode] = useState<string | null>(null);
   const [presenting, setPresenting] = useState(false);
-  const journey = JOURNEYS[control.journey];
+  const journey = control.journeys[control.journey];
   const step = journey?.steps[control.step];
   if (!journey || !step) return null;
   const go = (fn: () => void) => () => { setNode(null); fn(); };
@@ -48,9 +47,9 @@ export function JourneyPlayer({ control }: { control: JourneyControl }) {
   return (
     <Stack sx={{ gap: 2 }}>
       <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1.5, justifyContent: 'space-between', alignItems: { sm: 'center' } }}>
-        <ToggleButtonGroup exclusive size="small" value={control.journey} aria-label="Journey"
+        <ToggleButtonGroup exclusive size="small" value={control.journey} aria-label="Journey" sx={{ flexWrap: 'wrap' }}
           onChange={(_, v: number | null) => { if (v !== null) { setNode(null); control.selectJourney(v); } }}>
-          {JOURNEYS.map((j, i) => <ToggleButton key={j.name} value={i}>{j.name}</ToggleButton>)}
+          {control.journeys.map((j, i) => <ToggleButton key={j.name} value={i}>{j.name}</ToggleButton>)}
         </ToggleButtonGroup>
         <Stack direction="row" sx={{ gap: 1 }}>
           <Button size="small" variant="outlined" disabled={control.step === 0} onClick={go(() => control.goTo(control.step - 1))}>Back</Button>

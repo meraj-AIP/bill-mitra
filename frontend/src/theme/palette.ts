@@ -8,7 +8,7 @@ declare module '@mui/material/styles' {
       tick: string; pattern: string; quickReply: string; bezel: string; bezelEdge: string; island: string;
     };
     step: { ai: string; rules: string; demo: string; channel: string };
-    chart: { printed: string; uploaded: string; thisBill: string; reference: string };
+    chart: { printed: string; uploaded: string; discom: string; thisBill: string; reference: string };
   }
   interface PaletteOptions {
     chat?: Palette['chat'];
@@ -58,5 +58,6 @@ export const palette: PaletteOptions = {
     island: '#05080C',
   },
   step: { ai: ink.light, rules: '#1E7A4C', demo: '#A15C00', channel: '#5F6B7B' },
-  chart: { printed: '#A9BCD0', uploaded: '#5B82A8', thisBill: ink.main, reference: '#A15C00' },
+  // DISCOM records sit in the green family so they read as official, apart from the consumer's own blues.
+  chart: { printed: '#A9BCD0', uploaded: '#5B82A8', discom: '#6FA287', thisBill: ink.main, reference: '#A15C00' },
 };

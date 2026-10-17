@@ -9,6 +9,10 @@ export interface Role {
   description: string;
   permissions: string[];
   builtin: boolean;
+  /** A built-in role whose permissions no longer match what ships. */
+  customised: boolean;
+  /** Fixed for everyone: the consumer role. */
+  locked: boolean;
   /** Accounts that hold this role now. */
   accounts: number;
 }
@@ -62,6 +66,15 @@ export function useDeleteRole() {
   const onSuccess = useRefreshRoles();
   return useMutation({
     mutationFn: (slug: string) => sendJson<void>(`/api/admin/roles/${encodeURIComponent(slug)}`, undefined, 'DELETE'),
+    onSuccess,
+  });
+}
+
+/** Puts a built-in role back to the name, description and permissions it ships with. */
+export function useResetRole() {
+  const onSuccess = useRefreshRoles();
+  return useMutation({
+    mutationFn: (slug: string) => sendJson<Role>(`/api/admin/roles/${encodeURIComponent(slug)}/reset`, undefined, 'POST'),
     onSuccess,
   });
 }

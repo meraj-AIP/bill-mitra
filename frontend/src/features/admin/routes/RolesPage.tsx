@@ -15,7 +15,15 @@ import { RoleDialog } from '../components/RoleDialog';
 
 type Open = { kind: 'edit'; role: Role | null } | { kind: 'delete'; role: Role } | null;
 
-function Kind({ builtin }: { builtin: boolean }) {
+function Kind({ builtin, customised }: { builtin: boolean; customised: boolean }) {
+  if (customised) {
+    return (
+      <Box component="span" sx={{ display: 'inline-block', px: 0.75, py: 0.125, borderRadius: 0.5, fontSize: '0.6875rem', fontWeight: 600,
+        bgcolor: 'warning.light', color: 'warning.dark' }}>
+        Built in, changed
+      </Box>
+    );
+  }
   return (
     <Box component="span" sx={{ display: 'inline-block', px: 0.75, py: 0.125, borderRadius: 0.5, fontSize: '0.6875rem', fontWeight: 600,
       bgcolor: builtin ? 'info.light' : 'success.light', color: builtin ? 'primary.main' : 'success.dark' }}>
@@ -30,14 +38,14 @@ function RoleRow({ role, onOpen }: { role: Role; onOpen: (open: Open) => void })
       <TableCell sx={{ minWidth: 240 }}>
         <Stack direction="row" sx={{ gap: 1, alignItems: 'center' }}>
           <Typography variant="subtitle2" component="p">{role.name}</Typography>
-          <Kind builtin={role.builtin} />
+          <Kind builtin={role.builtin} customised={role.customised} />
         </Stack>
         <Typography variant="caption" component="p" sx={{ color: 'text.secondary', maxWidth: '60ch' }}>{role.description}</Typography>
       </TableCell>
       <TableCell align="right">{formatCount(role.permissions.length)}</TableCell>
       <TableCell align="right">{formatCount(role.accounts)}</TableCell>
       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-        <Button size="small" onClick={() => onOpen({ kind: 'edit', role })}>{role.builtin ? 'View' : 'Edit'}</Button>
+        <Button size="small" onClick={() => onOpen({ kind: 'edit', role })}>{role.locked ? 'View' : 'Edit'}</Button>
         {!role.builtin && (
           <Button size="small" color="error" onClick={() => onOpen({ kind: 'delete', role })} aria-label={`Delete ${role.name}`}>Delete</Button>
         )}
@@ -80,7 +88,7 @@ export function RolesPage() {
     <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
       <Stack sx={{ gap: 3 }}>
         <PageHeader eyebrow="Administration" title="Roles"
-          lead="A role is a named set of permissions. Built-in roles cover the usual jobs; add a custom role when a team needs a different mix."
+          lead="A role is a named set of permissions. Built-in roles cover the usual jobs and can be adjusted or reset; add a custom role when a team needs a different mix."
           actions={<Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => setOpen({ kind: 'edit', role: null })}>Create role</Button>} />
         <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
           <RolesTable result={roles} onOpen={setOpen} />

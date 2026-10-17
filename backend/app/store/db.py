@@ -115,6 +115,17 @@ CREATE TABLE IF NOT EXISTS review_decisions (
 CREATE INDEX IF NOT EXISTS idx_decisions_ticket ON review_decisions(ticket, id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_decisions_revision ON review_decisions(bill_id, revision)
     WHERE revision IS NOT NULL;
+-- Bills the consumer sent for a case after the system asked for those months. One bill per month per case.
+CREATE TABLE IF NOT EXISTS case_bills (
+    ticket TEXT NOT NULL, month TEXT NOT NULL, request_id INTEGER NOT NULL, bill_id TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (ticket, month)
+);
+CREATE INDEX IF NOT EXISTS idx_case_bills_bill ON case_bills(bill_id);
+-- What the DISCOM billing system returned when the case was reported: a snapshot, so the evidence never shifts.
+CREATE TABLE IF NOT EXISTS case_records (
+    ticket TEXT PRIMARY KEY, status TEXT NOT NULL, months TEXT NOT NULL DEFAULT '[]',
+    fetched_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 # Columns added after the first release; SQLite has no ADD COLUMN IF NOT EXISTS.
@@ -130,13 +141,14 @@ _MESSAGE_COLUMNS = {"media_id": "TEXT"}
 _EVENT_COLUMNS = {"ms": "INTEGER"}
 _ACCOUNT_COLUMNS = {"consent_version": "TEXT", "consented_at": "TEXT"}
 _AUDIT_COLUMNS = {"unit_id": "TEXT"}
+_REQUEST_COLUMNS = {"months": "TEXT"}  # JSON list of YYYY-MM on a request the system raised for earlier bills
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
     # Table and column names come from the constants above, never from input; DDL cannot take parameters.
     for table, columns in (("bills", _BILL_COLUMNS), ("complaints", _COMPLAINT_COLUMNS), ("events", _EVENT_COLUMNS),
                            ("accounts", _ACCOUNT_COLUMNS), ("complaint_messages", _MESSAGE_COLUMNS),
-                           ("audit_log", _AUDIT_COLUMNS)):
+                           ("audit_log", _AUDIT_COLUMNS), ("case_requests", _REQUEST_COLUMNS)):
         present = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
         for name, kind in columns.items():
             if name not in present:
@@ -155,11 +167,18 @@ def _seed(conn: sqlite3.Connection) -> None:
         conn.execute("INSERT OR IGNORE INTO units (id, kind, name, discom) VALUES (?, 'discom', ?, ?)",
                      (unit_id, discom, discom))
         conn.execute("INSERT OR IGNORE INTO review_policy (discom) VALUES (?)", (discom,))
+    # A super admin may edit built-in roles, so a restart must not undo that. Only the two locks are re-asserted:
+    # the consumer role's permissions, and role management on the super admin role.
     for role in rbac.BUILTIN_ROLES:
-        perms = json.dumps([p for p in rbac.PERMISSIONS if p in role.permissions])
+        perms = json.dumps(rbac.default_permissions(role.slug))
         conn.execute("INSERT INTO roles (slug, name, description, permissions, builtin) VALUES (?, ?, ?, ?, 1) "
-                     "ON CONFLICT(slug) DO UPDATE SET permissions = excluded.permissions, builtin = 1",
-                     (role.slug, role.name, role.description, perms))
+                     "ON CONFLICT(slug) DO UPDATE SET builtin = 1", (role.slug, role.name, role.description, perms))
+    conn.execute("UPDATE roles SET permissions = ? WHERE slug = ?",
+                 (json.dumps(rbac.default_permissions(rbac.CONSUMER)), rbac.CONSUMER))
+    row = conn.execute("SELECT permissions FROM roles WHERE slug = ?", (rbac.SUPER_ADMIN,)).fetchone()
+    if row and "roles.manage" not in json.loads(row[0]):
+        conn.execute("UPDATE roles SET permissions = ? WHERE slug = ?",
+                     (json.dumps(["roles.manage", *json.loads(row[0])]), rbac.SUPER_ADMIN))
 
 
 def _rebuild_accounts(conn: sqlite3.Connection) -> None:

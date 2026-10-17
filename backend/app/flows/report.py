@@ -15,7 +15,8 @@ from app.domain import capture
 from app.domain.bill import ExtractedBill
 from app.domain.conversation import composer
 from app.domain.prediction import MonthUsage
-from app.flows import cases
+from app.domain.review import Final
+from app.flows import case_bills, cases
 from app.flows.analysis import Analysis, analyse
 from app.flows.bill import Outcome, log_read, outcome, read_ms
 from app.flows.complaint import LABEL_EN
@@ -44,6 +45,7 @@ class BillReport(BaseModel):
     capture: capture.CaptureReport | None
     analysis: dict[str, Any] | None
     review: cases.ReviewSummary | None = None
+    final: Final | None = None  # the bill for the month as it stands now; original figures stay in `bill`
 
 
 def bill_out(bill: ExtractedBill) -> dict[str, Any]:
@@ -105,19 +107,21 @@ async def check_upload(user_id: str, data: bytes, mime: str, media_id: str, lang
     result = outcome(reading, report)
     log_read("dashboard", language, result, reading, ms)
     result_out: Outcome = "not_a_bill" if result == "meter" else result
-    bill_id, created, analysis = None, None, None
+    bill_id, created, analysis, final = None, None, None, None
     if result == "checked" and reading and reading.bill:
         a = analyse(reading.bill, user_id)
         bill_id = repos.save_bill(user_id, reading.bill, media_id, a.audit.status, a.audit.overcharge)
         created = repos.get_own_bill(user_id, bill_id)
         analysis = _analysis(a, language)
+        final = cases.final_for(bill_id, a)
+        case_bills.attach_upload(user_id, bill_id, reading.bill, media_id)
         repos.log_event("dashboard", "bill_read", language=language, audit_status=a.audit.status,
                         units=a.comp.units, amount=a.comp.net, discom=reading.bill.discom, section=reading.bill.section)
     return BillReport(
         id=bill_id, created_at=created.created_at if created else None, media_url=f"/api/media/{media_id}",
         mime_type=mime, outcome=result_out, outcome_reason=_reason(result, reading, report),
         classification=reading.classification.model_dump() if reading else None, bill=_bill_out(reading),
-        capture=report, analysis=analysis)
+        capture=report, analysis=analysis, final=final)
 
 
 def load(user_id: str, bill_id: str, language: str) -> BillReport | None:
@@ -132,7 +136,8 @@ def load(user_id: str, bill_id: str, language: str) -> BillReport | None:
         id=stored.id, created_at=stored.created_at, media_url=f"/api/media/{media_id}",
         mime_type=media.mime_for(media_id) if media_id else "image/jpeg", outcome="checked", outcome_reason=None,
         classification=reading.classification.model_dump(), bill=_bill_out(reading),
-        capture=capture.report(stored.bill), analysis=_analysis(a, language), review=review_for(user_id, bill_id, language))
+        capture=capture.report(stored.bill), analysis=_analysis(a, language),
+        review=review_for(user_id, bill_id, language), final=cases.final_for(stored.id, a))
 
 
 def review_for(user_id: str, bill_id: str, language: str) -> cases.ReviewSummary | None:

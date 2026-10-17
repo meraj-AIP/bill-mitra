@@ -125,5 +125,6 @@ async def capture_info(turn: Turn) -> bool:
     media_id = inbound.media_id if inbound.kind != "text" else None
     complaints.add_message(complaint.ticket, "consumer", None, body, "stored", media_id=media_id)
     review_store.answer_requests(complaint.ticket)
-    await turn.say_key("complaint_info_received", ticket=complaint.ticket)
+    key = "review_info_received" if complaint.kind == cases.KIND else "complaint_info_received"
+    await turn.say_key(key, ticket=complaint.ticket)
     return True

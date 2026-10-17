@@ -1,4 +1,4 @@
-"""Wrong reading cases for section AEs, officers and billing approvers. Decisions live in review_decisions.py.
+"""Wrong reading cases for section AEs, officers and billing approvers (staff only, so names appear). Decisions live in review_decisions.py.
 
 A case outside the caller's scope is a 404, never a 403, so its existence does not leak.
 """
@@ -16,12 +16,14 @@ from app.core import csvsafe
 from app.domain import review as rules
 from app.domain.complaint_reply import RequestKind
 from app.domain.review import DecisionKind, Policy, ReasonCode, Spike
-from app.flows import cases
+from app.flows import cases, evidence
 from app.flows import complaint as complaint_flow
 from app.flows.analysis import Analysis, analyse
 from app.flows.complaint import LABEL_EN
+from app.flows.evidence import EvidencePack, TimelineEntry
 from app.flows.report import bill_out, history_rows
 from app.store import accounts, media, repos, units
+from app.store import case_evidence as evidence_store
 from app.store import complaints as complaint_store
 from app.store import policy as policy_store
 from app.store import review as store
@@ -102,7 +104,7 @@ class HistoryMonth(BaseModel):
     month: str
     units: int
     amount: float
-    source: Literal["printed", "uploaded", "this_bill"]
+    source: Literal["printed", "uploaded", "discom", "this_bill"]
 
 
 class Can(BaseModel):
@@ -127,6 +129,8 @@ class CaseDetail(CaseRow):
     policy: Policy
     can: Can
     assignable: list[Person]
+    evidence_pack: EvidencePack
+    timeline: list[TimelineEntry]
 
 
 class CasePage(BaseModel):
@@ -167,7 +171,11 @@ def find_case(account: Account, ticket: str) -> Complaint:
 def case_analysis(complaint: Complaint) -> tuple[Analysis, str | None] | None:
     """The engine's view of the case's bill, and its media id. None once the consumer has erased the bill."""
     found = repos.get_bill(complaint.bill_id) if complaint.bill_id else None
-    return (analyse(found[0], complaint.user_id), found[1]) if found else None
+    if found is None:
+        return None
+    records = evidence_store.records(complaint.ticket)
+    discom = [(m["month"], m["units"]) for m in records[1]] if records else []
+    return analyse(found[0], complaint.user_id, discom), found[1]
 
 
 def _assignable(complaint: Complaint) -> list[Person]:
@@ -215,7 +223,9 @@ def detail(account: Account, complaint: Complaint) -> CaseDetail:
         **row, bill=bill, media_url=media_url, mime_type=mime, audit_lines=lines, spike=spike, history=history,
         messages=[ComplaintMessage(**m) for m in complaint_store.messages(complaint.ticket)],
         requests=store.requests(complaint.ticket), decisions=decisions, policy=policy_store.get(complaint.discom),
-        can=can, assignable=_assignable(complaint) if can.reassign else [])
+        can=can, assignable=_assignable(complaint) if can.reassign else [],
+        evidence_pack=evidence.pack(complaint.ticket, found, spike),
+        timeline=evidence.timeline(complaint.ticket, row["created_at"]))
 
 
 @router.get("/cases", response_model=CasePage)
@@ -258,11 +268,12 @@ async def assign(ticket: str, body: AssignBody,
     complaint = find_case(account, ticket)
     if complaint.status not in OPEN_STATUSES:
         raise HTTPException(409, "This case is closed.")
-    if body.account_id not in {p.id for p in _assignable(complaint)}:
+    chosen = next((p for p in _assignable(complaint) if p.id == body.account_id), None)
+    if chosen is None:
         raise HTTPException(400, "Choose someone who can decide cases in this section.")
     complaint_store.place(ticket, Placement(section_id=complaint.section_id, unit_id=complaint.unit_id,
                                             assigned_to=body.account_id))
-    accounts.audit(account.id, "case.assign", ticket, f"to {body.account_id}", unit_id=complaint.unit_id)
+    accounts.audit(account.id, "case.assign", ticket, f"to {chosen.name}", unit_id=complaint.unit_id)
     return detail(account, find_case(account, ticket))
 
 

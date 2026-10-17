@@ -113,3 +113,44 @@ def correct(bill: ExtractedBill, comp: Computation) -> Outcome:
     """The bill stands. The printed amount when there is one, else the engine's own figure for it."""
     original = bill.bill_amount if bill.bill_amount is not None else comp.net
     return Outcome(original, original, 0.0, None, False)
+
+
+LOOKBACK_MONTHS = 3
+
+
+def months_before(bill_month: str, count: int = LOOKBACK_MONTHS) -> list[str]:
+    """The calendar months just before a YYYY-MM month, oldest first."""
+    year, month = int(bill_month[:4]), int(bill_month[5:7])
+    out = []
+    for _ in range(count):
+        year, month = (year - 1, 12) if month == 1 else (year, month - 1)
+        out.append(f"{year:04d}-{month:02d}")
+    return out[::-1]
+
+
+def missing_months(bill_month: str, on_file: set[str]) -> list[str]:
+    """Which of the months before the bill nobody has given us yet, from any source."""
+    return [m for m in months_before(bill_month) if m not in on_file]
+
+
+def final_total(revised_amount: float, arrears: float, printed_total: float | None) -> float | None:
+    """Total payable after a revision: the revised bill amount plus the printed arrears. None when the bill printed
+    no total, so nothing is shown that the bill itself did not have."""
+    return money(revised_amount + arrears) if printed_total is not None else None
+
+
+class Final(BaseModel):
+    """The consumer's bill for the month as it stands now. The original bill is never edited."""
+
+    bill_amount: float
+    total_payable: float | None
+    revised: bool
+    status: Literal["pending_update", "applied"] | None
+
+
+def final(printed_amount: float, printed_total: float | None, arrears: float, revised_amount: float | None,
+          applied: bool) -> Final:
+    if revised_amount is None:
+        return Final(bill_amount=printed_amount, total_payable=printed_total, revised=False, status=None)
+    return Final(bill_amount=revised_amount, total_payable=final_total(revised_amount, arrears, printed_total),
+                 revised=True, status="applied" if applied else "pending_update")

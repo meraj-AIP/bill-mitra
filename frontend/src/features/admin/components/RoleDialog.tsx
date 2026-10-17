@@ -1,10 +1,10 @@
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import {
-  Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Typography,
+  Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField,
 } from '@mui/material';
 import { useState, type FormEvent } from 'react';
 
-import { useCreateRole, useUpdateRole, type Role, type RoleDraft } from '../api/rolesApi';
+import { useCreateRole, useResetRole, useUpdateRole, type Role, type RoleDraft } from '../api/rolesApi';
 import { separationProblem } from '../model/permissionText';
 import { PermissionGroups } from './PermissionGroups';
 
@@ -17,17 +17,21 @@ interface RoleDialogProps {
 const draftOf = (role: Role | null): RoleDraft =>
   (role ? { name: role.name, description: role.description, permissions: role.permissions } : { name: '', description: '', permissions: [] });
 
-function problemsOf(d: RoleDraft) {
+const SUPER_ADMIN = 'super_admin';
+
+function problemsOf(d: RoleDraft, slug: string | undefined) {
   return {
     name: d.name.trim() ? null : 'Give the role a name.',
     permissions: d.permissions.length > 0 ? null : 'Tick at least one permission.',
     separation: separationProblem(d.permissions),
+    // Without this nobody could ever change a role again.
+    lockout: slug === SUPER_ADMIN && !d.permissions.includes('roles.manage') ? 'Super admin must keep Manage roles.' : null,
   };
 }
 
 function titleOf(role: Role | null): string {
   if (!role) return 'Create a role';
-  return role.builtin ? role.name : `Edit ${role.name}`;
+  return role.locked ? role.name : `Edit ${role.name}`;
 }
 
 function NameFields({ draft, onChange, nameProblem }: { draft: RoleDraft; onChange: (d: Partial<RoleDraft>) => void; nameProblem: string | null }) {
@@ -41,14 +45,21 @@ function NameFields({ draft, onChange, nameProblem }: { draft: RoleDraft; onChan
   );
 }
 
-function BuiltinNote({ description }: { description: string }) {
-  return (
-    <>
+function BuiltinNote({ role }: { role: Role }) {
+  if (role.locked) {
+    return (
       <Alert severity="info" icon={<LockOutlinedIcon />}>
-        A built-in role. Its permissions are fixed so every DISCOM works the same way. Create a custom role if you need a different mix.
+        The consumer role is fixed. Consumers only ever see their own bills and chats, so nothing here can be changed.
       </Alert>
-      <Typography variant="body1" sx={{ color: 'text.secondary', maxWidth: '65ch' }}>{description}</Typography>
-    </>
+    );
+  }
+  return (
+    <Alert severity={role.customised ? 'warning' : 'info'}>
+      {role.customised
+        ? 'This built-in role has been changed from what ships. Reset it to go back to the default permissions.'
+        : 'A built-in role. Changes apply to every account that holds it, from their next request.'}
+      {role.slug === SUPER_ADMIN && ' Super admin always keeps Manage roles, so someone can always fix access.'}
+    </Alert>
   );
 }
 
@@ -60,34 +71,42 @@ function Editor({ draft, patch, problems, checked }: {
       <NameFields draft={draft} onChange={patch} nameProblem={checked ? problems.name : null} />
       {checked && problems.permissions && <Alert severity="warning">{problems.permissions}</Alert>}
       {problems.separation && <Alert severity="warning">{problems.separation}</Alert>}
+      {problems.lockout && <Alert severity="warning">{problems.lockout}</Alert>}
       <PermissionGroups value={draft.permissions} onChange={(permissions) => patch({ permissions })} />
     </>
   );
 }
 
-function Actions({ readOnly, editing, pending, onClose }: { readOnly: boolean; editing: boolean; pending: boolean; onClose: () => void }) {
+function Actions({ role, readOnly, pending, onReset, onClose }: {
+  role: Role | null; readOnly: boolean; pending: boolean; onReset: () => void; onClose: () => void;
+}) {
   return (
     <DialogActions sx={{ px: 3, py: 2 }}>
+      {role?.customised && !readOnly && (
+        <Button color="warning" onClick={onReset} disabled={pending} sx={{ mr: 'auto' }}>Reset to default</Button>
+      )}
       <Button onClick={onClose}>{readOnly ? 'Close' : 'Cancel'}</Button>
       {!readOnly && (
         <Button type="submit" variant="contained" disabled={pending}
           startIcon={pending ? <CircularProgress size={16} color="inherit" aria-hidden /> : null}>
-          {editing ? 'Save changes' : 'Create role'}
+          {role ? 'Save changes' : 'Create role'}
         </Button>
       )}
     </DialogActions>
   );
 }
 
-/** Built-in roles open read-only: their permissions are fixed in code. Mount with a key per role. */
+/** Every role is editable except the consumer role. The server re-checks every rule shown here. Mount with a key per role. */
 export function RoleDialog({ role, onClose }: RoleDialogProps) {
   const create = useCreateRole();
   const update = useUpdateRole();
+  const reset = useResetRole();
   const save = role ? update : create;
-  const readOnly = Boolean(role?.builtin);
+  const readOnly = Boolean(role?.locked);
   const [draft, setDraft] = useState<RoleDraft>(() => draftOf(role));
   const [checked, setChecked] = useState(false);
-  const problems = problemsOf(draft);
+  const problems = problemsOf(draft, role?.slug);
+  const error = save.error ?? reset.error;
   const patch = (changes: Partial<RoleDraft>) => setDraft((d) => ({ ...d, ...changes }));
 
   const submit = (event: FormEvent) => {
@@ -105,18 +124,17 @@ export function RoleDialog({ role, onClose }: RoleDialogProps) {
         <DialogTitle>{titleOf(role)}</DialogTitle>
         <DialogContent dividers>
           <Stack sx={{ gap: 2.5 }}>
-            {save.error && <Alert severity="error">{save.error.message}</Alert>}
-            {role?.builtin ? (
-              <>
-                <BuiltinNote description={role.description} />
-                <PermissionGroups value={draft.permissions} />
-              </>
+            {error && <Alert severity="error">{error.message}</Alert>}
+            {role?.builtin && <BuiltinNote role={role} />}
+            {readOnly ? (
+              <PermissionGroups value={draft.permissions} />
             ) : (
               <Editor draft={draft} patch={patch} problems={problems} checked={checked} />
             )}
           </Stack>
         </DialogContent>
-        <Actions readOnly={readOnly} editing={role !== null} pending={save.isPending} onClose={onClose} />
+        <Actions role={role} readOnly={readOnly} pending={save.isPending || reset.isPending} onClose={onClose}
+          onReset={() => role && reset.mutate(role.slug, { onSuccess: onClose })} />
       </Box>
     </Dialog>
   );

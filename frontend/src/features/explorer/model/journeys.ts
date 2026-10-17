@@ -8,6 +8,8 @@ export interface JourneyStep {
 
 export interface Journey {
   name: string;
+  /** Shows how staff work a case. Consumers never learn who checks their bill, so they do not see these. */
+  staffOnly?: boolean;
   steps: JourneyStep[];
 }
 
@@ -39,6 +41,7 @@ export const JOURNEYS: Journey[] = [
   },
   {
     name: 'An officer resolves a complaint',
+    staffOnly: true,
     steps: [
       { title: 'Consumer taps Raise complaint', body: 'The complaint is built from the checked bill, so it carries the engine figures.',
         edges: ['consumer>meta', 'meta>ingress', 'ingress>queue', 'queue>svc'], payload: 'button_reply id="complain" -> intent complain' },
@@ -46,8 +49,8 @@ export const JOURNEYS: Journey[] = [
         edges: ['svc>db', 'svc>crm'], payload: 'complaints += { ticket, discom, issue, amount, status: "Open" }' },
       { title: 'Alert reaches the officer', body: 'The scheduler watches tickets close to their SLA and tells the right officer.', planned: true,
         edges: ['sched>cat', 'cat>db', 'sched>desk'], payload: 'alert sla_risk(scope) -> tickets due within 24 hours' },
-      { title: 'Officer signs in', body: 'Sign in sets the role and the DISCOM. With the org tree, scope narrows to division or section.',
-        edges: ['officer>sso', 'sso>staffapi', 'hr>staffapi'], payload: 'account.role = "officer", account.discom -> every query filtered' },
+      { title: 'Officer signs in', body: 'Sign in gives the role and the unit. Every query after that is limited to that unit and the units below it.',
+        edges: ['officer>sso', 'sso>staffapi', 'staffapi>rbac'], payload: 'require_perm("complaints.view")\nin_scope(account.unit_id, complaint.unit) -> else 404' },
       { title: 'Officer asks the assistant', body: 'It runs catalogue metrics inside the officer\'s scope and the guard checks its answer.', planned: true,
         edges: ['officer>desk', 'desk>staffapi', 'staffapi>agent', 'agent>cat', 'agent>prov', 'agent>guard'], payload: 'run_metric("bill_check", bill) -> printed vs engine, line by line\nguard: every figure traced' },
       { title: 'Officer replies and resolves', body: 'The reply and the status change are written with the officer\'s name in the audit log.',
@@ -56,6 +59,44 @@ export const JOURNEYS: Journey[] = [
         edges: ['actions>crm'], payload: 'PATCH 1912/tickets/{ticket} { status: "Resolved" }' },
       { title: 'Consumer told on WhatsApp', body: 'Inside 24 hours the reply goes as text. Past that, the approved template goes out instead, and a failed send is shown to the officer.',
         edges: ['actions>queue', 'queue>sender', 'sender>meta', 'meta>consumer'], payload: 'text "Update on your complaint {ticket}: ..."\nelse template WHATSAPP_COMPLAINT_TEMPLATE, params: [ticket, status]' },
+    ],
+  },
+  {
+    name: 'A wrong bill is reviewed',
+    staffOnly: true,
+    steps: [
+      { title: 'Consumer taps Bill looks wrong', body: 'The button sits on every bill card. The consumer is never told who checks it, only that it is being checked.',
+        edges: ['consumer>meta', 'meta>ingress', 'ingress>queue', 'queue>svc'], payload: 'button_reply id="report_bill" -> intent dispute' },
+      { title: 'Spike checked, case opened', body: 'The units are compared with the consumer\'s own earlier months. The case opens either way; a spike is flagged for the AE.',
+        edges: ['svc>review', 'review>engine'], payload: 'spike = units vs average of earlier months\ncomplaints += { kind: "wrong_reading", bill_id, spike }' },
+      { title: 'Routed to the section AE', body: 'The section printed on the bill is matched to a unit by name or alias. A name nobody has mapped waits for an admin to map it.',
+        edges: ['review>db'], payload: '"Sec: ISNAPUR" -> units(kind="section", alias match)\ncase.section_id, assigned to that section\'s AE' },
+      { title: 'Evidence pack built', body: 'Everything the AE needs, gathered before they open the case. When the DISCOM records are connected, earlier months come from there too.',
+        edges: ['review>engine', 'review>billing', 'review>db'], payload: 'evidence_pack: this_bill, printed_history, uploads,\n  discom_records, spike, requested_bills' },
+      { title: 'Missing bills asked for', body: 'If fewer than three earlier months are on file, the consumer is asked for those bills straight away. Uploads that match are added to the case.',
+        edges: ['review>sender', 'sender>meta', 'meta>consumer'], payload: 'request(kind="previous_bills", months=[...up to 3])\nconsumer sees: "Please send your last bills" (no name, no role)' },
+      { title: 'AE opens the case', body: 'The AE sees only cases in their section. The pack, the bill, the readings and the timeline are on one page.',
+        edges: ['officer>desk', 'desk>staffapi', 'staffapi>rbac', 'staffapi>review'], payload: 'GET /api/review/cases/{id}\nrequire_perm("cases.view") and in_scope(section_id)' },
+      { title: 'AE records a decision', body: 'Bill correct, a corrected reading, or a custom reduction. The engine prices a corrected reading; surcharge and arrears stay as printed.',
+        edges: ['staffapi>actions', 'review>engine'], payload: 'corrected_reading: reduction = price(printed units) - price(corrected units)\nreason, note of 20+ characters and evidence required' },
+      { title: 'Second approval if policy asks', body: 'Off by default: the AE decides. A DISCOM can set an AE limit or ask for approval on custom reductions. Nobody approves their own.',
+        edges: ['staffapi>rbac', 'actions>db'], payload: 'policy: { ae_limit: null, custom_needs_approval: false }\napprover != decider' },
+      { title: 'Revised amount is final', body: 'The consumer\'s bill now shows the revised amount as what they owe, with the original kept beside it.',
+        edges: ['review>db', 'review>sender', 'sender>meta', 'meta>consumer'], payload: 'GET /api/bills -> total_payable = final\noriginal_total_payable kept' },
+      { title: 'Who did what, on the timeline', body: 'Every step is written with who did it: the consumer, the system or a named staff member. The audit log holds the same.',
+        edges: ['actions>db'], payload: 'timeline: [{ at, actor: consumer | system | staff, what }]\naudit_log += { actor, action, target }' },
+    ],
+  },
+  {
+    name: 'A super admin changes a role',
+    staffOnly: true,
+    steps: [
+      { title: 'Super admin opens Roles', body: 'Built-in and custom roles are listed with how many accounts hold each one.',
+        edges: ['officer>sso', 'sso>staffapi', 'staffapi>rbac'], payload: 'GET /api/admin/roles\nrequire_perm("roles.manage")' },
+      { title: 'Permissions changed', body: 'Any role can be edited except the consumer role. Super admin must keep role management, and no role can both manage roles and move money.',
+        edges: ['officer>desk', 'desk>staffapi', 'staffapi>rbac'], payload: 'PATCH /api/admin/roles/{slug} { permissions: [...] }\n400 if the rules above are broken' },
+      { title: 'It applies on the next request', body: 'Permissions are read from the role on every request, so nobody needs to sign out. A changed built-in role can be reset to its default.',
+        edges: ['staffapi>actions', 'actions>db'], payload: 'audit_log += role.update | role.reset\nPOST /api/admin/roles/{slug}/reset' },
     ],
   },
 ];

@@ -39,6 +39,8 @@ export function useUploadBill() {
       if (!report.id) return;
       client.setQueryData(queryKeys.bill(report.id, language), report);
       void client.invalidateQueries({ queryKey: [...queryKeys.bills, 'list'] });
+      // A new upload can answer a request for earlier bills on another report, so other reports are fetched again.
+      void client.invalidateQueries({ queryKey: [...queryKeys.bills, 'one'], predicate: (q) => q.queryKey[2] !== report.id });
     },
   });
 }
@@ -75,18 +77,30 @@ export function useBill(id: string, language: Language) {
   });
 }
 
-/** Ask the section AE to check this bill. A 409 means a case is already open; the bill is reloaded to show it. */
+const billKey = (billId: string) => [...queryKeys.bills, 'one', billId];
+const reportPath = (billId: string) => `/api/bills/${encodeURIComponent(billId)}/review-request`;
+
+/** Report a problem with this bill. A 409 means it is already reported; the bill is reloaded to show where it stands. */
 export function useReviewRequest(billId: string, language: Language) {
   const client = useQueryClient();
-  const billKey = [...queryKeys.bills, 'one', billId];
   return useMutation({
-    mutationFn: (note: string) => sendJson<ReviewSummary>(`/api/bills/${encodeURIComponent(billId)}/review-request?language=${language}`, note ? { note } : {}),
+    mutationFn: (note: string) => sendJson<ReviewSummary>(`${reportPath(billId)}?language=${language}`, note ? { note } : {}),
     onSuccess: (review) => {
-      client.setQueriesData<BillReport>({ queryKey: billKey }, (old) => (old ? { ...old, review } : old));
+      client.setQueriesData<BillReport>({ queryKey: billKey(billId) }, (old) => (old ? { ...old, review } : old));
       void client.invalidateQueries({ queryKey: [...queryKeys.bills, 'list'] });
     },
     onError: (error) => {
-      if (isStatus(error, 409)) void client.invalidateQueries({ queryKey: billKey });
+      if (isStatus(error, 409)) void client.invalidateQueries({ queryKey: billKey(billId) });
     },
   });
 }
+
+/** The consumer has no copies of the requested bills. The bill is reloaded so the report shows the new state. */
+export function useNoBills(billId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => sendJson<unknown>(`${reportPath(billId)}/no-bills`, {}),
+    onSettled: () => client.invalidateQueries({ queryKey: billKey(billId) }),
+  });
+}
+

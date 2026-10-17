@@ -8,7 +8,7 @@ from app.domain import capture
 from app.domain.bill import ExtractedBill
 from app.domain.conversation import composer, guard
 from app.domain.conversation.facts import rs
-from app.flows import cases, meter
+from app.flows import case_bills, cases, meter
 from app.flows.analysis import Analysis, analyse
 from app.flows.turn import Turn
 from app.services import charts, llm, vision
@@ -140,9 +140,10 @@ async def handle_bill(turn: Turn, bill: ExtractedBill, media_id: str | None) -> 
     async with turn.tracer.step("Check against the TGERC tariff", "rules") as step:
         a = analyse(bill, turn.state.user_id)
         step.note(_check_note(a))
-    turn.state.current_bill_id = repos.save_bill(turn.state.user_id, bill, media_id, a.audit.status,
-                                                 a.audit.overcharge)
+    bill_id = repos.save_bill(turn.state.user_id, bill, media_id, a.audit.status, a.audit.overcharge)
+    turn.state.current_bill_id = bill_id
     turn.state.awaiting = None
+    await case_bills.tell_attached(turn, case_bills.attach_upload(turn.state.user_id, bill_id, bill, media_id))
     async with turn.tracer.step("Estimate next month", "rules") as step:
         p = a.prediction
         step.note(f"{p.units_low} to {p.units_high} units, about Rs {rs(p.amount)} ({p.method})")
@@ -150,7 +151,7 @@ async def handle_bill(turn: Turn, bill: ExtractedBill, media_id: str | None) -> 
     if not await turn.speak(spoken):
         suffix = f"\n{turn.t('voice_unavailable')}" if turn.lang == "ur" else ""
         await turn.say(spoken + suffix)
-    options = ([("complain", "btn_complain"), ("why", "btn_why"), ("next", "btn_next")]
+    options = ([("report_bill", "btn_report"), ("why", "btn_why"), ("next", "btn_next")]
                if a.audit.status == "mismatch" else [("why", "btn_why"), ("next", "btn_next"), ("save", "btn_save")])
     await turn.buttons(composer.summary_card(a.facts, turn.lang), options)
     await cases.offer(turn, a)

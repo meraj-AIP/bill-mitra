@@ -1,6 +1,7 @@
 import { Box, Container, Stack, Typography } from '@mui/material';
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 
+import { isConsumer, useAuth } from '@/features/auth';
 import { PageHeader } from '@/shared/components/PageHeader';
 
 import { JourneyPlayer } from '../components/JourneyPlayer';
@@ -10,6 +11,7 @@ import { TariffExplorer } from '../components/TariffExplorer';
 import { TariffTable } from '../components/TariffTable';
 import { useJourney } from '../hooks/useJourney';
 import { PRINCIPLES } from '../model/copy';
+import { JOURNEYS } from '../model/journeys';
 
 function Section({ title, lead, children }: { title: string; lead?: string; children: ReactNode }) {
   return (
@@ -37,16 +39,19 @@ function Principles() {
 }
 
 export function HowItWorksPage() {
-  const journey = useJourney();
+  const { account } = useAuth();
+  const staff = Boolean(account) && !isConsumer(account);
+  const journeys = useMemo(() => (staff ? JOURNEYS : JOURNEYS.filter((j) => !j.staffOnly)), [staff]);
+  const journey = useJourney(journeys);
   return (
     <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
       <Stack sx={{ gap: { xs: 5, md: 6 } }}>
         <PageHeader eyebrow="How it works" title="How Bill Mitra reads and checks a bill"
-          lead="A consumer sends a photo of their electricity bill. Bill Mitra reads it, checks every line against the tariff and explains it in their language. If something is wrong, they can raise a complaint that DISCOM officers answer." />
+          lead="A consumer sends a photo of their electricity bill. Bill Mitra reads it, checks every line against the tariff and explains it in their language. If the bill looks wrong, the section office checks it with the evidence already gathered, and a revised amount becomes the bill." />
         <PipelineStrip />
         <Principles />
         <Section title="Architecture, end to end"
-          lead="One backend serves consumers on WhatsApp and the website, and staff in the console. Pick a journey and play it, or step through. The lit path is what moves at that step, with the payload it carries. Click any box for its files and job.">
+          lead="One backend serves consumers on WhatsApp and the website, and staff in the console, review and admin screens, each limited by role and unit. Pick a journey and play it, or step through. The lit path is what moves at that step, with the payload it carries. Click any box for its files and job.">
           <JourneyPlayer control={journey} />
         </Section>
         <Section title="Live status" lead="What is switched on on this server right now.">

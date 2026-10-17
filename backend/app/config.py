@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     privacy_contact: str = ""
     retention_days: int = Field(default=180, ge=1)
 
+    # DISCOM billing records for the evidence pack. Both empty means not connected, and nothing is fetched.
+    billing_records_url: str = ""
+    billing_records_token: str = ""
+
     @property
     def vision_live(self) -> bool:
         return bool(self.openai_api_key)
@@ -69,6 +73,10 @@ class Settings(BaseSettings):
     @property
     def stt_live(self) -> bool:
         return bool(self.soniox_api_key)
+
+    @property
+    def billing_records_live(self) -> bool:
+        return bool(self.billing_records_url and self.billing_records_token)
 
     @property
     def whatsapp_enabled(self) -> bool:

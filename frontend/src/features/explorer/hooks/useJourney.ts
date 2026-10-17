@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 
-import { JOURNEYS } from '../model/journeys';
+import type { Journey } from '../model/journeys';
 
 export const STEP_MS = 2800;
 
-export function useJourney() {
+/** Pass a stable list: the journeys this viewer may see. */
+export function useJourney(journeys: Journey[]) {
   const [journey, setJourney] = useState(0);
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const count = JOURNEYS[journey]?.steps.length ?? 0;
+  const count = journeys[journey]?.steps.length ?? 0;
 
   useEffect(() => {
     if (!playing) return undefined;
@@ -20,6 +21,7 @@ export function useJourney() {
   }, [playing, step, count]);
 
   return {
+    journeys,
     journey,
     step,
     playing,

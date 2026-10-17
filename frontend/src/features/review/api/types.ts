@@ -91,7 +91,7 @@ export interface CaseDetail extends CaseRow {
   mime_type: string | null;
   audit_lines: AuditLine[];
   spike: Spike;
-  history: Array<{ month: string; units: number; amount: number; source: 'printed' | 'uploaded' | 'this_bill' }>;
+  history: Array<{ month: string; units: number; amount: number; source: HistorySource }>;
   messages: ComplaintMessage[];
   requests: InfoRequest[];
   /** Newest first. */
@@ -99,17 +99,53 @@ export interface CaseDetail extends CaseRow {
   policy: Policy;
   can: { decide: boolean; approve: boolean; mark_applied: boolean; request_info: boolean; reassign: boolean; unmask: boolean };
   assignable: Person[];
+  evidence_pack: EvidencePack;
+  /** Oldest first. */
+  timeline: TimelineEntry[];
 }
 
+export type HistorySource = 'printed' | 'uploaded' | 'discom' | 'this_bill';
+
+export type EvidenceStatus = 'included' | 'partial' | 'missing' | 'not_connected';
+
+export interface EvidenceSource {
+  key: 'this_bill' | 'printed_history' | 'uploads' | 'discom_records' | 'spike' | 'requested_bills';
+  label: string;
+  status: EvidenceStatus;
+  /** YYYY-MM */
+  months: string[];
+  detail: string;
+}
+
+export interface AttachedBill { bill_id: string; month: string; units: number | null; amount: number | null; media_url: string | null }
+
+export interface EvidencePack {
+  sources: EvidenceSource[];
+  requested_months: string[];
+  received_months: string[];
+  attached_bills: AttachedBill[];
+}
+
+export interface TimelineEntry { at: string; actor: { kind: 'consumer' | 'system' | 'staff'; name: string | null }; text: string }
+
+export type ReportState = 'received' | 'waiting_for_you' | 'revised' | 'no_change';
+
+/** The consumer's view of a report. It never names who reviews the bill. */
 export interface ReviewSummary {
   ticket: string;
-  state: ReviewState;
+  state: ReportState;
+  /** YYYY-MM */
+  requested_months: string[];
+  received_months: string[];
   revision: {
     original_amount: number;
     revised_amount: number;
+    original_total: number | null;
+    revised_total: number | null;
     /** Already in the consumer's language. */
     reason: string;
-    decided_by: string;
+    /** The DISCOM, for example TGSPDCL. */
+    office: string;
     decided_at: string;
     status: 'pending_update' | 'applied';
   } | null;

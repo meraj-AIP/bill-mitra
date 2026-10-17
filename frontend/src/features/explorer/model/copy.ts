@@ -26,9 +26,11 @@ export const PRINCIPLES: Array<[string, string]> = [
   ['Rules calculate, AI explains', 'Every rupee comes from the TGERC tariff engine. The language model only reads the photo and puts the engine\'s figures into plain words.'],
   ['Every figure is checked', 'Before a reply goes out, each number in it is matched against the engine. If one does not match, a checked template answer is sent instead.'],
   ['We show what we read', 'Each report lists every field we looked for, whether we found it, and the checks run across them, so nothing is silently guessed.'],
-  ['History from your own bills', 'The usage trend comes from the table printed on the bill and from bills uploaded earlier. Nothing is fetched from the DISCOM.'],
+  ['History from every source', 'The usage trend comes from the table printed on the bill and from bills uploaded earlier. When the DISCOM billing records are connected, they join in and are labelled as such.'],
   ['Telugu first', 'Replies are in Telugu unless the consumer picks English, Hindi or Urdu. When voice is on, a voice note comes with the text.'],
   ['Complaints stay with Bill Mitra', 'A complaint gets a BM- ticket and DISCOM officers answer it in the Bill Mitra inbox. It is not passed to 1912, so the consumer is told to call 1912 as well.'],
+  ['A wrong bill goes to the right desk', 'Bill looks wrong opens a check by the section office named on the bill, with the evidence already gathered. If the bill is revised, the revised amount is what is owed.'],
+  ['Each person sees their own part', 'Staff see only their unit and the units below it, and only the screens their role allows. Every decision and every change is logged with who made it.'],
 ];
 
 /** Tariff parts the engine marks as assumptions until the DISCOM confirms them. */
