@@ -1,6 +1,6 @@
 """One sample account per built-in role, for demos. Off unless DEMO_ACCOUNTS_PASSWORD is set.
 
-Logins are demo.<role>@aiplanet.com and a 6000 mobile. The "demo." prefix keeps them apart from real
+Logins are admin@aiplanet.com, demo.<role>@aiplanet.com for the other roles and a 6000 mobile. The "demo." prefix keeps them apart from real
 aiplanet.com staff accounts, and ensure() only ever resets accounts it created itself.
 """
 
@@ -12,7 +12,8 @@ from app.store import accounts
 from app.store.db import tx
 
 DEMO: tuple[tuple[str, str, str], ...] = (
-    ("admin", "demo.admin@aiplanet.com", "Demo Admin"),
+    # The owner's own admin login. It is a real account, so ensure() lists it but never resets its password.
+    ("admin", "admin@aiplanet.com", "Demo Admin"),
     ("officer", "demo.officer@aiplanet.com", "Demo DISCOM Officer"),
     ("section_ae", "demo.sectionae@aiplanet.com", "Demo Section AE"),
     ("call_centre", "demo.callcentre@aiplanet.com", "Demo Call Centre Agent"),
