@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api import (
     access,
     admin,
+    alerts,
     auth,
     bills,
     catalog,
@@ -26,6 +27,7 @@ from app.channels import web
 from app.channels.whatsapp import router as whatsapp
 from app.config import get_settings
 from app.core import security
+from app.services import scheduler
 from app.store import accounts
 from app.store import privacy as retention
 from app.store.db import connection, purge_mock_data
@@ -41,7 +43,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     accounts.bootstrap_admin()
     purge_mock_data()
     retention.sweep()
-    yield
+    scheduler.start()
+    try:
+        yield
+    finally:
+        await scheduler.stop()
 
 
 app = FastAPI(title="Bill Mitra", version="0.1.0", lifespan=lifespan,
@@ -54,7 +60,7 @@ app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in settings.co
 
 app.middleware("http")(security.protect)
 
-for router in (auth.router, privacy.router, admin.router, access.router, catalog.router, bills.router,
+for router in (auth.router, privacy.router, admin.router, alerts.router, access.router, catalog.router, bills.router,
                complaints.router, complaint_actions.router, console.router, review.router, review_decisions.router,
                web.router, whatsapp.router):
     app.include_router(router)

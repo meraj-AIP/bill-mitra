@@ -50,8 +50,10 @@ export const NODES: SystemNode[] = [
   { id: 'review', lane: 3, y: 130, title: 'Bill review', code: 'flows/cases, review', status: 'built',
     notes: ['Spots a spike against the consumer\'s own history and opens a case', 'Routes it to the right section from the section printed on the bill',
       'Builds the evidence pack and asks for up to three missing monthly bills', 'Prices a corrected reading with the engine; the revised amount becomes the final bill'] },
-  { id: 'sched', lane: 3, y: 220, title: 'Alerts and digests', code: 'staff/scheduler', status: 'planned',
-    notes: ['Runs catalogue metrics on a timer and raises alerts against thresholds', 'Builds the weekly digest per division'] },
+  { id: 'sched', lane: 3, y: 220, title: 'Automation', code: 'services/scheduler.py', status: 'built',
+    notes: ['Runs every 15 minutes: reminds consumers, closes requests nobody answers, flags and escalates overdue cases',
+      'A daily digest for each AE, and alerts when misreads cluster in one section',
+      'Marks a revision applied when the DISCOM records show it was billed', 'Never decides or approves a case'] },
   { id: 'agent', lane: 3, y: 315, title: 'Staff assistant', code: 'staff/agent', status: 'planned',
     notes: ['Tools: run_metric, list_tickets, open_bill, propose_action', 'Never sees SQL or the scope filter', 'Proposes actions; a person confirms them'] },
   { id: 'actions', lane: 3, y: 430, title: 'Actions and audit', code: 'decisions, audit log', status: 'built',
@@ -91,7 +93,7 @@ export const EDGES = [
   'consumer>meta', 'consumer>web', 'meta>ingress', 'ingress>queue', 'queue>svc', 'web>svc', 'svc>media', 'svc>prov', 'svc>review',
   'review>engine', 'review>billing', 'review>db', 'review>sender', 'staffapi>rbac', 'staffapi>review',
   'svc>engine', 'tgerc>engine', 'svc>guard', 'svc>sender', 'queue>sender', 'sender>meta', 'meta>consumer', 'svc>db', 'svc>crm',
-  'sched>cat', 'cat>db', 'sched>desk', 'officer>sso', 'sso>staffapi', 'hr>staffapi', 'officer>desk', 'desk>staffapi',
+  'sched>cat', 'cat>db', 'sched>desk', 'sched>review', 'sched>sender', 'officer>sso', 'sso>staffapi', 'hr>staffapi', 'officer>desk', 'desk>staffapi',
   'staffapi>agent', 'agent>cat', 'agent>prov', 'agent>guard', 'staffapi>actions', 'actions>db', 'actions>crm', 'actions>queue', 'svc>obs',
 ];
 

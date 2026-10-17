@@ -13,8 +13,8 @@ from app.domain import review
 from app.domain.conversation.facts import rs, with_revision
 from app.domain.conversation.lang import text
 from app.domain.review import Final, Spike
-from app.flows import case_bills
-from app.flows.analysis import Analysis
+from app.flows import case_bills, misread
+from app.flows.analysis import Analysis, analyse
 from app.flows.turn import Turn
 from app.services import billing_records, notify
 from app.store import accounts, complaints, repos, units
@@ -113,6 +113,7 @@ def open_case(user_id: str, bill_id: str, a: Analysis, language: str, channel: s
     ticket = complaints.create(user_id, bill_id, a.bill, _issue(spike), 0.0, language, channel, reply_to,
                                note or FIRST_MESSAGE, "needs_check", kind=KIND, placement=placement, case_facts=facts)
     _audit_route(ticket, placement)
+    misread.on_case_opened(ticket, user_id, a.bill)
     return ticket
 
 
@@ -219,9 +220,10 @@ async def offer(turn: Turn, a: Analysis) -> None:
     await turn.buttons(body, [("report_bill", "btn_report")])
 
 
-async def report_from_chat(turn: Turn, a: Analysis) -> None:
-    """The report button or a message saying the bill is wrong, for the bill the chat is about."""
-    bill_id = turn.state.current_bill_id
+async def report_from_chat(turn: Turn, a: Analysis, bill_id: str | None = None) -> None:
+    """The report button or a message saying the bill is wrong, for the bill the chat is about unless `bill_id`
+    names another of the consumer's bills (with `a` its analysis)."""
+    bill_id = bill_id or turn.state.current_bill_id
     if bill_id is None:
         await turn.say_key("need_bill")
         return
@@ -238,6 +240,25 @@ async def report_from_chat(turn: Turn, a: Analysis) -> None:
     await turn.say_key("review_filed", ticket=ticket, office=office(turn.lang, a.bill.discom),
                        days=policy_store.get(a.bill.discom).decision_sla_days)
     await after_report(ticket, a, turn)
+
+
+async def offer_misread(turn: Turn, found: misread.Misread | None, discom: str | None) -> None:
+    """The bill just sent shows the month before was read too high. Printed readings only, no amounts."""
+    if found is None:
+        return
+    body = turn.t("misread_offer", month=case_bills.month_name(turn.lang, found.earlier_month),
+                  printed=f"{found.printed_present:g}", next=f"{found.next_previous:g}", office=office(turn.lang, discom))
+    await turn.buttons(body, [("report_misread", "btn_report_misread")])
+
+
+async def report_misread(turn: Turn) -> None:
+    """The consumer tapped to have the earlier month checked. Found again from storage, never trusted from the tap."""
+    current = repos.get_own_bill(turn.state.user_id, turn.state.current_bill_id or "")
+    found = misread.earlier_for(turn.state.user_id, current.bill) if current else None
+    if found is None:
+        await turn.say_key("need_bill")
+        return
+    await report_from_chat(turn, analyse(found[1], turn.state.user_id), found[0])
 
 
 async def after_report(ticket: str, a: Analysis, turn: Turn | None) -> None:

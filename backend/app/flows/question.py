@@ -132,6 +132,8 @@ async def handle_button(turn: Turn, reply_id: str) -> None:
         await complaint.submit(turn, a)
     elif reply_id == "report_bill":
         await cases.report_from_chat(turn, a)
+    elif reply_id == "report_misread":
+        await cases.report_misread(turn)
     elif reply_id == "complaint_cancel":
         turn.state.awaiting = None
         await turn.say_key("complaint_cancel")

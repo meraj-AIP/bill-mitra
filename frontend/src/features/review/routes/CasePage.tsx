@@ -1,4 +1,5 @@
 import { Alert, Box, Button, Container, Grid, Paper, Stack, Typography } from '@mui/material';
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import { DetailSkeleton } from '@/features/complaints';
@@ -6,7 +7,7 @@ import { isStatus } from '@/shared/api/http';
 import { BillImage } from '@/shared/components/BillImage';
 import { EmptyState, ErrorState } from '@/shared/components/States';
 
-import { useCase } from '../api/reviewApi';
+import { useCase, useDraft } from '../api/reviewApi';
 import type { CaseDetail } from '../api/types';
 import { ApplyPanel } from '../components/ApplyPanel';
 import { ApprovalsPanel } from '../components/ApprovalsPanel';
@@ -17,8 +18,9 @@ import { DecisionPanel } from '../components/DecisionPanel';
 import { EvidencePackPanel } from '../components/EvidencePackPanel';
 import { FlagPanel } from '../components/FlagPanel';
 import { ReadingsPanel } from '../components/ReadingsPanel';
+import { SuggestedDecision } from '../components/SuggestedDecision';
 import { TimelinePanel } from '../components/TimelinePanel';
-import { OPEN_FOR_DECISION } from '../model/decision';
+import { emptyDraft, fromDraft, OPEN_FOR_DECISION, type DecisionDraft } from '../model/decision';
 
 const WAITING: Partial<Record<CaseDetail['state'], string>> = {
   awaiting_approval: 'A decision is waiting for a billing approver. Nothing more to do here until they approve or reject it.',
@@ -38,6 +40,21 @@ function Bill({ c }: { c: CaseDetail }) {
     );
   }
   return <BillImage src={c.media_url} isPdf={c.mime_type === 'application/pdf'} heading="Bill as uploaded" name={`Bill for ${c.ticket}`} />;
+}
+
+/** "Use this" remounts the decision form with the suggestion filled in, replacing anything typed so far. */
+function DecisionArea({ c }: { c: CaseDetail }) {
+  const draft = useDraft(c.ticket, c.can.decide).data;
+  const [seed, setSeed] = useState<{ round: number; draft: DecisionDraft } | null>(null);
+  return (
+    <>
+      {draft && (
+        <SuggestedDecision draft={draft} used={seed !== null}
+          onUse={() => setSeed((s) => ({ round: (s?.round ?? 0) + 1, draft: fromDraft(draft) }))} />
+      )}
+      <DecisionPanel key={seed?.round ?? 0} c={c} initial={seed?.draft ?? emptyDraft()} />
+    </>
+  );
 }
 
 function Workspace({ c }: { c: CaseDetail }) {
@@ -60,7 +77,7 @@ function Workspace({ c }: { c: CaseDetail }) {
           )}
           <ApprovalsPanel c={c} />
           <ApplyPanel c={c} />
-          {deciding && <DecisionPanel c={c} />}
+          {deciding && <DecisionArea c={c} />}
           {!deciding && note && <Alert severity="info" variant="outlined">{note}</Alert>}
           <ConversationPanel c={c} />
           <DecisionHistory c={c} />

@@ -131,6 +131,17 @@ export interface BillReport {
   review?: ReviewSummary | null;
   /** The amounts to pay. After an approved revision these are the revised figures, not the printed ones. */
   final?: FinalAmounts | null;
+  /** This bill's previous reading is below an earlier bill's present reading, so the earlier one was likely read too high. */
+  misread?: Misread | null;
+}
+
+/** Readings as printed on the two bills. No amounts here. */
+export interface Misread {
+  earlier_bill_id: string;
+  /** YYYY-MM */
+  earlier_month: string;
+  printed_present: number;
+  next_previous: number;
 }
 
 export interface FinalAmounts {

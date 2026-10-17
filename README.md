@@ -94,6 +94,12 @@ Install `ffmpeg` on the server (the Docker image has it) so voice replies show a
 
 Other settings worth knowing: `SESSION_COOKIE` (default `bm_session`; give each instance on one host its own name), `COMPLAINT_REPLY_DAYS` (default 7) and `WHATSAPP_DISPLAY_NUMBER` (for the dashboard's WhatsApp link). All settings are listed in `.env.example` and [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## Operations
+
+Production runs in Docker on a shared VM at https://aikam.tryaiplanet.com. Backups, the health watchdog, the deploy
+script, cron setup, restoring a backup and the GitHub Actions workflows (CI, uptime, deploy) are in
+[deploy/README.md](deploy/README.md).
+
 ## Tests
 
 ```bash

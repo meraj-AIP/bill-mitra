@@ -62,6 +62,15 @@ class Settings(BaseSettings):
     billing_records_url: str = ""
     billing_records_token: str = ""
 
+    # Automation (app/services/scheduler.py): reminders, lapses, overdue and escalation, digest, patterns.
+    automation_enabled: bool = True
+    automation_interval_seconds: int = Field(default=900, ge=60)
+    reminder_after_days: int = Field(default=3, ge=1)
+    lapse_after_days: int = Field(default=7, ge=1)
+    digest_hour_ist: int = Field(default=8, ge=0, le=23)
+    pattern_window_days: int = Field(default=90, ge=1)
+    pattern_min_cases: int = Field(default=3, ge=2)
+
     @property
     def vision_live(self) -> bool:
         return bool(self.openai_api_key)

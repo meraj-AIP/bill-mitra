@@ -11,6 +11,7 @@ _TMP = tempfile.mkdtemp(prefix="billmitra-test-")
 os.environ["DATA_DIR"] = _TMP
 for key in ("OPENAI_API_KEY", "SARVAM_API_KEY", "SONIOX_API_KEY", "WHATSAPP_TOKEN"):
     os.environ[key] = ""
+os.environ["AUTOMATION_ENABLED"] = "false"  # tests call the jobs directly with a fixed clock
 
 from app.config import get_settings  # noqa: E402  (settings must see the environment above)
 from app.services import llm, vision  # noqa: E402

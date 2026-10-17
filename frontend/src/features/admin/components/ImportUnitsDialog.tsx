@@ -1,14 +1,12 @@
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
-import {
-  Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, Typography,
-} from '@mui/material';
+import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from '@mui/material';
 import { useId, useState } from 'react';
 
 import { formatCount } from '@/shared/lib/format';
 
 import { CSV_COLUMNS, CSV_TEMPLATE, useImportUnits, type ImportResult } from '../api/unitsApi';
+import { ImportErrors } from './ImportErrors';
 
 const TEMPLATE_HREF = `data:text/csv;charset=utf-8,${encodeURIComponent(`${CSV_TEMPLATE}\n`)}`;
 
@@ -20,23 +18,7 @@ function Result({ result }: { result: ImportResult }) {
         {formatCount(result.created)} added and {formatCount(result.updated)} updated.
         {clean ? ' Every line was read.' : ` ${formatCount(result.errors.length)} lines were skipped; fix them and import the file again.`}
       </Alert>
-      {!clean && (
-        <TableContainer sx={{ maxHeight: 280, border: 1, borderColor: 'divider', borderRadius: 1 }}>
-          <Table size="small" stickyHeader aria-label="Lines that were skipped">
-            <TableHead>
-              <TableRow><TableCell sx={{ width: 72 }}>Line</TableCell><TableCell>Problem</TableCell></TableRow>
-            </TableHead>
-            <TableBody>
-              {result.errors.map((e) => (
-                <TableRow key={`${e.line}-${e.detail}`}>
-                  <TableCell sx={{ fontFamily: 'monospace' }}>{e.line}</TableCell>
-                  <TableCell>{e.detail}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
+      {!clean && <ImportErrors errors={result.errors} />}
     </Stack>
   );
 }

@@ -4,17 +4,21 @@ Nobody hands out a scope outside their own, and only roles.manage holders hand o
 units or policy. Every write is audited.
 """
 
+import re
+import secrets
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from app.api import catalog
 from app.api.deps import in_scope, require_perm, viewer
+from app.core.ratelimit import per_ip
+from app.core.uploads import read_csv
 from app.domain import rbac
 from app.store import accounts, console, roles, units
 from app.store.accounts import MIN_PASSWORD, Account
-from app.store.units import Conflict
+from app.store.units import Conflict, Unit
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -23,6 +27,8 @@ EMAIL = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 Manager = Annotated[Account, Depends(require_perm("accounts.manage"))]
 Auditor = Annotated[Account, Depends(require_perm("audit.view"))]
 UnitIds = Annotated[list[Annotated[str, Field(max_length=40)]], Field(min_length=1, max_length=50)]
+STAFF_COLUMNS = ("name", "login", "role", "unit_code")
+STAFF_MAX_ROWS = 500
 
 
 class NewStaff(BaseModel):
@@ -94,6 +100,65 @@ async def create_staff(body: NewStaff, actor: Manager) -> Account:
         raise HTTPException(409, "An account with this login already exists.") from exc
     accounts.audit(actor.id, "account.create", created.id, f"role={created.role}, scopes={len(scopes)}")
     return created
+
+
+class ImportedStaff(BaseModel):
+    line: int
+    login: str
+    name: str
+    role: str
+    unit: str
+    password: str  # shown once in this response, never stored in clear, logged or audited
+
+
+class ImportLineError(BaseModel):
+    line: int
+    detail: str
+
+
+class StaffImport(BaseModel):
+    created: list[ImportedStaff]
+    errors: list[ImportLineError]
+
+
+def _staff_row(actor: Account, row: dict[str, str]) -> tuple[str, str, str, Unit]:
+    """(name, login, role, unit) from one CSV line. ValueError says what is wrong with the line."""
+    name, login, role, code = (str(row.get(k) or "").strip() for k in STAFF_COLUMNS)
+    if not name or len(name) > 80:
+        raise ValueError("Give a name of up to 80 characters.")
+    if len(login) > 120 or not re.fullmatch(EMAIL, login):
+        raise ValueError("The login must be an email address.")
+    try:
+        _grantable_role(actor, role)
+    except HTTPException as exc:
+        raise ValueError(exc.detail) from exc
+    found = [u for u in units.by_code(code) if in_scope(actor, u.id)] if code else []
+    if len(found) != 1:
+        raise ValueError("No unit with this code in your scope." if not found
+                         else "This unit code is in both DISCOMs; create this account by hand.")
+    return name, login, role, found[0]
+
+
+@router.post("/accounts/import", response_model=StaffImport, dependencies=[Depends(per_ip("account-import", 5))])
+async def import_staff(file: UploadFile, actor: Manager, response: Response) -> StaffImport:
+    """Each line stands alone: a bad line is reported and skipped, the rest are created with a random password."""
+    created, errors = [], []
+    for line, row in await read_csv(file, STAFF_COLUMNS, STAFF_MAX_ROWS):
+        try:
+            name, login, role, unit = _staff_row(actor, row)
+            password = secrets.token_urlsafe(12)
+            account = accounts.create(role, login, name, password, created_by=actor.id, scopes=[unit.id])
+        except Conflict:
+            errors.append(ImportLineError(line=line, detail="An account with this login already exists."))
+        except ValueError as exc:
+            errors.append(ImportLineError(line=line, detail=str(exc)))
+        else:
+            created.append(ImportedStaff(line=line, login=account.login, name=account.name, role=account.role,
+                                         unit=unit.name, password=password))
+    # Counts only: no logins, names or passwords in the audit log.
+    accounts.audit(actor.id, "account.import", None, f"created {len(created)}, errors {len(errors)}")
+    response.headers["Cache-Control"] = "no-store"
+    return StaffImport(created=created, errors=errors)
 
 
 @router.patch("/accounts/{account_id}", response_model=Account)

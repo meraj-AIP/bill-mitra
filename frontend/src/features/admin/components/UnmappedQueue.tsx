@@ -14,6 +14,8 @@ import { useMapUnmapped, useUnmapped, type Unmapped } from '../api/unitsApi';
 function MapRow({ item }: { item: Unmapped }) {
   const map = useMapUnmapped();
   const [section, setSection] = useState<UnitRef | null>(null);
+  const mapTo = (sectionId: string) => map.mutate({ name: item.name, discom: item.discom, section_id: sectionId });
+  const suggestions = item.suggestions ?? [];
   return (
     <TableRow>
       <TableCell sx={{ minWidth: 180 }}>
@@ -23,12 +25,22 @@ function MapRow({ item }: { item: Unmapped }) {
       <TableCell align="right">{formatCount(item.count)}</TableCell>
       <TableCell sx={{ whiteSpace: 'nowrap' }}>{dateTime(item.last_seen)}</TableCell>
       <TableCell sx={{ minWidth: 300 }}>
+        {suggestions.length > 0 && (
+          <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap', mb: 1 }}>
+            {suggestions.map((s) => (
+              <Button key={s.section_id} size="small" variant="outlined" disabled={map.isPending} onClick={() => mapTo(s.section_id)}
+                title={`${Math.round(s.score * 100)}% name match`}>
+                Map to {s.name}
+              </Button>
+            ))}
+          </Stack>
+        )}
         <Stack direction="row" sx={{ gap: 1, alignItems: 'flex-start' }}>
           <Box sx={{ flex: 1 }}>
             <UnitPicker label={`Section in ${item.discom}`} kind="section" size="small" value={section} onChange={setSection} />
           </Box>
           <Button variant="contained" size="small" sx={{ mt: 0.5 }} disabled={!section || map.isPending}
-            onClick={() => section && map.mutate({ name: item.name, discom: item.discom, section_id: section.unit_id })}
+            onClick={() => section && mapTo(section.unit_id)}
             startIcon={map.isPending ? <CircularProgress size={14} color="inherit" aria-hidden /> : null}>
             Map
           </Button>

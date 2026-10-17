@@ -3,7 +3,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { getJson, sendJson } from '@/shared/api/http';
 import { queryKeys } from '@/shared/api/queryKeys';
 
-import type { CaseDetail, CasePageResult, CaseQuery, NewDecision, Preview, RequestKind, SectionOption } from './types';
+import type { CaseDetail, CasePageResult, CaseQuery, Draft, NewDecision, Preview, RequestKind, SectionOption } from './types';
 
 const casePath = (ticket: string) => `/api/review/cases/${encodeURIComponent(ticket)}`;
 const decisionPath = (id: number) => `/api/review/decisions/${id}`;
@@ -63,6 +63,16 @@ export function useAskConsumer(ticket: string) {
   return useMutation({
     mutationFn: (body: { kind: RequestKind; note?: string }) => sendJson<CaseDetail>(`${casePath(ticket)}/request`, body),
     onSuccess,
+  });
+}
+
+/** The rules' suggested decision, or null when no rule is sure enough. Only asked for by accounts that decide. */
+export function useDraft(ticket: string, enabled: boolean) {
+  return useQuery({
+    queryKey: [...queryKeys.reviewCase(ticket), 'draft'],
+    queryFn: ({ signal }) => getJson<Draft | null>(`${casePath(ticket)}/draft`, signal),
+    enabled,
+    staleTime: 60_000,
   });
 }
 

@@ -1,6 +1,6 @@
 import { dateTime, formatCount, monthLabel, rupees } from '@/shared/lib/format';
 
-import type { CaseDetail, DecisionKind, Evidence, NewDecision, Preview, ReasonCode, ReviewState } from '../api/types';
+import type { CaseDetail, DecisionKind, Draft, Evidence, NewDecision, Preview, ReasonCode, ReviewState } from '../api/types';
 import { MIN_NOTE } from './labels';
 
 export interface DecisionDraft {
@@ -43,6 +43,33 @@ export function evidenceOptions(c: CaseDetail): Array<Evidence & { key: string; 
       photo: m.media_url,
     }));
   return [...bill, ...attached, ...messages].map((e) => ({ ...e, key: evidenceKey(e) }));
+}
+
+/** The form state a suggested decision fills in. The AE still checks it and records it. */
+export function fromDraft(d: Draft): DecisionDraft {
+  return {
+    kind: d.kind,
+    reading: d.kind === 'corrected_reading' && d.corrected_present_reading !== null ? String(d.corrected_present_reading) : '',
+    reduction: '',
+    reason: d.reason_code,
+    note: d.note,
+    evidence: d.evidence.map(evidenceKey),
+  };
+}
+
+/**
+ * A suggestion can cite a bill the case does not list yet, such as the next month's bill. It is shown, ticked, so the
+ * AE sees everything the decision will rest on and can untick it.
+ */
+export function withCited(options: ReturnType<typeof evidenceOptions>, keys: string[]): ReturnType<typeof evidenceOptions> {
+  const known = new Set(options.map((o) => o.key));
+  const extra = keys.filter((k) => !known.has(k)).map((key) => {
+    const [kind, ...rest] = key.split(':');
+    const id = rest.join(':');
+    const label = kind === 'bill' ? 'Another bill from this consumer, cited by the suggestion' : 'Consumer message cited by the suggestion';
+    return { kind: kind as Evidence['kind'], id, label, key, photo: null };
+  });
+  return [...options, ...extra];
 }
 
 export function parseAmount(text: string): number | null {

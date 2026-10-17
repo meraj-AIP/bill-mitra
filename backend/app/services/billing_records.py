@@ -38,6 +38,7 @@ class RecordMonth(BaseModel):
 
     month: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
     units: int = Field(ge=0, le=1_000_000)
+    billed_amount: float | None = Field(default=None, ge=0, le=10_000_000)  # what the billing system now charges
 
 
 class _Response(BaseModel):

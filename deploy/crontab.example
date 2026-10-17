@@ -1,0 +1,14 @@
+# Bill Mitra cron jobs. Install as /etc/cron.d/bill-mitra (owned by root, mode 644).
+# Runs as root because data/ belongs to the container user and docker needs root.
+# flock stops a slow run from overlapping the next one.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+APP_DIR=/opt/bill-mitra
+# Optional off-VM copy. Leave empty to keep backups on the VM only.
+BACKUP_BUCKET=
+
+# Daily backup at 02:30 server time.
+30 2 * * * root flock -n /run/bill-mitra-backup.lock /opt/bill-mitra/src/deploy/backup.sh >> /var/log/bill-mitra/backup.log 2>&1
+
+# Health watchdog every minute.
+* * * * * root flock -n /run/bill-mitra-watchdog.lock /opt/bill-mitra/src/deploy/watchdog.sh >> /var/log/bill-mitra/watchdog.log 2>&1

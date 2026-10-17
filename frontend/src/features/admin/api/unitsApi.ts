@@ -17,7 +17,16 @@ export type UnitChanges = Partial<{ name: string; code: string | null; ero_id: s
 
 export interface ImportResult { created: number; updated: number; errors: Array<{ line: number; detail: string }> }
 
-export interface Unmapped { name: string; discom: Discom; count: number; last_seen: string }
+export interface SectionSuggestion { section_id: string; name: string; score: number }
+
+export interface Unmapped {
+  name: string;
+  discom: Discom;
+  count: number;
+  last_seen: string;
+  /** Closest sections by name in the same DISCOM, best first. */
+  suggestions?: SectionSuggestion[];
+}
 
 function useRefreshUnits() {
   const client = useQueryClient();

@@ -359,6 +359,24 @@ Each decision needs a reason code, a note of 20 or more characters and at least 
 
 **Timeline and audit.** Staff see a timeline on each case, oldest first, with consumer, system and named staff steps: reported, routed, pack built, bills asked for and received, assigned, unmasked, decided, approved, applied, withdrawn. Every step is an `audit_log` entry; automatic steps have no actor and show as System. Audit details never hold a full service number or phone number.
 
+### Automation
+
+The automation pack is specified in [docs/automation-contract.md](docs/automation-contract.md). In short:
+
+- `app/flows/misread.py` compares a newly saved bill with the consumer's bill for the month before. A previous reading
+  below the earlier present reading means the earlier bill was read too high, so the case gets a suggested corrected
+  reading (`case_suggestions`) and the consumer is offered a report on the earlier bill.
+- `GET /api/review/cases/{ticket}/draft` (`app/flows/drafts.py`) suggests a decision: a corrected reading from a misread,
+  or "bill is correct" when every check passes. Template wording only; the engine prices it; the AE records it.
+- `app/services/scheduler.py` runs the jobs in `app/flows/automation.py` every `AUTOMATION_INTERVAL_SECONDS`: consumer
+  reminders and lapses, overdue and escalation, the daily AE digest, auto applied from DISCOM records, and section
+  pattern alerts. Each job is idempotent and audited with actor null. No job decides or approves a case.
+- Staff alerts live in `alerts` and `alert_reads` and are shown by the bell and `/alerts`. `/api/health` reports the
+  scheduler's last run.
+- Unmapped section names get close matches (score 0.8 and up), and staff accounts can be imported from a CSV, with
+  one-time passwords shown once.
+- Operations (health check, watchdog, nightly backup, CI, uptime check) are in [deploy/README.md](deploy/README.md).
+
 ## 10. Data model
 
 SQLite at `var/billmitra.db` in WAL mode. All SQL lives in `store/`, so a move to Postgres replaces that folder only.

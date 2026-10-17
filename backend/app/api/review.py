@@ -299,10 +299,14 @@ async def preview(ticket: str, body: PreviewBody,
     if found is None:
         raise HTTPException(409, "The bill for this case is no longer available.")
     try:
-        result = rules.corrected_reading(found[0].bill, body.corrected_present_reading,
-                                          policy_store.get(complaint.discom))
+        return corrected_preview(complaint, found[0], body.corrected_present_reading)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+
+
+def corrected_preview(complaint: Complaint, a: Analysis, present: float) -> Preview:
+    """The engine's price of the case's bill at a corrected reading. ValueError when it cannot be priced."""
+    result = rules.corrected_reading(a.bill, present, policy_store.get(complaint.discom))
     return Preview(corrected_units=result.corrected_units or 0, revised_amount=result.revised_amount,
                    reduction=result.reduction, needs_approval=result.needs_approval)
 

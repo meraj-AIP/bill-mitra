@@ -1,7 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { Account } from '@/features/auth';
-import { getJson, sendJson } from '@/shared/api/http';
+import { getJson, postForm, sendJson } from '@/shared/api/http';
 import { queryKeys } from '@/shared/api/queryKeys';
 import type { Page } from '@/shared/api/types';
 
@@ -37,6 +37,11 @@ export interface AuditEntry {
   target_label: string | null;
   detail: string | null;
 }
+
+export interface ImportedAccount { line: number; login: string; name: string; role: string; unit: string; password: string }
+
+/** Passwords appear in this response once. They are never logged, cached or stored by the page. */
+export interface AccountImportResult { created: ImportedAccount[]; errors: Array<{ line: number; detail: string }> }
 
 export function useAccounts(query: AccountQuery) {
   const params = new URLSearchParams({ page: String(query.page), page_size: String(query.pageSize) });
@@ -88,5 +93,19 @@ export function useAuditLog(page: number, pageSize: number, action: string) {
     queryKey: queryKeys.auditLog({ page, pageSize, action }),
     queryFn: ({ signal }) => getJson<Page<AuditEntry>>(`/api/admin/audit?${params.toString()}`, signal),
     placeholderData: keepPreviousData,
+  });
+}
+
+export function useImportAccounts() {
+  const onSuccess = useRefreshAccounts();
+  return useMutation({
+    mutationFn: (file: File) => {
+      const form = new FormData();
+      form.append('file', file, file.name);
+      return postForm<AccountImportResult>('/api/admin/accounts/import', form);
+    },
+    onSuccess,
+    // The result holds one-time passwords, so the mutation cache drops it as soon as the dialog unmounts.
+    gcTime: 0,
   });
 }

@@ -10,11 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, StringConstraints
 
 from app.api.deps import require_perm
-from app.api.review import DECIDABLE, CaseDetail, case_analysis, detail, find_case
+from app.api.review import DECIDABLE, CaseDetail, Preview, case_analysis, corrected_preview, detail, find_case
 from app.domain import review as rules
 from app.domain.conversation.facts import rs
 from app.domain.review import MIN_NOTE, DecisionKind, ReasonCode
-from app.flows import cases
+from app.flows import cases, drafts
 from app.store import accounts, repos
 from app.store import complaints as complaint_store
 from app.store import policy as policy_store
@@ -110,6 +110,30 @@ def _decision(account: Account, decision_id: int) -> tuple[dict[str, Any], Compl
     if found is None:
         raise HTTPException(404, "Decision not found.")
     return found, find_case(account, found["ticket"])
+
+
+class DraftOut(drafts.Draft):
+    preview: Preview | None  # the engine's figures for a corrected reading; null on a correct draft
+
+
+@router.get("/cases/{ticket}/draft", response_model=DraftOut | None)
+async def draft(ticket: str, account: Decider) -> DraftOut | None:
+    """A suggested decision from the rules, for the AE to use or ignore. Null when no rule is sure enough."""
+    complaint = find_case(account, ticket)
+    row = store.row(ticket)
+    found = case_analysis(complaint)
+    if complaint.status not in OPEN_STATUSES or row is None or row["state"] not in DECIDABLE or found is None:
+        return None
+    a = found[0]
+    suggested = drafts.from_misread(complaint, a)
+    if suggested and suggested.corrected_present_reading is not None:
+        try:
+            return DraftOut(**suggested.model_dump(),
+                            preview=corrected_preview(complaint, a, suggested.corrected_present_reading))
+        except ValueError:
+            pass  # the engine cannot price it (no reduction), so it is no draft; fall back to the other rules
+    correct = drafts.clear_correct(complaint, a, cases.spike_for(a), store.requests(ticket))
+    return DraftOut(**correct.model_dump(), preview=None) if correct else None
 
 
 @router.post("/cases/{ticket}/decisions", response_model=CaseDetail)

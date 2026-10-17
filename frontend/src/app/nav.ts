@@ -1,4 +1,4 @@
-import { can, canAny, isConsumer, type Account, type Permission } from '@/features/auth';
+import { can, canAny, isConsumer, PERMISSIONS, type Account, type Permission } from '@/features/auth';
 
 export interface NavItem {
   to: string;
@@ -27,6 +27,8 @@ export const REVIEW: readonly Permission[] = ['cases.view'];
 export const CONSUMER: readonly Permission[] = ['self.bills'];
 // System health has no permission of its own; the server serves it to account managers.
 export const HEALTH: readonly Permission[] = ['accounts.manage'];
+// Alerts are for any staff account. self.bills is the one permission only consumers carry, so staff is everything else.
+export const STAFF: readonly Permission[] = PERMISSIONS.filter((p) => p !== 'self.bills');
 
 const MANAGE: Entry[] = [
   { to: '/admin/accounts', label: 'Accounts', hint: 'Staff sign ins, roles and units', any: ['accounts.manage'] },

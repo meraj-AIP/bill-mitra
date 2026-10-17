@@ -1,22 +1,22 @@
 """Roles, units and review policy: the access setup a super admin owns. Every write is audited."""
 
-import csv
-import io
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from app.api.deps import in_scope, require_perm, viewer
+from app.core.uploads import read_csv
 from app.domain import rbac
 from app.domain.review import Policy
+from app.domain.section_match import closest
 from app.flows import cases
 from app.store import accounts, roles, units
 from app.store import policy as policy_store
 from app.store.accounts import Account
 from app.store.db import DISCOM_UNITS
 from app.store.roles import Role
-from app.store.units import Conflict, Unit, Unmapped
+from app.store.units import Conflict, SectionSuggestion, Unit, Unmapped
 
 router = APIRouter(prefix="/api/admin", tags=["access"])
 
@@ -28,7 +28,6 @@ PolicyManager = Annotated[Account, Depends(require_perm("policy.manage"))]
 RoleReader = Annotated[Account, Depends(require_perm("accounts.manage"))]
 Name = Annotated[str, Field(min_length=1, max_length=80)]
 Aliases = Annotated[list[Annotated[str, Field(max_length=80)]], Field(max_length=20)]
-IMPORT_MAX_BYTES = 1024 * 1024
 IMPORT_MAX_ROWS = 5000
 IMPORT_COLUMNS = ("kind", "name", "code", "parent_code", "discom", "ero_code", "aliases")
 
@@ -175,20 +174,8 @@ async def patch_unit(unit_id: str, body: UnitPatch, actor: UnitManager) -> Unit:
 
 @router.post("/units/import", response_model=units.ImportResult)
 async def import_units(file: UploadFile, actor: UnitManager) -> units.ImportResult:
-    data = await file.read(IMPORT_MAX_BYTES + 1)
-    if len(data) > IMPORT_MAX_BYTES:
-        raise HTTPException(413, "The CSV must be under 1 MB.")
-    try:
-        reader = csv.DictReader(io.StringIO(data.decode("utf-8-sig")))
-        rows = [row for _, row in zip(range(IMPORT_MAX_ROWS + 1), reader, strict=False)]
-    except (UnicodeDecodeError, csv.Error) as exc:
-        raise HTTPException(400, "The file is not a readable UTF-8 CSV.") from exc
-    if not set(IMPORT_COLUMNS) <= set(reader.fieldnames or []):
-        raise HTTPException(400, f"The header must be {','.join(IMPORT_COLUMNS)}.")
-    if len(rows) > IMPORT_MAX_ROWS:
-        raise HTTPException(413, f"At most {IMPORT_MAX_ROWS} rows per file.")
+    numbered = await read_csv(file, IMPORT_COLUMNS, IMPORT_MAX_ROWS)
     allowed = {d for d, u in DISCOM_UNITS.items() if in_scope(actor, u)}
-    numbered = list(enumerate(rows, start=2))  # line 1 is the header
     result = units.import_rows([(n, r) for n, r in numbered if (r.get("discom") or "").strip() in allowed])
     result.errors += [{"line": n, "detail": "This DISCOM is outside your scope."}
                       for n, r in numbered if (r.get("discom") or "").strip() not in allowed]
@@ -200,7 +187,13 @@ async def import_units(file: UploadFile, actor: UnitManager) -> units.ImportResu
 
 @router.get("/units/unmapped", response_model=list[Unmapped])
 async def list_unmapped(actor: UnitManager) -> list[Unmapped]:
-    return [u for u in units.unmapped() if in_scope(actor, DISCOM_UNITS[u.discom])]
+    """Each name carries up to three likely sections the actor may map it to."""
+    items = [u for u in units.unmapped() if in_scope(actor, DISCOM_UNITS[u.discom])]
+    names = {d: units.section_names(d, viewer(actor)) for d in {u.discom for u in items}}
+    for item in items:
+        item.suggestions = [SectionSuggestion(section_id=i, name=n, score=score)
+                            for i, n, score in closest(units.norm(item.name), names[item.discom])]
+    return items
 
 
 @router.post("/units/unmapped/map", status_code=204)

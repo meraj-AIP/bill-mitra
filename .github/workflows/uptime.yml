@@ -1,0 +1,20 @@
+name: Uptime
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check the public health endpoint
+        run: |
+          body="$(curl -fsS --max-time 15 --retry 3 --retry-delay 20 --retry-all-errors \
+            https://aikam.tryaiplanet.com/api/health)"
+          echo "$body" | grep -q '"status":"ok"' || { echo "Unexpected health body: $body"; exit 1; }
+          echo "Bill Mitra is up"

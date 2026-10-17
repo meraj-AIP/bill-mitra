@@ -142,17 +142,36 @@ _EVENT_COLUMNS = {"ms": "INTEGER"}
 _ACCOUNT_COLUMNS = {"consent_version": "TEXT", "consented_at": "TEXT"}
 _AUDIT_COLUMNS = {"unit_id": "TEXT"}
 _REQUEST_COLUMNS = {"months": "TEXT"}  # JSON list of YYYY-MM on a request the system raised for earlier bills
+# Automation (app/flows/automation.py): when a request was reminded, when a case went to the division above.
+_AUTOMATION_COLUMNS = (("case_requests", {"reminded_at": "TEXT"}), ("complaints", {"escalated_at": "TEXT"}))
+_AUTOMATION_DDL = (
+    "CREATE TABLE IF NOT EXISTS alerts (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, unit_id TEXT, account_id TEXT, "
+    "ticket TEXT, title TEXT NOT NULL, body TEXT NOT NULL, perm TEXT, dedupe_key TEXT UNIQUE, "
+    "created_at TEXT DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE INDEX IF NOT EXISTS idx_alerts_unit ON alerts(unit_id, id)",
+    "CREATE INDEX IF NOT EXISTS idx_alerts_account ON alerts(account_id, id)",
+    "CREATE TABLE IF NOT EXISTS alert_reads (alert_id INTEGER NOT NULL, account_id TEXT NOT NULL, "
+    "PRIMARY KEY (alert_id, account_id))",
+)
+
+
+# A correction the rules found for a case on their own (app/flows/misread.py). The AE still decides.
+_SUGGESTIONS_DDL = ("CREATE TABLE IF NOT EXISTS case_suggestions (ticket TEXT PRIMARY KEY, kind TEXT NOT NULL, "
+                    "corrected_present_reading INTEGER, source_bill_id TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
     # Table and column names come from the constants above, never from input; DDL cannot take parameters.
     for table, columns in (("bills", _BILL_COLUMNS), ("complaints", _COMPLAINT_COLUMNS), ("events", _EVENT_COLUMNS),
                            ("accounts", _ACCOUNT_COLUMNS), ("complaint_messages", _MESSAGE_COLUMNS),
-                           ("audit_log", _AUDIT_COLUMNS), ("case_requests", _REQUEST_COLUMNS)):
+                           ("audit_log", _AUDIT_COLUMNS), ("case_requests", _REQUEST_COLUMNS), *_AUTOMATION_COLUMNS):
         present = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
         for name, kind in columns.items():
             if name not in present:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
+    for statement in _AUTOMATION_DDL:
+        conn.execute(statement)
+    conn.execute(_SUGGESTIONS_DDL)
     conn.commit()
 
 

@@ -11,6 +11,7 @@ import { CaptureReport } from './CaptureReport';
 import { ComplainOnWhatsApp } from './ComplainOnWhatsApp';
 import { ChargesCheck } from './ChargesCheck';
 import { HistoryChart } from './HistoryChart';
+import { MisreadNote } from './MisreadNote';
 import { LanguageSelect } from './LanguageSelect';
 import { OutcomeBanner, RetakeHelp } from './OutcomeBanner';
 import { QuietReport, SpikeNote } from './ReviewRequest';
@@ -101,6 +102,7 @@ export function BillReportView({ report, language, onLanguage, onRetry, imageUrl
         <Stack sx={{ gap: 2, opacity: reloading ? 0.6 : 1, transition: 'opacity 200ms' }} aria-busy={reloading}>
           <OutcomeBanner report={report} />
           <Review report={report} language={language} />
+          {report.misread && <MisreadNote misread={report.misread} language={language} />}
           {report.analysis?.audit.status === 'mismatch' && <ComplainOnWhatsApp />}
           {needsRetake && <RetakeHelp report={report} onRetry={onRetry} />}
           {outcome === 'reading_off' && (

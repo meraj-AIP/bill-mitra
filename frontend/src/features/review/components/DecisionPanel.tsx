@@ -6,7 +6,7 @@ import { useDebounced } from '@/shared/hooks/useDebounced';
 
 import { useDecide, usePreview } from '../api/reviewApi';
 import type { CaseDetail, DecisionKind, ReasonCode } from '../api/types';
-import { emptyDraft, evidenceOptions, outcomeOf, parseAmount, problemsOf, toBody, type DecisionDraft } from '../model/decision';
+import { emptyDraft, evidenceOptions, outcomeOf, parseAmount, problemsOf, toBody, withCited, type DecisionDraft } from '../model/decision';
 import { MIN_NOTE, REASON } from '../model/labels';
 import { DecisionSummary } from './DecisionSummary';
 import { AmountFields, KindChoice } from './DecisionFields';
@@ -65,9 +65,9 @@ function Blocking({ items }: { items: string[] }) {
 }
 
 /** Recording a decision. Every figure comes from the engine preview or the AE's own typed amount. */
-export function DecisionPanel({ c }: { c: CaseDetail }) {
+export function DecisionPanel({ c, initial }: { c: CaseDetail; initial: DecisionDraft }) {
   const decide = useDecide(c.ticket);
-  const [draft, setDraft] = useState<DecisionDraft>(emptyDraft);
+  const [draft, setDraft] = useState<DecisionDraft>(initial);
   const [checked, setChecked] = useState(false);
   const reading = useDebounced(draft.kind === 'corrected_reading' ? parseAmount(draft.reading) : null, 400);
   const preview = usePreview(c.ticket, reading);
@@ -100,7 +100,7 @@ export function DecisionPanel({ c }: { c: CaseDetail }) {
           problems={{ reading: readingProblem, reduction: show('reduction') }} />
         <ReasonField kind={draft.kind} value={draft.reason} onChange={(reason) => patch({ reason })} error={show('reason')} />
         <NoteField value={draft.note} onChange={(note) => patch({ note })} error={show('note')} />
-        <EvidencePicker options={evidenceOptions(c)} value={draft.evidence} onChange={(evidence) => patch({ evidence })} error={show('evidence')} />
+        <EvidencePicker options={withCited(evidenceOptions(c), initial.evidence)} value={draft.evidence} onChange={(evidence) => patch({ evidence })} error={show('evidence')} />
         <DecisionSummary kind={draft.kind} outcome={outcome} c={c} />
         <Blocking items={blocking} />
         {decide.error && <Alert severity="error">{decide.error.message}</Alert>}

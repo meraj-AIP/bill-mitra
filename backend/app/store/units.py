@@ -43,11 +43,18 @@ class Scope(BaseModel):
     discom: str = Field(exclude=True)
 
 
+class SectionSuggestion(BaseModel):
+    section_id: str
+    name: str
+    score: float
+
+
 class Unmapped(BaseModel):
     name: str
     discom: str
     count: int
     last_seen: str
+    suggestions: list[SectionSuggestion] = []
 
 
 def norm(name: str) -> str:
@@ -271,6 +278,24 @@ def unmapped() -> list[Unmapped]:
         rows = conn.execute("SELECT name, discom, count, last_seen FROM unmapped_sections "
                             "ORDER BY count DESC, last_seen DESC LIMIT ?", (LIST_LIMIT,)).fetchall()
     return [Unmapped(**dict(r)) for r in rows]
+
+
+def section_names(discom: str, viewer: str | None) -> list[tuple[str, str, str]]:
+    """(section id, section name, normalised name or alias) for the active sections of a DISCOM. `viewer` keeps
+    only sections that account covers; None means all."""
+    with tx() as conn:
+        rows = conn.execute("SELECT u.id, u.name, n.norm FROM section_names n JOIN units u ON u.id = n.unit_id "
+                            "WHERE n.discom = :d AND u.kind = 'section' AND u.active = 1 AND "
+                            f"(:v IS NULL OR u.id IN {covered_sql(':v')})",
+                            {"d": discom, "v": viewer}).fetchall()
+    return [(r[0], r[1], r[2]) for r in rows]
+
+
+def by_code(code: str) -> list[Unit]:
+    """Units with this code in any DISCOM (codes are unique within a DISCOM only)."""
+    with tx() as conn:
+        rows = conn.execute(f"{_UNIT} WHERE u.code = ? LIMIT 3", (code,)).fetchall()
+    return [_unit(r) for r in rows]
 
 
 def map_unmapped(name: str, discom: str, section_id: str) -> Unit:

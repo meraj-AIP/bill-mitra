@@ -8,7 +8,7 @@ from app.domain import capture
 from app.domain.bill import ExtractedBill
 from app.domain.conversation import composer, guard
 from app.domain.conversation.facts import rs
-from app.flows import case_bills, cases, meter
+from app.flows import case_bills, cases, meter, misread
 from app.flows.analysis import Analysis, analyse
 from app.flows.turn import Turn
 from app.services import charts, llm, vision
@@ -144,6 +144,7 @@ async def handle_bill(turn: Turn, bill: ExtractedBill, media_id: str | None) -> 
     turn.state.current_bill_id = bill_id
     turn.state.awaiting = None
     await case_bills.tell_attached(turn, case_bills.attach_upload(turn.state.user_id, bill_id, bill, media_id))
+    found = misread.after_bill_saved(turn.state.user_id, bill, bill_id)
     async with turn.tracer.step("Estimate next month", "rules") as step:
         p = a.prediction
         step.note(f"{p.units_low} to {p.units_high} units, about Rs {rs(p.amount)} ({p.method})")
@@ -155,6 +156,7 @@ async def handle_bill(turn: Turn, bill: ExtractedBill, media_id: str | None) -> 
                if a.audit.status == "mismatch" else [("why", "btn_why"), ("next", "btn_next"), ("save", "btn_save")])
     await turn.buttons(composer.summary_card(a.facts, turn.lang), options)
     await cases.offer(turn, a)
+    await cases.offer_misread(turn, found, bill.discom)
     repos.log_event(turn.inbound.channel, "bill_read", language=turn.lang, audit_status=a.audit.status,
                     units=a.comp.units, amount=a.comp.net, discom=bill.discom, section=bill.section)
     if a.prediction.crosses:

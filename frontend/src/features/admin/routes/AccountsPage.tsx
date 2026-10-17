@@ -1,5 +1,6 @@
 import PeopleOutlineIcon from '@mui/icons-material/PeopleOutlined';
 import PersonAddAltOutlinedIcon from '@mui/icons-material/PersonAddAltOutlined';
+import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import { Button, Container, MenuItem, Stack, TextField } from '@mui/material';
 import { useState } from 'react';
 
@@ -14,10 +15,11 @@ import { useRoles } from '../api/rolesApi';
 import { AccountsTable } from '../components/AccountsTable';
 import { CreateAccountDialog } from '../components/CreateAccountDialog';
 import { EditAccountDialog } from '../components/EditAccountDialog';
+import { ImportAccountsDialog } from '../components/ImportAccountsDialog';
 import { ResetPasswordDialog } from '../components/ResetPasswordDialog';
 import { useAccountsParams } from '../hooks/useAdminParams';
 
-type OpenDialog = { kind: 'create' } | { kind: 'edit' | 'reset'; account: Account } | null;
+type OpenDialog = { kind: 'create' | 'import' } | { kind: 'edit' | 'reset'; account: Account } | null;
 
 function Filters({ params }: { params: ReturnType<typeof useAccountsParams> }) {
   const { query, setFilter } = params;
@@ -60,9 +62,16 @@ export function AccountsPage() {
       <Stack sx={{ gap: 3 }}>
         <PageHeader eyebrow="Administration" title="Accounts"
           lead="Consumers register themselves. Staff accounts are created here, each with one role and the units it covers."
-          actions={<Button variant="contained" startIcon={<PersonAddAltOutlinedIcon />} onClick={() => setDialog({ kind: 'create' })}>
-            Create staff account
-          </Button>} />
+          actions={(
+            <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1 }}>
+              <Button variant="outlined" startIcon={<UploadFileOutlinedIcon />} onClick={() => setDialog({ kind: 'import' })}>
+                Import from CSV
+              </Button>
+              <Button variant="contained" startIcon={<PersonAddAltOutlinedIcon />} onClick={() => setDialog({ kind: 'create' })}>
+                Create staff account
+              </Button>
+            </Stack>
+          )} />
         <Filters params={params} />
         <ListPanel result={result} page={query.page} pageSize={query.pageSize} onPage={params.setPage} onPageSize={params.setPageSize}
           empty={empty}>
@@ -73,6 +82,7 @@ export function AccountsPage() {
         </ListPanel>
       </Stack>
       <CreateAccountDialog open={dialog?.kind === 'create'} onClose={close} />
+      {dialog?.kind === 'import' && <ImportAccountsDialog onClose={close} />}
       {dialog?.kind === 'edit' && (
         <EditAccountDialog key={dialog.account.id} account={dialog.account} isSelf={dialog.account.id === me?.id} onClose={close} />
       )}

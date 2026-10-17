@@ -2,6 +2,7 @@ import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded';
 import { AppBar, Box, Button, Container, Link as MuiLink, Stack, Tab, Tabs, Typography } from '@mui/material';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
+import { AlertsBell } from '@/features/alerts';
 import { AccountMenu, isConsumer, landingFor, useAuth } from '@/features/auth';
 import { ModeStatus } from '@/shared/components/ModeStatus';
 
@@ -85,12 +86,13 @@ export function AppShell() {
         <Container maxWidth="lg">
           <Stack direction="row" sx={{ pt: { xs: 1.5, md: 2 }, pb: 1, gap: 2, alignItems: 'center', justifyContent: 'space-between' }}>
             <Brand home={home} />
-            <Stack direction="row" sx={{ gap: 2, alignItems: 'center' }}>
+            <Stack direction="row" sx={{ gap: { xs: 1, sm: 2 }, alignItems: 'center' }}>
               {staff && (
                 <Box sx={{ display: { xs: 'none', md: 'block' } }}>
                   <ModeStatus />
                 </Box>
               )}
+              {staff && <AlertsBell />}
               <AccountMenu />
             </Stack>
           </Stack>

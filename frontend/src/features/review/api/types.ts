@@ -177,3 +177,17 @@ export interface NewDecision {
   note: string;
   evidence: Array<{ kind: Evidence['kind']; id: string }>;
 }
+
+/** A decision worked out by the rules for the AE to check. Nothing is recorded until the AE records it. */
+export interface Draft {
+  kind: Extract<DecisionKind, 'correct' | 'corrected_reading'>;
+  corrected_present_reading: number | null;
+  reason_code: ReasonCode;
+  note: string;
+  evidence: Array<{ kind: 'bill' | 'message'; id: string }>;
+  strength: 'strong' | 'likely';
+  /** One line per rule that fired. */
+  why: string[];
+  /** The engine's figures at the corrected reading, when there is one. */
+  preview: Preview | null;
+}

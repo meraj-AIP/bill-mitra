@@ -99,4 +99,20 @@ export const JOURNEYS: Journey[] = [
         edges: ['staffapi>actions', 'actions>db'], payload: 'audit_log += role.update | role.reset\nPOST /api/admin/roles/{slug}/reset' },
     ],
   },
+  {
+    name: 'The system follows up on its own',
+    staffOnly: true,
+    steps: [
+      { title: 'Next bill shows a misread', body: 'When next month\'s bill prints a previous reading lower than this bill\'s present reading, the meter was read too high. The case gets a suggested corrected reading.',
+        edges: ['svc>review', 'review>engine', 'review>db'], payload: 'next.previous_reading < earlier.present_reading\ncase_suggestions += { corrected_present_reading }' },
+      { title: 'A decision is drafted', body: 'The AE opens the case to a suggested decision with its reasons and evidence ticked. The engine prices it. The AE still records it.',
+        edges: ['officer>desk', 'desk>staffapi', 'staffapi>review', 'review>engine'], payload: 'GET /api/review/cases/{ticket}/draft\n{ kind, reason_code, note, evidence, strength, why, preview }' },
+      { title: 'Nobody has to chase', body: 'Every 15 minutes the scheduler reminds consumers after 3 days, closes unanswered requests after 7, and flags overdue cases, then escalates them a level up.',
+        edges: ['sched>review', 'sched>sender', 'sender>meta', 'meta>consumer', 'sched>desk'], payload: 'run_reminders, run_lapses, run_overdue, run_digest\naudit actor = System' },
+      { title: 'Billing closes the loop', body: 'When the DISCOM records show the revised amount was billed, the revision is marked applied and the consumer is told.',
+        edges: ['sched>review', 'review>billing', 'actions>db'], payload: 'records[month].billed_amount == revised_amount (within Rs 1)\nrevision.applied_auto' },
+      { title: 'Patterns reach managers', body: 'When corrected readings cluster in one section, the division gets an alert, so the fix can start with the meter reading round.',
+        edges: ['sched>desk', 'officer>desk'], payload: 'corrected_reading decisions in 90 days >= 3\nalert pattern_section to the division' },
+    ],
+  },
 ];

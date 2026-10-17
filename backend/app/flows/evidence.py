@@ -134,10 +134,14 @@ def pack(ticket: str, found: tuple[Analysis, str | None] | None, spike: Spike) -
 
 TIMELINE_TEXT = {"case.route": "Routed", "case.pack": "Evidence pack built", "case.request": "Asked the consumer for",
                  "case.attach": "Sent a requested bill", "case.no_bills": "Said they do not have the requested bills",
-                 "case.assign": "Assigned", "case.unmask": "Viewed the full service number",
+                 "case.assign": "Assigned", "case.suggestion": "Found a misread from the next bill", "case.unmask": "Viewed the full service number",
                  "decision.create": "Recorded a decision", "decision.approve": "Approved the decision",
                  "decision.reject": "Rejected the decision", "decision.withdraw": "Withdrew the decision",
-                 "decision.applied": "Marked the revision applied in the billing system"}
+                 "decision.applied": "Marked the revision applied in the billing system",
+                 "case.remind": "Reminded the consumer about", "case.lapse": "Closed the request with no reply, "
+                 "checked with what is on file", "case.overdue": "Past the decision target",
+                 "case.escalate": "Escalated", "revision.applied_auto": "Marked the revision applied: the DISCOM "
+                 "billing records show the revised amount"}
 CONSUMER_ACTIONS = {"case.attach", "case.no_bills"}
 
 
