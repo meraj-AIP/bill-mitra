@@ -357,9 +357,9 @@ def _upgrade(conn: sqlite3.Connection) -> None:
         for statement in _PERF_INDEXES:
             conn.execute(statement)
         # Here, not at the top: these modules import this one.
-        from app.store import extract_jobs, outbox, proposals, wa_queue
+        from app.store import extract_jobs, outbox, proposals, voice_cache, wa_queue
 
-        for queue in (wa_queue, outbox, extract_jobs, proposals):
+        for queue in (wa_queue, outbox, extract_jobs, proposals, voice_cache):
             queue.ensure(conn)
         if isinstance(conn, pg.Conn):
             for table in pg.ROWID_TABLES:

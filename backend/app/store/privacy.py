@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from app.config import get_settings
-from app.store import media, repos
+from app.store import media, repos, voice_cache
 from app.store.db import tx
 
 log = logging.getLogger(__name__)
@@ -22,6 +22,7 @@ def erase_account(account_id: str, user_id: str) -> None:
     with tx() as conn:
         used = repos.erase_chat(conn, user_id)
         conn.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+        voice_cache.erase(conn, user_id)
         conn.execute("DELETE FROM sessions WHERE account_id = ?", (account_id,))
         # Not a valid scrypt record, so no password can ever match it.
         conn.execute("UPDATE accounts SET active = 0, login = ?, name = 'Deleted account', password_hash = ?, "
@@ -50,6 +51,7 @@ def sweep() -> SweepResult:
                            "(SELECT bill_id FROM complaints WHERE bill_id IS NOT NULL)", (f"-{days} days",)).fetchall()
         conn.executemany("DELETE FROM bills WHERE id = ?", [(r["id"],) for r in old])
         conn.execute("DELETE FROM chat_messages WHERE ts < datetime('now', ?)", (f"-{days} days",))
+        voice_cache.sweep(conn, days)
         conn.execute("UPDATE users SET current_bill_id = NULL WHERE current_bill_id IS NOT NULL AND "
                      "current_bill_id NOT IN (SELECT id FROM bills)")
     files = media.discard_unreferenced(r["media_id"] for r in old) + media.discard_stale(days)

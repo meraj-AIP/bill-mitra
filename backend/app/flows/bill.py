@@ -1,5 +1,7 @@
 """Photo or PDF in, explained and checked bill out."""
 
+import hashlib
+import json
 import time
 from typing import Literal
 
@@ -13,7 +15,7 @@ from app.flows.analysis import Analysis, analyse
 from app.flows.turn import Turn
 from app.services import charts, llm, vision
 from app.services.openai_client import ProviderError
-from app.store import extract_jobs, media, repos
+from app.store import extract_jobs, media, repos, voice_cache
 
 LANG_NAMES = {"te": "Telugu", "en": "English", "hi": "Hindi", "ur": "Urdu"}
 MIN_TREND_MONTHS = 3
@@ -137,14 +139,27 @@ def _check_note(a: Analysis) -> str:
     return note
 
 
+def _explanation_key(turn: Turn, a: Analysis) -> str:
+    """The same consumer, language, model and bill figures give the same explanation, so it is written once."""
+    raw = json.dumps([turn.state.user_id, turn.lang, get_settings().openai_text_model, a.facts.model_dump(mode="json")],
+                     sort_keys=True)
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
 async def _explanation(turn: Turn, a: Analysis, discom: str | None) -> str:
     template = " ".join(composer.explain(a.facts, turn.lang))
+    key = _explanation_key(turn, a)
 
     def logged(kind: str, text: str) -> str:
         repos.log_event(turn.inbound.channel, "explain", language=turn.lang, intent=kind, discom=discom)
         return text
 
     async with turn.tracer.step(f"Explain in {LANG_NAMES.get(turn.lang, 'Telugu')}", "ai") as step:
+        kept = voice_cache.explanation(key)
+        if kept is not None:
+            # Written and number checked before; the identical text also finds its voice note already made.
+            step.note("Same bill as before: the checked explanation already written is reused", "rules")
+            return logged("reused", kept)
         written = await llm.explain(a.facts, turn.lang)
         if written is None:
             step.note("Checked template: every figure comes from the engine (no language-model key set)", "rules")
@@ -156,6 +171,7 @@ async def _explanation(turn: Turn, a: Analysis, discom: str | None) -> str:
             return logged("llm_fallback", template)
         step.note(f"Language model wrote it. Number check passed: {check.figures_checked} of "
                   f"{check.figures_checked} figures traced to the engine")
+        voice_cache.remember_explanation(key, turn.state.user_id, written)
         return logged("llm_pass", written)
 
 

@@ -1,29 +1,22 @@
-"""Telugu-first voice notes with Sarvam Bulbul. Audio is cached on disk by text, so a rehearsed
-demo replays without the network and a repeated sentence never costs twice."""
+"""Telugu-first voice notes with Sarvam Bulbul. Audio is kept by its exact text and voice settings
+(app/store/voice_cache.py), so a sentence already spoken is never paid for twice, by any worker."""
 
 import base64
 import hashlib
-import json
 import logging
 import re
-import threading
 
 import httpx
 
 from app.config import get_settings
 from app.core import retry
 from app.domain.conversation.lang import VOICE_CODES
-from app.store import media
+from app.store import media, voice_cache
 
 log = logging.getLogger(__name__)
-_lock = threading.Lock()
 CHUNK_LIMIT = 1200  # characters; Bulbul v3 accepts 2500, shorter chunks start playing sooner
 # Voice is optional: after this the explanation goes as text, so it gives up quickly.
 VOICE = retry.Policy(attempts=2, base_s=1.0, max_s=4.0, budget_s=15.0)
-
-
-def _index_path():  # type: ignore[no-untyped-def]
-    return get_settings().data_dir / "tts_index.json"
 
 
 def _cache_key(text: str, language: str) -> str:
@@ -33,21 +26,9 @@ def _cache_key(text: str, language: str) -> str:
 
 
 def _cached(key: str) -> list[str] | None:
-    path = _index_path()
-    if not path.exists():
-        return None
-    ids = json.loads(path.read_text()).get(key)
-    if ids and all(media.path_for(i) for i in ids):
-        return list(ids)
-    return None
-
-
-def _remember(key: str, ids: list[str]) -> None:
-    with _lock:
-        path = _index_path()
-        index = json.loads(path.read_text()) if path.exists() else {}
-        index[key] = ids
-        path.write_text(json.dumps(index))
+    """The clips for this text, while their files are still on disk (the retention sweep removes old ones)."""
+    ids = voice_cache.voice(key)
+    return ids if ids and all(media.path_for(i) for i in ids) else None
 
 
 def chunks(text: str) -> list[str]:
@@ -108,5 +89,5 @@ async def speak(text: str, language: str) -> list[str] | None:
     except (httpx.HTTPError, *retry.TRANSPORT, KeyError, IndexError, ValueError) as exc:
         log.warning("sarvam tts failed: %s", type(exc).__name__)
         return None
-    _remember(key, ids)
+    voice_cache.remember_voice(key, ids)
     return ids
