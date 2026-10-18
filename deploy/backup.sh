@@ -24,6 +24,7 @@ umask 077
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
 stamp="$(date -u +%Y%m%d-%H%M%S)"
+media_out="$BACKUP_DIR/billmitra-media-$stamp.tar.gz"
 
 # The app reads DATABASE_URL from .env: set means the data lives in Postgres, so that is what gets dumped.
 database_url="$(grep -E '^DATABASE_URL=' "$APP_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
@@ -44,7 +45,6 @@ command -v python3 >/dev/null || fail "python3 is not installed"
 command -v setpriv >/dev/null || fail "setpriv (util-linux) is not installed"
 
 db_out="$BACKUP_DIR/billmitra-db-$stamp.sqlite3"
-media_out="$BACKUP_DIR/billmitra-media-$stamp.tar.gz"
 
 # The database is in WAL mode. Opening it as root could leave root owned -wal or -shm files that the app
 # then cannot write, so the backup runs as the owner of the database file.
