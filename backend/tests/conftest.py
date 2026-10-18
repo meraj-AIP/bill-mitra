@@ -99,7 +99,6 @@ def retry_waits(monkeypatch: pytest.MonkeyPatch) -> list[float]:
     """Retries never really sleep in tests: each wait moves a fake clock instead, so budgets still bind. Returns the
     waits asked for, in order."""
     from app.core import retry
-    from app.store import db
 
     waits: list[float] = []
     now = [0.0]
@@ -110,5 +109,4 @@ def retry_waits(monkeypatch: pytest.MonkeyPatch) -> list[float]:
 
     monkeypatch.setattr(retry, "sleep", fake_sleep)
     monkeypatch.setattr(retry, "clock", lambda: now[0])
-    monkeypatch.setattr(db, "_sleep", lambda seconds: waits.append(seconds))
     return waits

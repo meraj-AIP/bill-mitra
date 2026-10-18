@@ -82,7 +82,7 @@ def get_own(user_id: str, job_id: str) -> Job | None:
 
 
 def claim_due(now: datetime | None = None, limit: int = 20) -> list[Job]:
-    with tx() as conn:
+    with tx(immediate=True) as conn:
         rows = conn.execute(
             "UPDATE extract_jobs SET state = 'running', claimed_at = ? WHERE id IN (SELECT id FROM extract_jobs "
             "WHERE state = 'queued' AND COALESCE(next_attempt_at, '') <= ? ORDER BY created_at LIMIT ?) "

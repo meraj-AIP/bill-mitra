@@ -47,7 +47,7 @@ def ensure(conn: Any) -> None:
 
 
 def add(incoming: IncomingWhatsApp) -> None:
-    with tx() as conn:
+    with tx(immediate=True) as conn:
         conn.execute("INSERT INTO wa_turns (sender, payload) VALUES (?, ?)",
                      (incoming.wa_id, json.dumps(asdict(incoming))))
 
@@ -56,7 +56,7 @@ def claim(sender: str, now: datetime | None = None) -> Claimed | None:
     """The sender's next message, if nobody is handling one of theirs and its retry time has come. One statement, so
     two workers never both win. A message waiting for its retry holds back the sender's later ones."""
     lease = f"-{LEASE_SECONDS} seconds"
-    with tx() as conn:
+    with tx(immediate=True) as conn:
         row = conn.execute(
             "UPDATE wa_turns SET claimed_at = CURRENT_TIMESTAMP WHERE id = ("
             "  SELECT id FROM wa_turns w WHERE w.sender = ? AND w.claimed_at IS NULL AND w.state = 'queued' "
@@ -76,14 +76,14 @@ def claim(sender: str, now: datetime | None = None) -> Claimed | None:
 
 
 def done(turn_id: int) -> None:
-    with tx() as conn:
+    with tx(immediate=True) as conn:
         conn.execute("DELETE FROM wa_turns WHERE id = ?", (turn_id,))
 
 
 def fail(turn_id: int, error: str, now: datetime | None = None) -> tuple[int, bool]:
     """Record a failed try: (attempts so far, parked). `error` is an exception class name, never message text."""
     moment = now or datetime.now(UTC)
-    with tx() as conn:
+    with tx(immediate=True) as conn:
         attempts = conn.execute("UPDATE wa_turns SET attempts = attempts + 1 WHERE id = ? RETURNING attempts",
                                 (turn_id,)).fetchone()[0]
         parked = attempts >= MAX_ATTEMPTS

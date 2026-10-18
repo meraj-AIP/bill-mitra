@@ -3,18 +3,14 @@ so moving to Postgres means replacing this module, not the flows."""
 
 import fcntl
 import json
-import logging
 import sqlite3
 import threading
-import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 
 from app.config import get_settings
 from app.domain import rbac
-
-log = logging.getLogger(__name__)
 
 _ACCOUNTS_DDL = """CREATE TABLE IF NOT EXISTS accounts (
     id TEXT PRIMARY KEY, role TEXT NOT NULL, login TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
@@ -348,35 +344,49 @@ def _upgrade(conn: sqlite3.Connection) -> None:
 
 _lock = threading.Lock()
 _conn: sqlite3.Connection | None = None
-# How long one statement waits for another process's write lock, and how long tx() keeps asking for it.
-BUSY_TIMEOUT_MS = 1000
-LOCKED_BUDGET_S = 5.0
-_sleep = time.sleep
+# How long a statement waits for another worker's write lock. SQLite does the waiting (with its own backoff), so a
+# locked database is retried for this long before "database is locked" is raised.
+BUSY_TIMEOUT_MS = 5000
+# During startup one worker may build ~17 indexes on a fresh database; the others wait their turn this long.
+STARTUP_BUSY_MS = 30000
+_starting = False  # this process holds the startup lock
 
 
 @contextmanager
-def _migration_lock() -> Iterator[None]:
-    """Several uvicorn workers start at once on a fresh database; they take turns building the schema, and the later
-    ones find the work done. The lock goes with the file handle, so a worker that dies releases it."""
+def startup_lock() -> Iterator[None]:
+    """Several uvicorn workers start at once. Schema, migration and every startup write (bootstrap, retention sweep,
+    queue resume) run while holding a blocking file lock, so workers take turns and the later ones find the work done.
+    Re-entrant within the process, because connection() takes it too. The lock goes with the file handle, so a worker
+    that dies releases it."""
+    global _starting
+    if _starting:
+        yield
+        return
     with open(get_settings().data_dir / "migrate.lock", "w") as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
+        _starting = True
         try:
+            if _conn is not None:
+                _conn.execute(f"PRAGMA busy_timeout={STARTUP_BUSY_MS}")
             yield
         finally:
+            _starting = False
+            if _conn is not None:
+                _conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def connection() -> sqlite3.Connection:
     global _conn
     if _conn is None:
-        path = get_settings().data_dir / "billmitra.db"
-        conn = sqlite3.connect(path, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        # Wait briefly for a lock (tx() retries beyond that), commit without an fsync per statement (safe with WAL: a
-        # crash can lose the last commit, never corrupt), and keep hot pages in memory.
-        conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
-        try:
-            with _migration_lock():
+        with startup_lock():
+            path = get_settings().data_dir / "billmitra.db"
+            conn = sqlite3.connect(path, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            try:
+                # Commit without an fsync per statement (safe with WAL: a crash can lose the last commit, never
+                # corrupt), and keep hot pages in memory. The startup lock sets the normal busy timeout when it ends.
+                conn.execute(f"PRAGMA busy_timeout={STARTUP_BUSY_MS}")
                 conn.execute("PRAGMA journal_mode=WAL")
                 conn.execute("PRAGMA synchronous=NORMAL")
                 conn.execute("PRAGMA temp_store=MEMORY")
@@ -384,34 +394,11 @@ def connection() -> sqlite3.Connection:
                 conn.executescript(_SCHEMA)
                 _migrate(conn)
                 _upgrade(conn)
-        except BaseException:
-            conn.close()
-            raise
-        _conn = conn
-    return _conn
-
-
-def _locked(exc: sqlite3.OperationalError) -> bool:
-    message = str(exc).lower()
-    return "locked" in message or "busy" in message
-
-
-def _begin(conn: sqlite3.Connection) -> None:
-    """Take the write lock up front, so a transaction never fails half way on another worker's lock. Retried with a
-    short backoff for LOCKED_BUDGET_S; nothing has run yet, so a retry is always safe."""
-    deadline = time.monotonic() + LOCKED_BUDGET_S
-    delay = 0.05
-    for attempt in range(1, 1000):
-        try:
-            conn.execute("BEGIN IMMEDIATE")
-            return
-        except sqlite3.OperationalError as exc:
-            if not _locked(exc) or time.monotonic() + delay > deadline:
+            except BaseException:
+                conn.close()
                 raise
-            log.info("retry sqlite begin: attempt %d, database locked", attempt)
-            _sleep(delay)
-            delay = min(delay * 2, 0.5)
-    raise sqlite3.OperationalError("database is locked")
+            _conn = conn
+    return _conn
 
 
 def ts(moment: datetime | None = None) -> str:
@@ -420,10 +407,14 @@ def ts(moment: datetime | None = None) -> str:
 
 
 @contextmanager
-def tx() -> Iterator[sqlite3.Connection]:
+def tx(immediate: bool = False) -> Iterator[sqlite3.Connection]:
+    """A transaction on the shared connection. Deferred by default: a read never takes the write lock, and a write
+    takes it at its first statement, waiting up to BUSY_TIMEOUT_MS. `immediate` takes the write lock up front, for the
+    short claim paths that read and then write and must not interleave with another worker."""
     with _lock:
         conn = connection()
-        _begin(conn)
+        if immediate:
+            conn.execute("BEGIN IMMEDIATE")
         try:
             yield conn
             conn.commit()
@@ -433,10 +424,8 @@ def tx() -> Iterator[sqlite3.Connection]:
 
 
 def maintain() -> None:
-    """Daily: fold the write-ahead log back into the database file and refresh the query planner's statistics.
-    Outside tx(): a checkpoint cannot run inside an open transaction."""
-    with _lock:
-        conn = connection()
+    """Daily: fold the write-ahead log back into the database file and refresh the query planner's statistics."""
+    with tx() as conn:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         conn.execute("PRAGMA optimize")
 

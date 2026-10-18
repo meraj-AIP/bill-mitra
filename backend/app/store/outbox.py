@@ -101,7 +101,7 @@ def get(row_id: int) -> Row | None:
 
 def claim(row_id: int, now: datetime | None = None) -> Row | None:
     """Take a queued row for sending, unless an earlier row for the same person is still waiting."""
-    with tx() as conn:
+    with tx(immediate=True) as conn:
         found = conn.execute(
             f"UPDATE outbox SET state = 'sending', claimed_at = ? WHERE id = ? AND state = 'queued' AND NOT EXISTS ("
             "  SELECT 1 FROM outbox o WHERE o.recipient = outbox.recipient AND o.id < outbox.id "

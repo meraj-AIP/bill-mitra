@@ -15,8 +15,10 @@ import httpcore
 import httpx
 import pytest
 
+from app.config import get_settings
 from app.core import retry
-from app.store import db
+from app.flows import recovery
+from app.store import complaints, db, outbox, wa_queue
 
 POLICY = retry.Policy(attempts=4, base_s=1.0, max_s=8.0, budget_s=60.0)
 URL = "https://provider.example.test/v1/thing"
@@ -110,44 +112,49 @@ def test_each_retry_logs_one_line_without_the_url(caplog):
     assert URL not in caplog.text
 
 
-class Locked:
-    """The real connection, except that BEGIN IMMEDIATE meets another worker's lock a given number of times."""
+@pytest.fixture
+def held_write_lock():  # type: ignore[no-untyped-def]
+    """Another worker holds the write lock, and our connection will not wait for it, so any attempt to take it fails
+    at once instead of slowing the test."""
+    shared = db.connection()
+    other = sqlite3.connect(get_settings().data_dir / "billmitra.db", isolation_level=None)
+    other.execute("BEGIN IMMEDIATE")
+    shared.execute("PRAGMA busy_timeout=0")
+    try:
+        yield
+    finally:
+        shared.execute(f"PRAGMA busy_timeout={db.BUSY_TIMEOUT_MS}")
+        other.execute("ROLLBACK")
+        other.close()
 
-    def __init__(self, times: int, message: str = "database is locked") -> None:
-        self.real = db.connection()
-        self.times, self.message = times, message
 
-    def execute(self, sql: str, *args: object) -> sqlite3.Cursor:
-        if sql == "BEGIN IMMEDIATE" and self.times:
-            self.times -= 1
-            raise sqlite3.OperationalError(self.message)
-        return self.real.execute(sql, *args)
-
-    def __getattr__(self, name: str) -> object:
-        return getattr(self.real, name)
-
-
-def test_tx_waits_out_a_locked_database(monkeypatch, retry_waits):
-    locked = Locked(2)
-    monkeypatch.setattr(db, "connection", lambda: locked)
+def test_read_paths_never_take_the_write_lock(held_write_lock):
+    """The load test: BEGIN IMMEDIATE on every transaction made the console and the webhook queue behind writers."""
+    assert complaints.page(1, 10).total >= 0
+    assert recovery.health().inbox.queued >= 0
+    assert wa_queue.due_senders() is not None and outbox.due() is not None
     with db.tx() as conn:
-        assert conn.execute("SELECT 1").fetchone()[0] == 1
-    assert locked.times == 0 and len(retry_waits) == 2
+        conn.execute("SELECT COUNT(*) FROM alerts").fetchone()
+        assert not conn.in_transaction
+    with pytest.raises(sqlite3.OperationalError, match="locked"), db.tx(immediate=True):
+        pass  # a claim does need the lock, which proves the lock really is held
 
 
-def test_tx_does_not_retry_other_database_errors(monkeypatch, retry_waits):
-    locked = Locked(1, "disk I/O error")
-    monkeypatch.setattr(db, "connection", lambda: locked)
-    with pytest.raises(sqlite3.OperationalError), db.tx():
-        pass
-    assert retry_waits == []
+def test_only_claims_take_the_write_lock_up_front():
+    with db.tx(immediate=True) as conn:
+        assert conn.in_transaction
+    with db.tx() as conn:
+        conn.execute("SELECT 1").fetchone()
+        assert not conn.in_transaction
 
 
 def test_workers_starting_together_on_a_fresh_database_take_turns(tmp_path):
-    """Four uvicorn workers on a new database used to race in the migration and three died with 'locked'."""
+    """Four uvicorn workers on a new database used to race: first in the migration, then a finished worker's startup
+    writes against another's migration. Each process here runs the app's real startup, scheduler included."""
     backend = Path(__file__).resolve().parent.parent
-    env = {**os.environ, "DATA_DIR": str(tmp_path)}
-    code = "from app.store.db import connection; connection()"
+    env = {**os.environ, "DATA_DIR": str(tmp_path), "AUTOMATION_ENABLED": "true", "QUEUE_RETRY_ENABLED": "true"}
+    code = ("from fastapi.testclient import TestClient\nfrom app.main import app\n"
+            "with TestClient(app) as client:\n    assert client.get('/api/health').status_code == 200\n")
     workers = [subprocess.Popen([sys.executable, "-c", code], cwd=backend, env=env, stderr=subprocess.PIPE)
                for _ in range(4)]
     results = [(w.wait(timeout=120), (w.stderr.read() if w.stderr else b"").decode()[-300:]) for w in workers]

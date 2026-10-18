@@ -36,7 +36,7 @@ from app.core import security
 from app.services import http, scheduler
 from app.store import accounts, demo_accounts
 from app.store import privacy as retention
-from app.store.db import connection, purge_mock_data
+from app.store.db import connection, purge_mock_data, startup_lock
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 # httpx logs every outbound request at INFO: about 20 lines per WhatsApp conversation, with URLs. Failures are still
@@ -49,13 +49,16 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    connection()
-    accounts.bootstrap_admin()
-    demo_accounts.ensure()
-    purge_mock_data()
-    retention.sweep()
+    # Workers starting together take turns through migration and every startup write, so none meets a lock it
+    # cannot wait out. The scheduler and the resumed drains run after, once this worker's turn is over.
+    with startup_lock():
+        connection()
+        accounts.bootstrap_admin()
+        demo_accounts.ensure()
+        purge_mock_data()
+        retention.sweep()
+        whatsapp.resume()
     scheduler.start()
-    whatsapp.resume()
     try:
         yield
     finally:
