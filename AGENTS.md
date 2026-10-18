@@ -45,7 +45,10 @@ Setup and run steps are in [README.md](README.md).
 
 ## Backend
 
-- Python 3.11+, FastAPI, SQLite. Settings only through `backend/app/config.py`.
+- Python 3.11+, FastAPI. SQLite by default, Postgres when `DATABASE_URL` is set. Settings only through `backend/app/config.py`.
+- SQL is written once, in SQLite's dialect, and must run on both (docs/decisions/0001-postgres-store.md). Compare
+  flags with `= 1`, never use a comparison as a number, and read a `RETURNING` row inside the transaction. Run the
+  suite on Postgres too: `TEST_DATABASE_URL=postgresql://.../scratch_db pytest` (the suite wipes that database).
 - No secrets in code, tests or fixtures. No consumer data (names, service numbers, phone numbers) in logs.
 - `pytest` and `ruff check .` must pass before you commit.
 

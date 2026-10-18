@@ -124,7 +124,7 @@ backend/
       review.py     spike rules, decision pricing, final amounts
     flows/          bill, meter, question, complaint, report and bill review (cases, case_bills, evidence) flows
     services/       OpenAI, Sarvam and Soniox clients, complaint reply delivery, DISCOM billing records
-    store/          SQLite storage: bills, accounts, roles, units, complaints, cases, history
+    store/          storage (SQLite, or Postgres with DATABASE_URL): bills, accounts, complaints, cases
   tests/
 frontend/src/
   app/              shell and routes
