@@ -112,6 +112,9 @@ def test_each_retry_logs_one_line_without_the_url(caplog):
     assert URL not in caplog.text
 
 
+sqlite_only = pytest.mark.skipif(db.is_postgres(), reason="SQLite's write lock; Postgres has row locks")
+
+
 @pytest.fixture
 def held_write_lock():  # type: ignore[no-untyped-def]
     """Another worker holds the write lock, and our connection will not wait for it, so any attempt to take it fails
@@ -128,6 +131,7 @@ def held_write_lock():  # type: ignore[no-untyped-def]
         other.close()
 
 
+@sqlite_only
 def test_read_paths_never_take_the_write_lock(held_write_lock):
     """The load test: BEGIN IMMEDIATE on every transaction made the console and the webhook queue behind writers."""
     assert complaints.page(1, 10).total >= 0
@@ -140,6 +144,7 @@ def test_read_paths_never_take_the_write_lock(held_write_lock):
         pass  # a claim does need the lock, which proves the lock really is held
 
 
+@sqlite_only
 def test_only_claims_take_the_write_lock_up_front():
     with db.tx(immediate=True) as conn:
         assert conn.in_transaction
@@ -159,5 +164,24 @@ def test_workers_starting_together_on_a_fresh_database_take_turns(tmp_path):
                for _ in range(4)]
     results = [(w.wait(timeout=120), (w.stderr.read() if w.stderr else b"").decode()[-300:]) for w in workers]
     assert all(code == 0 for code, _ in results), results
+    if db.is_postgres():
+        return  # the shared test database already had the schema; the four startups only had to take turns
     with sqlite3.connect(tmp_path / "billmitra.db") as conn:
         assert conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('outbox', 'extract_jobs')").fetchone()[0] == 2
+
+
+@pytest.mark.skipif(not db.is_postgres(), reason="Postgres claim lock")
+def test_claims_take_turns_on_postgres_and_reads_do_not_wait():
+    """tx(immediate=True) is SQLite's BEGIN IMMEDIATE on Postgres: while one claim runs, no other claim may start,
+    and reads go on."""
+    import psycopg
+
+    from app.store import pg
+
+    with db.tx(immediate=True), psycopg.connect(get_settings().database_url, autocommit=True) as other:
+        taken = other.execute("SELECT pg_try_advisory_lock(%s)", (pg.CLAIM_LOCK,)).fetchone()
+        assert taken is not None and taken[0] is False
+        assert complaints.page(1, 10).total >= 0
+    with psycopg.connect(get_settings().database_url, autocommit=True) as other:
+        taken = other.execute("SELECT pg_try_advisory_lock(%s)", (pg.CLAIM_LOCK,)).fetchone()
+        assert taken is not None and taken[0] is True

@@ -35,7 +35,7 @@ from app.store.complaints import OPEN_STATUSES, Complaint, Placement
 router = APIRouter(prefix="/api/review", tags=["bill review"])
 
 NOT_FOUND = "Case not found."
-DECIDABLE = ("awaiting_review", "info_requested", "rejected")
+DECIDABLE = cases.DECIDABLE
 CaseKind = Literal["earlier_bills", "meter_photo", "note"]
 Viewer = Annotated[Account, Depends(require_perm("cases.view"))]
 DAY = r"^\d{4}-\d{2}-\d{2}$"
@@ -221,24 +221,24 @@ def detail(account: Account, complaint: Complaint) -> CaseDetail:
 
 
 @router.get("/cases", response_model=CasePage)
-async def list_cases(account: Viewer, page: Annotated[int, Query(ge=1, le=1000)] = 1,
-                     page_size: Annotated[int, Query(ge=5, le=50)] = 10, state: store.State | None = None,
-                     mine: bool = False, overdue: bool | None = None,
-                     section_id: Annotated[str | None, Query(max_length=40)] = None,
-                     q: Annotated[str | None, Query(max_length=40)] = None, sort: store.CaseSort = "oldest"
-                     ) -> store.CasePage:
+def list_cases(account: Viewer, page: Annotated[int, Query(ge=1, le=1000)] = 1,
+               page_size: Annotated[int, Query(ge=5, le=50)] = 10, state: store.State | None = None,
+               mine: bool = False, overdue: bool | None = None,
+               section_id: Annotated[str | None, Query(max_length=40)] = None,
+               q: Annotated[str | None, Query(max_length=40)] = None, sort: store.CaseSort = "oldest"
+               ) -> store.CasePage:
     return store.page(page, page_size, viewer=viewer(account), state=state, mine=account.id if mine else None,
                       overdue=overdue, section_id=section_id, q=q, sort=sort)
 
 
 @router.get("/sections")
-async def sections(account: Viewer) -> list[dict[str, str]]:
+def sections(account: Viewer) -> list[dict[str, str]]:
     """Sections that hold cases this account can see, for the queue's section filter."""
     return store.sections(viewer(account))
 
 
 @router.get("/cases/{ticket}", response_model=CaseDetail)
-async def get_case(ticket: str, account: Viewer) -> CaseDetail:
+def get_case(ticket: str, account: Viewer) -> CaseDetail:
     return detail(account, find_case(account, ticket))
 
 
@@ -311,10 +311,10 @@ CSV_COLUMNS = ("ticket", "revision", "bill_month", "service_masked", "section", 
 
 
 @router.get("/revisions.csv")
-async def export(account: Annotated[Account, Depends(require_perm("cases.export"))],
-                 since: Annotated[str | None, Query(alias="from", pattern=DAY)] = None,
-                 until: Annotated[str | None, Query(alias="to", pattern=DAY)] = None,
-                 ero_id: Annotated[str | None, Query(max_length=40)] = None) -> StreamingResponse:
+def export(account: Annotated[Account, Depends(require_perm("cases.export"))],
+           since: Annotated[str | None, Query(alias="from", pattern=DAY)] = None,
+           until: Annotated[str | None, Query(alias="to", pattern=DAY)] = None,
+           ero_id: Annotated[str | None, Query(max_length=40)] = None) -> StreamingResponse:
     rows = store.revisions(viewer=viewer(account), since=since, until=until, ero_id=ero_id)
     accounts.audit(account.id, "revision.export", None, f"{len(rows)} rows")
     name = f"bill-mitra-revisions-{datetime.now(UTC):%Y%m%d}.csv"

@@ -15,7 +15,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, NamedTuple
 
 from app.channels.whatsapp.mapper import IncomingWhatsApp
-from app.store.db import ts, tx
+from app.store.db import columns, ts, tx
 
 # A turn that has run this long belongs to a worker that died; another worker may take it over.
 LEASE_SECONDS = 300
@@ -39,7 +39,7 @@ class Claimed(NamedTuple):
 def ensure(conn: Any) -> None:
     for statement in _DDL:
         conn.execute(statement)
-    present = {row[1] for row in conn.execute("PRAGMA table_info(wa_turns)")}
+    present = columns(conn, "wa_turns")
     for name, kind in _COLUMNS.items():
         if name not in present:
             conn.execute(f"ALTER TABLE wa_turns ADD COLUMN {name} {kind}")

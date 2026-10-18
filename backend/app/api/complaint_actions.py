@@ -88,7 +88,7 @@ class BulkResult(BaseModel):
 
 
 @router.get("/{ticket}/options", response_model=Options)
-async def options(ticket: str, account: Viewer) -> Options:
+def options(ticket: str, account: Viewer) -> Options:
     """Replies and requests that fit this complaint. Rules only: no model is called when the page opens."""
     ctx = complaint_flow.options_context(_for_staff(account, ticket))
     return Options(triage=ctx.triage,
@@ -123,7 +123,7 @@ async def request_info(ticket: str, body: InfoRequest, account: Replier) -> Comp
 
 
 @router.get("/{ticket}/media/{media_id}")
-async def ticket_media(ticket: str, media_id: str, account: MediaViewer) -> FileResponse:
+def ticket_media(ticket: str, media_id: str, account: MediaViewer) -> FileResponse:
     """A photo or bill on this complaint, for staff who can see it. Anything else is a 404, never a 403."""
     complaint = store.get(ticket)
     path = media.path_for(media_id)
@@ -150,7 +150,7 @@ async def retry(ticket: str, message_id: int, account: Replier) -> ComplaintDeta
     return _detail(complaint, account)
 
 
-async def _apply(ticket: str, body: BulkAction, account: Account) -> str | None:
+async def apply_one(ticket: str, body: BulkAction, account: Account) -> str | None:
     """Returns why a ticket was skipped, or None when it was done."""
     try:
         complaint = _for_staff(account, ticket)
@@ -176,7 +176,7 @@ async def _apply(ticket: str, body: BulkAction, account: Account) -> str | None:
 async def bulk(body: BulkAction, account: Replier) -> BulkResult:
     done, skipped = [], []
     for ticket in body.tickets:
-        reason = await _apply(ticket, body, account)
+        reason = await apply_one(ticket, body, account)
         if reason:
             skipped.append({"ticket": ticket, "reason": reason})
         else:

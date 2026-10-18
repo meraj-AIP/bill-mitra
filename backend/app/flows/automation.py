@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 from app.config import get_settings
 from app.domain.conversation.facts import rs
-from app.flows import case_bills, cases
+from app.flows import case_bills, cases, proposals
 from app.services import billing_records
 from app.store import accounts, complaints, db, privacy, units
 from app.store import automation as store
@@ -182,6 +182,11 @@ async def run_patterns(now: datetime) -> int:
     return done
 
 
+async def run_proposals(now: datetime) -> int:
+    """Routine actions prepared for an officer to approve. Reads bills and runs the engine, so off the event loop."""
+    return await asyncio.to_thread(proposals.run, now)
+
+
 _swept: set[str] = set()
 
 
@@ -200,4 +205,5 @@ async def run_retention(now: datetime) -> int:
 # Lapses first: a request already past the lapse point is closed, not reminded and closed in the same run.
 JOBS: tuple[tuple[str, Callable[[datetime], Awaitable[int]]], ...] = (
     ("lapses", run_lapses), ("reminders", run_reminders), ("overdue", run_overdue), ("digest", run_digest),
-    ("auto_applied", run_auto_applied), ("patterns", run_patterns), ("retention", run_retention))
+    ("auto_applied", run_auto_applied), ("patterns", run_patterns), ("proposals", run_proposals),
+    ("retention", run_retention))

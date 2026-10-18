@@ -30,10 +30,8 @@ class ChatPage(BaseModel):
 def record_in(inbound: Inbound) -> int:
     body = inbound.model_dump(include={"kind", "text", "reply_id", "media_id", "mime_type"}, exclude_none=True)
     with tx() as conn:
-        cursor = conn.execute("INSERT INTO chat_messages (user_id, sender, body) VALUES (?, 'user', ?)",
-                              (inbound.user_id, json.dumps(body, ensure_ascii=False)))
-    return int(cursor.lastrowid or 0)
-
+        return int(conn.execute("INSERT INTO chat_messages (user_id, sender, body) VALUES (?, 'user', ?) RETURNING id",
+                                (inbound.user_id, json.dumps(body, ensure_ascii=False))).fetchall()[0][0])
 
 def record_out(user_id: str, message: dict[str, Any]) -> None:
     with tx() as conn:

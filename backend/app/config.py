@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     whatsapp_graph_url: str = "https://graph.facebook.com/v21.0"
 
     data_dir: Path = BACKEND_DIR / "var"
+    # Empty keeps the SQLite file in data_dir. A postgresql:// URL moves the store to Postgres (app/store/pg.py).
+    database_url: str = ""
+    database_pool_size: int = 10  # connections per worker process
     frontend_dist: Path = BACKEND_DIR.parent / "frontend" / "dist"
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
     request_timeout_s: float = 45.0
@@ -77,6 +80,9 @@ class Settings(BaseSettings):
     digest_hour_ist: int = Field(default=8, ge=0, le=23)
     pattern_window_days: int = Field(default=90, ge=1)
     pattern_min_cases: int = Field(default=3, ge=2)
+    # Routine actions prepared for an officer to approve (app/flows/proposals.py).
+    proposal_wait_minutes: int = Field(default=30, ge=0)  # a new complaint's consumer may still be sending things
+    proposal_batch: int = Field(default=300, ge=1, le=5000)  # complaints looked at per pass
     # Queue recovery (app/flows/recovery.py): retried inbound turns, queued sends and bill reads, the stuck sweep.
     queue_retry_enabled: bool = True
     queue_interval_seconds: int = Field(default=30, ge=5)

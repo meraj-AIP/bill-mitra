@@ -38,7 +38,7 @@ class Health(BaseModel):
 
 
 @router.get("/health", response_model=Health)
-async def health() -> Health:
+def health() -> Health:
     s = get_settings()
     live = "live"
     return Health(status="ok", modes=Modes(
@@ -51,7 +51,7 @@ async def health() -> Health:
 
 
 @router.get("/media/{media_id}")
-async def get_media(media_id: str, _: AnyAccount) -> FileResponse:
+def get_media(media_id: str, _: AnyAccount) -> FileResponse:
     path = media.path_for(media_id)
     if path is None:
         raise HTTPException(404, "Not found")
@@ -60,7 +60,7 @@ async def get_media(media_id: str, _: AnyAccount) -> FileResponse:
 
 
 @router.get("/tariffs")
-async def tariffs() -> list[dict[str, object]]:
+def tariffs() -> list[dict[str, object]]:
     out = []
     for version in TARIFF_VERSIONS:
         data = asdict(version)
@@ -73,7 +73,7 @@ async def tariffs() -> list[dict[str, object]]:
 
 
 @router.get("/tariffs/calculate")
-async def calculate(
+def calculate(
     units: int = Query(ge=0, le=2000),
     month: str = Query("2026-10", pattern=r"^\d{4}-\d{2}$"),
     gruha_jyothi: bool = False,

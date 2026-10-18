@@ -29,7 +29,7 @@ class PrivacyNotice(BaseModel):
 
 
 @router.get("/api/privacy", response_model=PrivacyNotice)
-async def notice() -> PrivacyNotice:
+def notice() -> PrivacyNotice:
     settings = get_settings()
     return PrivacyNotice(version=settings.privacy_notice_version, retention_days=settings.retention_days,
                          contact=settings.privacy_contact or None, purposes=PURPOSES)

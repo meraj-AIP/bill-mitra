@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app.store.db import DISCOM_UNITS, tx
+from app.store.db import DISCOM_UNITS, IntegrityError, tx
 
 Kind = Literal["discom", "circle", "division", "subdivision", "section", "ero"]
 PARENT_KIND: dict[str, str] = {"circle": "discom", "division": "circle", "subdivision": "division",
@@ -167,7 +167,7 @@ def _create(conn: sqlite3.Connection, kind: str, name: str, code: str | None, pa
                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                      (unit_id, kind, name.strip(), code or None, parent.discom, parent.id, ero_id,
                       json.dumps(_clean_aliases(aliases))))
-    except sqlite3.IntegrityError as exc:
+    except IntegrityError as exc:
         raise Conflict("A unit with this code already exists in the DISCOM.") from exc
     unit = _get(conn, unit_id)
     assert unit is not None
@@ -195,7 +195,7 @@ def _update(conn: sqlite3.Connection, unit: Unit, changes: dict[str, Any]) -> Un
     try:
         for column, value in allowed.items():
             conn.execute(f"UPDATE units SET {column} = ? WHERE id = ?", (value, unit.id))
-    except sqlite3.IntegrityError as exc:
+    except IntegrityError as exc:
         raise Conflict("A unit with this code already exists in the DISCOM.") from exc
     updated = _get(conn, unit.id)
     assert updated is not None
@@ -276,7 +276,7 @@ def match_section(discom: str | None, printed: str | None) -> str | None:
 def record_unmapped(discom: str, printed: str) -> None:
     with tx() as conn:
         conn.execute("INSERT INTO unmapped_sections (discom, norm, name, count) VALUES (?, ?, ?, 1) "
-                     "ON CONFLICT(discom, norm) DO UPDATE SET count = count + 1, last_seen = CURRENT_TIMESTAMP",
+                     "ON CONFLICT(discom, norm) DO UPDATE SET count = unmapped_sections.count + 1, last_seen = CURRENT_TIMESTAMP",
                      (discom, norm(printed), printed.strip()[:80]))
 
 

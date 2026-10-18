@@ -221,12 +221,12 @@ async def _change_status(complaint: Complaint, new_status: Status, account: Acco
 
 
 @router.get("/api/console/complaints", response_model=RowPage)
-async def console_list(account: Viewer, page: PageNo = 1, page_size: PageSize = 10, status: Status | None = None,
-                       discom: Discom | None = None, q: Annotated[str | None, Query(max_length=40)] = None,
-                       sort: Sort = "priority", triage: Triage | None = None, failed: bool = False,
-                       kind: Kind | None = None, type: TypeCode | None = None, priority: Priority | None = None,
-                       source: Source | None = None, with_me: bool = False, waiting_on_me: bool = False
-                       ) -> store.Page:
+def console_list(account: Viewer, page: PageNo = 1, page_size: PageSize = 10, status: Status | None = None,
+                 discom: Discom | None = None, q: Annotated[str | None, Query(max_length=40)] = None,
+                 sort: Sort = "priority", triage: Triage | None = None, failed: bool = False,
+                 kind: Kind | None = None, type: TypeCode | None = None, priority: Priority | None = None,
+                 source: Source | None = None, with_me: bool = False, waiting_on_me: bool = False
+                 ) -> store.Page:
     """`with_me`: complaints this account holds. `waiting_on_me`: those it holds where it is staff's move."""
     more = store.Filters(type=type, priority=priority, source=source,
                          holder=account.id if with_me or waiting_on_me else None,
@@ -241,11 +241,11 @@ CSV_COLUMNS = ("ticket", "created_at", "updated_at", "status", "discom", "bill_m
 
 
 @router.get("/api/console/complaints.csv")
-async def console_export(account: Viewer, status: Status | None = None, discom: Discom | None = None,
-                         q: Annotated[str | None, Query(max_length=40)] = None,
-                         sort: Literal["newest", "oldest"] = "newest", kind: Kind | None = None,
-                         type: TypeCode | None = None, priority: Priority | None = None,
-                         source: Source | None = None) -> StreamingResponse:
+def console_export(account: Viewer, status: Status | None = None, discom: Discom | None = None,
+                   q: Annotated[str | None, Query(max_length=40)] = None,
+                   sort: Literal["newest", "oldest"] = "newest", kind: Kind | None = None,
+                   type: TypeCode | None = None, priority: Priority | None = None,
+                   source: Source | None = None) -> StreamingResponse:
     rows = store.export(status=status, discom=discom, q=q, newest=sort == "newest", viewer=viewer(account), kind=kind,
                         more=store.Filters(type=type, priority=priority, source=source))
     accounts.audit(account.id, "complaint.export", None, f"{len(rows)} rows")
@@ -255,7 +255,7 @@ async def console_export(account: Viewer, status: Status | None = None, discom: 
 
 
 @router.get("/api/console/complaints/{ticket}", response_model=ComplaintDetail)
-async def console_detail(ticket: str, account: Viewer) -> ComplaintDetail:
+def console_detail(ticket: str, account: Viewer) -> ComplaintDetail:
     return _detail(_for_staff(account, ticket), account)
 
 

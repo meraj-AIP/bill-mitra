@@ -4,6 +4,7 @@ import { lazy, Suspense, type ReactNode } from 'react';
 import { createBrowserRouter, Link, Navigate, RouterProvider, type RouteObject } from 'react-router-dom';
 
 import { AlertsPage } from '@/features/alerts';
+import { ApprovalsPage } from '@/features/approvals';
 import { landingFor, LoginPage, PrivacyPage, PublicOnly, RegisterPage, RequirePermission, useAuth, type Permission } from '@/features/auth';
 import { BillPage, DashboardPage } from '@/features/dashboard';
 import { NetworkError, onUnauthorized } from '@/shared/api/http';
@@ -13,7 +14,7 @@ import { EmptyState } from '@/shared/components/States';
 import { theme } from '@/theme';
 
 import { AppShell } from './AppShell';
-import { ASSISTANT, COMPLAINTS, CONSOLE, CONSUMER, HEALTH, navFor, OPERATIONS, REVIEW, STAFF } from './nav';
+import { APPROVALS, ASSISTANT, COMPLAINTS, CONSOLE, CONSUMER, HEALTH, navFor, OPERATIONS, REVIEW, STAFF } from './nav';
 
 const AssistantPage = lazy(() => import('@/features/assistant').then((m) => ({ default: m.AssistantPage })));
 const ConsolePage = lazy(() => import('@/features/console').then((m) => ({ default: m.ConsolePage })));
@@ -106,6 +107,7 @@ const router = createBrowserRouter([
           lazyRoute('console/complaints/:ticket', <ComplaintDetailPage />),
         ]),
         gated(REVIEW, [lazyRoute('review', <ReviewQueuePage />), lazyRoute('review/:ticket', <CasePage />)]),
+        gated(APPROVALS, [{ path: 'approvals', element: <ApprovalsPage /> }]),
         gated(STAFF, [{ path: 'alerts', element: <AlertsPage /> }]),
         { path: 'admin', element: <AdminHome /> },
         gated(['accounts.manage'], [lazyRoute('admin/accounts', <AccountsPage />)]),

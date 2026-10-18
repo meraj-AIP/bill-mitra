@@ -33,6 +33,9 @@ export const queryKeys = {
     ['bills', 'list', page, pageSize, status, sort] as const,
   bill: (id: string, language: string) => ['bills', 'one', id, language] as const,
   assistantHistory: ['assistant', 'history'] as const,
+  approvals: ['approvals'] as const,
+  approvalList: (query: object) => ['approvals', 'list', query] as const,
+  approvalCount: ['approvals', 'count'] as const,
   alerts: ['alerts'] as const,
   alertList: (query: object) => ['alerts', 'list', query] as const,
 };

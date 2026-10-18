@@ -26,6 +26,7 @@ from app.api import (
     consumer_complaints,
     operations,
     privacy,
+    proposals,
     review,
     review_decisions,
 )
@@ -78,7 +79,7 @@ app.middleware("http")(security.protect)
 
 for router in (auth.router, privacy.router, admin.router, alerts.router, access.router, catalog.router, bills.router,
                bills_by_usc.router, complaints.router, complaint_actions.router, complaint_handoff.router,
-               complaint_raise.router, assist.router, consumer_complaints.router, console.router, review.router,
+               complaint_raise.router, assist.router, proposals.router, consumer_complaints.router, console.router, review.router,
                review_decisions.router, operations.router, web.router, whatsapp.router):
     app.include_router(router)
 

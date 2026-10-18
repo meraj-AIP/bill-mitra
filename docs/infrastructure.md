@@ -94,14 +94,31 @@ What this means for the target:
 - The console is now the ceiling, at about 10 requests a second across all staff on 4 workers, because its SQL runs
   on the event loop (section 4).
 
+**The same mixed test on Postgres** (4 workers, the same 300,000 complaint copy moved over with
+`app.tools.sqlite_to_postgres`, Postgres 17 on the same laptop):
+
+| | SQLite, 4 workers | Postgres, 4 workers |
+| --- | --- | --- |
+| Webhook errors | 0% | 0% |
+| Webhook p95 | 2.9 s | 1.1 s |
+| Webhook max | 14.5 s | 3.1 s |
+| Complaints completed | 344 of 344 | 344 of 344 |
+| Console requests a second | 15.1 | 20.3 |
+| Console p95 | 12.0 s | 6.7 s |
+| Console errors | 0% | 0% |
+
+Read handlers now run in FastAPI's thread pool (`def`, not `async def`), so on Postgres several console queries run
+at once instead of one after another on the event loop. What is left are the two heaviest queries, the priority
+sorted complaint list and the 30 day daily chart. Each takes about a second on its own and several seconds when many
+run at once on the same machine as the load generator. Keyset pagination and the daily rollup (section 7) fix both.
+
 The scripts are kept outside the repo; rerun the same journeys after each step in section 7.
 
 ## 4. What still limits a single server
 
-1. **SQLite runs on the event loop.** Every query blocks the whole process while it runs. With the fixes most
-   queries take a millisecond or two, so this is fine at the average load, but one slow query still pauses every
-   user. The real fix is Postgres with a connection pool, which the code is ready for: all SQL lives in
-   `backend/app/store/`.
+1. **Writes and the WhatsApp turn still run SQL on the event loop.** Read handlers moved to the thread pool; on
+   SQLite they still take turns on one connection, on Postgres each gets its own pooled connection. The app runs on
+   Postgres when `DATABASE_URL` is set (docs/decisions/0001-postgres-store.md).
 2. **The WhatsApp queue lives in SQLite on one host.** It keeps order across workers and survives restarts, but it
    cannot be shared by several servers. Pub/Sub with an ordering key per sender replaces it on GCP (section 5).
 3. **Several processes share little.** Four workers on SQLite work well (no lock errors in the test) and the
@@ -183,8 +200,16 @@ Sizing to start with:
    --forwarded-allow-ips *`, keep the 127.0.0.1 port binding, raise `mem_limit` from 1g to 2g (four workers peaked
    at about 0.8 GB under load), and add log rotation (`logging: max-size 20m, max-file 5`). Turn on gzip in nginx for
    `text/*`, `application/javascript` and `application/json`. Copy the nightly backups to a GCS bucket.
-2. **Before the pilot grows:** media to Cloud Storage; Postgres on Cloud SQL by replacing `backend/app/store/`;
-   Redis for rate limits and caches.
+2. **Before the pilot grows:** media to Cloud Storage; Postgres on Cloud SQL; Redis for rate limits and caches.
+   Moving to Postgres needs no code change:
+   1. Create the database with C collation, so text sorts byte by byte as it does in SQLite:
+      `CREATE DATABASE billmitra TEMPLATE template0 ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C'`.
+   2. Stop the app and copy the data once:
+      `DATABASE_URL=postgresql://... python -m app.tools.sqlite_to_postgres var/billmitra.db`. It refuses a database
+      that already holds accounts, complaints, bills or events, and copies everything in one transaction.
+   3. Set `DATABASE_URL` (and `DATABASE_POOL_SIZE`, 10 per worker by default; workers times pool size must stay
+      under the server's `max_connections`) and start the app. Keep the SQLite file until the new setup has run
+      for a week.
 3. **For full scale:** the ingest service with Pub/Sub, the turns worker, the scheduler as one Cloud Run job, the
    load balancer with Cloud Armor, and the static app on Cloud Storage with Cloud CDN.
 4. **Then:** a daily rollup for console counts, keyset pagination for very deep lists, and retention for events,

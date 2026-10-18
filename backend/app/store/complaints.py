@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from app.domain import complaint_types
 from app.domain.bill import ExtractedBill
 from app.store import handoffs, policy
-from app.store.db import tx
+from app.store.db import IntegrityError, tx
 from app.store.units import Conflict, covered_sql, norm
 
 INDIA = ZoneInfo("Asia/Kolkata")
@@ -109,7 +109,7 @@ VISIBLE = (f"(c.assigned_to = ? OR c.unit_id IN {covered_sql()} OR c.section_id 
            f"AND d.id IN {covered_sql()})))")
 VISIBLE_PARAMS = 7
 _ROW = ("SELECT c.ticket, c.created_at, c.updated_at, c.status, c.service_masked, c.bill_month, c.discom, c.issue, "
-        f"c.amount, c.language, c.channel, c.kind, c.unit_id, c.section_id, c.assigned_to, {_TRIAGE} AS triage, COALESCE({_FAILED}, 0) AS delivery_failed, "
+        f"c.amount, c.language, c.channel, c.kind, c.unit_id, c.section_id, c.assigned_to, {_TRIAGE} AS triage, CASE WHEN {_FAILED} THEN 1 ELSE 0 END AS delivery_failed, "
         "c.type, c.priority, c.due_at, c.source, c.ownership, c.demo, c.description, "
         "(SELECT r.name FROM accounts r WHERE r.id = c.raised_by) AS raised_by, "
         "(SELECT u.name FROM units u WHERE u.id = c.section_id) AS section, "
@@ -358,14 +358,15 @@ def add_message(ticket: str, author_kind: AuthorKind, author_id: str | None, bod
                 f"SELECT 1 FROM complaints c WHERE c.ticket = ? AND {_OPEN}", (ticket,)).fetchone():
             return None
         cursor = conn.execute("INSERT INTO complaint_messages (ticket, author_kind, author_id, body, delivery, "
-                              "delivery_note, media_id, wa_message_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                              "delivery_note, media_id, wa_message_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
                               (ticket, author_kind, author_id, body, delivery, delivery_note, media_id, wamid))
+        message_id = int(cursor.fetchall()[0][0])
         conn.execute("UPDATE complaints SET updated_at = CURRENT_TIMESTAMP WHERE ticket = ?", (ticket,))
         if outbox_id:
-            conn.execute("UPDATE outbox SET message_id = ? WHERE id = ?", (cursor.lastrowid, outbox_id))
+            conn.execute("UPDATE outbox SET message_id = ? WHERE id = ?", (message_id, outbox_id))
     if author_kind == "consumer":
         handoffs.consumer_replied(ticket, bool(media_id))
-    return cursor.lastrowid
+    return message_id
 
 
 def message(ticket: str, message_id: int) -> dict[str, Any] | None:
@@ -412,5 +413,5 @@ def set_status(ticket: str, status: Status) -> None:
         with tx() as conn:
             conn.execute("UPDATE complaints SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE ticket = ?",
                          (status, ticket))
-    except sqlite3.IntegrityError as exc:
+    except IntegrityError as exc:
         raise AlreadyOpen(ticket) from exc

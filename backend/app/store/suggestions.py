@@ -39,5 +39,6 @@ def save(ticket: str, kind: SuggestionKind, corrected_present_reading: int, sour
 
 def get(ticket: str) -> Suggestion | None:
     with tx() as conn:
-        row = conn.execute("SELECT * FROM case_suggestions WHERE ticket = ?", (ticket,)).fetchone()
+        row = conn.execute("SELECT ticket, kind, corrected_present_reading, source_bill_id, created_at "
+                           "FROM case_suggestions WHERE ticket = ?", (ticket,)).fetchone()
     return Suggestion(**dict(row)) if row else None

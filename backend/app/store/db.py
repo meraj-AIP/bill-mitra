@@ -1,5 +1,5 @@
-"""SQLite storage for the pilot. The repository functions are the only SQL in the app,
-so moving to Postgres means replacing this module, not the flows."""
+"""Storage: SQLite in data_dir by default, Postgres when DATABASE_URL is set (app/store/pg.py). The repository
+functions are the only SQL in the app and are written once, in SQLite's dialect, for both."""
 
 import fcntl
 import json
@@ -8,9 +8,14 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from typing import Any
+
+import psycopg
+from psycopg_pool import ConnectionPool
 
 from app.config import get_settings
 from app.domain import rbac
+from app.store import pg
 
 _ACCOUNTS_DDL = """CREATE TABLE IF NOT EXISTS accounts (
     id TEXT PRIMARY KEY, role TEXT NOT NULL, login TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
@@ -150,7 +155,9 @@ _ACCOUNT_COLUMNS = {"consent_version": "TEXT", "consented_at": "TEXT"}
 _AUDIT_COLUMNS = {"unit_id": "TEXT"}
 _REQUEST_COLUMNS = {"months": "TEXT"}  # JSON list of YYYY-MM on a request the system raised for earlier bills
 # Automation (app/flows/automation.py): when a request was reminded, when a case went to the division above.
-_AUTOMATION_COLUMNS = (("case_requests", {"reminded_at": "TEXT"}), ("complaints", {"escalated_at": "TEXT"}))
+# proposal_checked_at: the complaint's last change the proposal rules have seen (app/flows/proposals.py).
+_AUTOMATION_COLUMNS = (("case_requests", {"reminded_at": "TEXT"}),
+                       ("complaints", {"escalated_at": "TEXT", "proposal_checked_at": "TEXT"}))
 # Hand-off (docs/assist-contract.md section 4): who handed the complaint to its holder, with what note, and when.
 # answer_message_id is the consumer message that answered a request.
 _HANDOFF_COLUMNS = (("complaints", {"handed_by": "TEXT", "handoff_note": "TEXT", "handed_at": "TEXT"}),
@@ -212,18 +219,33 @@ def _grant(conn: sqlite3.Connection, perm: str, slugs: tuple[str, ...]) -> None:
                          (json.dumps([p for p in rbac.PERMISSIONS if p in {*perms, perm}]), slug))
 
 
+# What a unique or check constraint raises, on either database.
+IntegrityError = (sqlite3.IntegrityError, psycopg.IntegrityError)
+
+
+def is_postgres() -> bool:
+    return bool(get_settings().database_url)
+
+
+def columns(conn: Any, table: str) -> set[str]:
+    """The column names of a table; the table name is always a constant, never input."""
+    if isinstance(conn, pg.Conn):
+        return pg.columns(conn, table)
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
-    complaint_columns = {row[1] for row in conn.execute("PRAGMA table_info(complaints)")}
+    complaint_columns = columns(conn, "complaints")
     first_intake = "type" not in complaint_columns
     first_handoff = "handed_by" not in complaint_columns
     # Table and column names come from the constants above, never from input; DDL cannot take parameters.
-    for table, columns in (("bills", _BILL_COLUMNS), ("complaints", _COMPLAINT_COLUMNS), ("events", _EVENT_COLUMNS),
+    for table, added in (("bills", _BILL_COLUMNS), ("complaints", _COMPLAINT_COLUMNS), ("events", _EVENT_COLUMNS),
                            ("complaints", _INTAKE_COLUMNS),
                            ("accounts", _ACCOUNT_COLUMNS), ("complaint_messages", _MESSAGE_COLUMNS),
                            ("audit_log", _AUDIT_COLUMNS), ("case_requests", _REQUEST_COLUMNS), *_AUTOMATION_COLUMNS,
                            *_HANDOFF_COLUMNS):
-        present = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
-        for name, kind in columns.items():
+        present = columns(conn, table)
+        for name, kind in added.items():
             if name not in present:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
     for statement in _AUTOMATION_DDL:
@@ -284,6 +306,8 @@ def _rebuild_accounts(conn: sqlite3.Connection) -> None:
     """The first accounts table had a CHECK on role that SQLite cannot drop, so it is rebuilt once, keeping every
     id, hash and timestamp. A DISCOM officer gets a scope on that DISCOM, an officer
     without one (all DISCOMs) and every former admin a scope on both."""
+    if isinstance(conn, pg.Conn):
+        return  # Postgres starts from the current accounts table
     found = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'accounts'").fetchone()
     if found is None or "CHECK" not in found[0]:
         return
@@ -320,8 +344,9 @@ _PERF_INDEXES = (
 
 
 def _upgrade(conn: sqlite3.Connection) -> None:
-    # One transaction, so a failed rebuild leaves the old table exactly as it was.
-    conn.execute("BEGIN IMMEDIATE")
+    # One transaction, so a failed rebuild leaves the old table exactly as it was. Postgres runs all of startup in one.
+    if not isinstance(conn, pg.Conn):
+        conn.execute("BEGIN IMMEDIATE")
     try:
         _seed(conn)
         _rebuild_accounts(conn)
@@ -332,10 +357,13 @@ def _upgrade(conn: sqlite3.Connection) -> None:
         for statement in _PERF_INDEXES:
             conn.execute(statement)
         # Here, not at the top: these modules import this one.
-        from app.store import extract_jobs, outbox, wa_queue
+        from app.store import extract_jobs, outbox, proposals, wa_queue
 
-        for queue in (wa_queue, outbox, extract_jobs):
+        for queue in (wa_queue, outbox, extract_jobs, proposals):
             queue.ensure(conn)
+        if isinstance(conn, pg.Conn):
+            for table in pg.ROWID_TABLES:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS rowid BIGINT GENERATED BY DEFAULT AS IDENTITY")
         conn.commit()
     except Exception:
         conn.rollback()
@@ -344,6 +372,8 @@ def _upgrade(conn: sqlite3.Connection) -> None:
 
 _lock = threading.Lock()
 _conn: sqlite3.Connection | None = None
+_pg: pg.Conn | None = None  # autocommit, for startup and for callers outside tx()
+_pool: ConnectionPool | None = None
 # How long a statement waits for another worker's write lock. SQLite does the waiting (with its own backoff), so a
 # locked database is retried for this long before "database is locked" is raised.
 BUSY_TIMEOUT_MS = 5000
@@ -355,12 +385,20 @@ _starting = False  # this process holds the startup lock
 @contextmanager
 def startup_lock() -> Iterator[None]:
     """Several uvicorn workers start at once. Schema, migration and every startup write (bootstrap, retention sweep,
-    queue resume) run while holding a blocking file lock, so workers take turns and the later ones find the work done.
-    Re-entrant within the process, because connection() takes it too. The lock goes with the file handle, so a worker
-    that dies releases it."""
+    queue resume) run while holding a blocking lock, so workers take turns and the later ones find the work done.
+    SQLite takes a file lock, Postgres an advisory lock, which also covers several instances. Re-entrant within the
+    process, because connection() takes it too. A worker that dies releases it."""
     global _starting
     if _starting:
         yield
+        return
+    if is_postgres():
+        with pg.connect(get_settings().database_url) as raw, pg.advisory(raw, pg.STARTUP_LOCK):
+            _starting = True
+            try:
+                yield
+            finally:
+                _starting = False
         return
     with open(get_settings().data_dir / "migrate.lock", "w") as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
@@ -376,8 +414,36 @@ def startup_lock() -> Iterator[None]:
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-def connection() -> sqlite3.Connection:
+def _build(conn: Any) -> None:
+    conn.executescript(_SCHEMA)
+    _migrate(conn)
+    _upgrade(conn)
+
+
+def _postgres() -> pg.Conn:
+    global _pg, _pool
+    if _pg is None:
+        with startup_lock():
+            settings = get_settings()
+            conn = pg.Conn(pg.connect(settings.database_url))
+            try:
+                with conn.raw.transaction():
+                    conn.raw.execute(pg.FUNCTIONS)
+                    _build(conn)
+            except BaseException:
+                conn.raw.close()
+                raise
+            _pool = pg.pool(settings.database_url, settings.database_pool_size)
+            _pg = conn
+    return _pg
+
+
+def connection() -> Any:
+    """The shared SQLite connection, or on Postgres an autocommit connection. Opening it builds or upgrades the
+    schema. Repository code uses tx()."""
     global _conn
+    if is_postgres():
+        return _postgres()
     if _conn is None:
         with startup_lock():
             path = get_settings().data_dir / "billmitra.db"
@@ -391,9 +457,7 @@ def connection() -> sqlite3.Connection:
                 conn.execute("PRAGMA synchronous=NORMAL")
                 conn.execute("PRAGMA temp_store=MEMORY")
                 conn.execute("PRAGMA cache_size=-65536")
-                conn.executescript(_SCHEMA)
-                _migrate(conn)
-                _upgrade(conn)
+                _build(conn)
             except BaseException:
                 conn.close()
                 raise
@@ -407,10 +471,19 @@ def ts(moment: datetime | None = None) -> str:
 
 
 @contextmanager
-def tx(immediate: bool = False) -> Iterator[sqlite3.Connection]:
-    """A transaction on the shared connection. Deferred by default: a read never takes the write lock, and a write
-    takes it at its first statement, waiting up to BUSY_TIMEOUT_MS. `immediate` takes the write lock up front, for the
-    short claim paths that read and then write and must not interleave with another worker."""
+def tx(immediate: bool = False) -> Iterator[Any]:
+    """A transaction. Deferred by default: a read never takes the write lock, and a write takes it at its first
+    statement, waiting up to BUSY_TIMEOUT_MS. `immediate` takes the write lock up front, for the short claim paths
+    that read and then write and must not interleave with another worker. On Postgres each transaction has its own
+    pooled connection, and `immediate` takes the shared claim lock, so claims still run one at a time."""
+    if is_postgres():
+        _postgres()
+        assert _pool is not None
+        with _pool.connection() as raw:
+            if immediate:
+                raw.execute("SELECT pg_advisory_xact_lock(%s)", (pg.CLAIM_LOCK,))
+            yield pg.Conn(raw)
+        return
     with _lock:
         conn = connection()
         if immediate:
@@ -424,7 +497,11 @@ def tx(immediate: bool = False) -> Iterator[sqlite3.Connection]:
 
 
 def maintain() -> None:
-    """Daily: fold the write-ahead log back into the database file and refresh the query planner's statistics."""
+    """Daily. SQLite: fold the write-ahead log back into the database file. Both: refresh the planner's statistics
+    (autovacuum does it too on Postgres; a daily pass keeps the console's plans current after a busy day)."""
+    if is_postgres():
+        connection().execute("ANALYZE")
+        return
     with tx() as conn:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         conn.execute("PRAGMA optimize")
@@ -440,7 +517,11 @@ def purge_mock_data() -> None:
 
 
 def reset_for_tests() -> None:
-    global _conn
+    global _conn, _pg, _pool
     if _conn is not None:
         _conn.close()
-    _conn = None
+    if _pool is not None:
+        _pool.close()
+    if _pg is not None:
+        _pg.raw.close()
+    _conn, _pg, _pool = None, None, None

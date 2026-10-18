@@ -56,7 +56,7 @@ async def login(body: LoginRequest, response: Response) -> Account:
 
 
 @router.get("/demo-accounts", response_model=list[demo_accounts.DemoLogin])
-async def demo_logins() -> list[demo_accounts.DemoLogin]:
+def demo_logins() -> list[demo_accounts.DemoLogin]:
     """Sample logins for a demo server; empty everywhere else. Passwords are never sent."""
     return demo_accounts.listing()
 
@@ -81,7 +81,7 @@ async def logout(response: Response, token: SessionCookie = None) -> None:
 
 
 @router.get("/me", response_model=Account)
-async def me(account: AnyAccount) -> Account:
+def me(account: AnyAccount) -> Account:
     return account
 
 

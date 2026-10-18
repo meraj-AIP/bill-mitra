@@ -25,8 +25,8 @@ Staff = Annotated[Account, Depends(_staff)]
 
 
 @router.get("", response_model=AlertPage)
-async def list_alerts(account: Staff, page: Annotated[int, Query(ge=1, le=10_000)] = 1,
-                      page_size: Annotated[int, Query(ge=1, le=100)] = 20, unread: bool = False) -> AlertPage:
+def list_alerts(account: Staff, page: Annotated[int, Query(ge=1, le=10_000)] = 1,
+                page_size: Annotated[int, Query(ge=1, le=100)] = 20, unread: bool = False) -> AlertPage:
     return store.page(account, page, page_size, unread)
 
 

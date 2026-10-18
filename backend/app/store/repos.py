@@ -125,7 +125,7 @@ def list_bills(user_id: str, page: int, page_size: int, audit_status: str | None
         total = conn.execute(f"SELECT COUNT(*) FROM bills {where}", params).fetchone()[0]
         rows = conn.execute(
             f"SELECT id, created_at, bill_month, discom, units, total_payable, audit_status, overcharge, "
-            f"service_number, json_extract(extraction, '$.arrears') AS arrears, {_REVIEW_COLUMNS} FROM bills {where} ORDER BY created_at {order}, id LIMIT ? OFFSET ?",
+            f"service_number, CAST(json_extract(extraction, '$.arrears') AS REAL) AS arrears, {_REVIEW_COLUMNS} FROM bills {where} ORDER BY created_at {order}, id LIMIT ? OFFSET ?",
             [*params, page_size, (page - 1) * page_size]).fetchall()
     items = []
     for row in rows:

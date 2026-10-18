@@ -79,7 +79,7 @@ def _grantable_scopes(actor: Account, unit_ids: list[str]) -> list[str]:
 
 
 @router.get("/accounts", response_model=accounts.AccountPage)
-async def list_accounts(
+def list_accounts(
     actor: Manager,
     page: int = Query(1, ge=1, le=1000),
     page_size: int = Query(10, ge=5, le=50),
@@ -194,7 +194,7 @@ async def reset_password(account_id: str, body: NewPassword, actor: Manager) -> 
 
 
 @router.get("/audit", response_model=accounts.AuditPage)
-async def audit_log(
+def audit_log(
     actor: Auditor,
     page: int = Query(1, ge=1, le=1000),
     page_size: int = Query(10, ge=5, le=50),
@@ -204,6 +204,6 @@ async def audit_log(
 
 
 @router.get("/health")
-async def system_health(_: Manager) -> dict[str, object]:
+def system_health(_: Manager) -> dict[str, object]:
     """Provider modes plus today's warning counts, so an admin sees trouble before consumers do."""
-    return {"modes": (await catalog.health()).modes.model_dump(), **console.health()}
+    return {"modes": catalog.health().modes.model_dump(), **console.health()}

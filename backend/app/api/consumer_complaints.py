@@ -46,7 +46,7 @@ class ComplaintTypeOut(BaseModel):
 
 
 @router.get("/api/complaint-types", response_model=list[ComplaintTypeOut])
-async def types(language: Language = "en") -> list[ComplaintTypeOut]:
+def types(language: Language = "en") -> list[ComplaintTypeOut]:
     return [ComplaintTypeOut(code=t.code, category=t.category, category_label=text(language, f"ccat_{t.category}"),
                              label=text(language, t.label_key), label_key=t.label_key, needs_bill=t.needs_bill,
                              priority=t.priority, target_days=t.target_days, route=t.route)
@@ -153,15 +153,15 @@ async def create(body: ConsumerRaise, account: Owner, language: Language = "te")
 
 
 @router.get("/api/complaints", response_model=ConsumerPage)
-async def mine(account: Owner, page: Annotated[int, Query(ge=1, le=1000)] = 1,
-               page_size: Annotated[int, Query(ge=5, le=50)] = 10, language: Language = "te",
-               status: State | None = None) -> ConsumerPage:
+def mine(account: Owner, page: Annotated[int, Query(ge=1, le=1000)] = 1,
+         page_size: Annotated[int, Query(ge=5, le=50)] = 10, language: Language = "te",
+         status: State | None = None) -> ConsumerPage:
     rows, total = store.page(account.user_id, page, page_size, status)
     return ConsumerPage(items=[_view(r, language) for r in rows], total=total, page=page, page_size=page_size)
 
 
 @router.get("/api/complaints/{ticket}", response_model=ConsumerComplaintDetail)
-async def one(ticket: str, account: Owner, language: Language = "te") -> ConsumerComplaintDetail:
+def one(ticket: str, account: Owner, language: Language = "te") -> ConsumerComplaintDetail:
     return _detail(account.user_id, ticket, language)
 
 
@@ -203,7 +203,7 @@ async def photo(ticket: str, file: UploadFile, account: Owner, language: Languag
 
 
 @router.get("/api/complaints/{ticket}/media/{media_id}")
-async def own_media(ticket: str, media_id: str, account: Owner) -> FileResponse:
+def own_media(ticket: str, media_id: str, account: Owner) -> FileResponse:
     """Only a photo the consumer sent on their own complaint; anything else is a 404."""
     path = media.path_for(media_id)
     if path is None or not handoffs.consumer_media(account.user_id, ticket, media_id):

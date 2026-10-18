@@ -7,7 +7,7 @@ import sqlite3
 from pydantic import BaseModel
 
 from app.domain import rbac
-from app.store.db import tx
+from app.store.db import IntegrityError, tx
 from app.store.units import Conflict
 
 
@@ -52,7 +52,7 @@ def create(name: str, description: str, permissions: list[str]) -> Role:
         try:
             conn.execute("INSERT INTO roles (slug, name, description, permissions) VALUES (?, ?, ?, ?)",
                          (slug, name.strip(), description.strip(), json.dumps(perms)))
-        except sqlite3.IntegrityError as exc:
+        except IntegrityError as exc:
             raise Conflict("A role with this name already exists.") from exc
     found = get(slug)
     assert found is not None

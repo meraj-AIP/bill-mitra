@@ -3,6 +3,7 @@ import { AppBar, Box, Button, Container, Link as MuiLink, Stack, Tab, Tabs, Typo
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
 import { AlertsBell } from '@/features/alerts';
+import { APPROVALS_PATH, ApprovalsTabLabel } from '@/features/approvals';
 import { AccountMenu, isConsumer, landingFor, useAuth } from '@/features/auth';
 import { ModeStatus } from '@/shared/components/ModeStatus';
 import { OfflineBanner } from '@/shared/components/OfflineBanner';
@@ -55,7 +56,10 @@ function Sections({ nav, pathname }: { nav: Nav; pathname: string }) {
     <Stack component="nav" aria-label="Sections" direction="row" sx={{ alignItems: 'center', mx: { xs: -1, sm: -2 } }}>
       <Tabs value={inMain ? active : false} variant="scrollable" scrollButtons={false}
         sx={{ minHeight: 44, '& .MuiTab-root': { minHeight: 44, px: { xs: 1.25, sm: 2 }, whiteSpace: 'nowrap' } }}>
-        {nav.main.map((n) => <Tab key={n.to} value={n.to} label={n.label} component={Link} to={n.to} />)}
+        {nav.main.map((n) => (
+          <Tab key={n.to} value={n.to} component={Link} to={n.to}
+            label={n.to === APPROVALS_PATH ? <ApprovalsTabLabel label={n.label} /> : n.label} />
+        ))}
       </Tabs>
       {nav.manage.length > 0 && <ManageMenu items={nav.manage} active={inManage ? active : false} />}
       <Button component={Link} to={nav.help.to} startIcon={<HelpOutlineRoundedIcon />} aria-current={onHelp ? 'page' : undefined}

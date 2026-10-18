@@ -36,8 +36,8 @@ _CASES = (
     f"{_LATEST} LEFT JOIN review_policy p ON p.discom = c.discom LEFT JOIN units sec ON sec.id = c.section_id "
     "LEFT JOIN accounts asg ON asg.id = c.assigned_to WHERE c.kind = 'wrong_reading'")
 # A closed case is never overdue, whatever its state says.
-_OUTER = ("SELECT x.*, (x.status IN ('Open', 'In progress') AND x.state NOT IN ('decided', 'applied') "
-          "AND x.days_open > x.sla) AS overdue FROM ({inner}) x")
+_OUTER = ("SELECT x.*, CASE WHEN x.status IN ('Open', 'In progress') AND x.state NOT IN ('decided', 'applied') "
+          "AND x.days_open > x.sla THEN 1 ELSE 0 END AS overdue FROM ({inner}) x")
 
 
 class CasePage(BaseModel):
@@ -172,15 +172,15 @@ def create_decision(ticket: str, bill_id: str, values: dict[str, Any], proposed_
         if current and current[0] in ("pending_approval", "approved"):
             raise ValueError("This case already has a decision. Withdraw it before recording another.")
         revision = _next_revision(conn, bill_id) if approved and values["reduction"] > 0 else None
-        cursor = conn.execute(
+        return int(conn.execute(
             "INSERT INTO review_decisions (ticket, bill_id, kind, status, original_amount, revised_amount, reduction, "
             "corrected_present_reading, corrected_units, reason_code, note, evidence, proposed_by, decided_at, "
-            "revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? THEN CURRENT_TIMESTAMP END, ?)",
+            "revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP END, ?) "
+            "RETURNING id",
             (ticket, bill_id, values["kind"], "approved" if approved else "pending_approval",
              values["original_amount"], values["revised_amount"], values["reduction"],
              values["corrected_present_reading"], values["corrected_units"], values["reason_code"], values["note"],
-             json.dumps(values["evidence"]), proposed_by, int(approved), revision))
-    return int(cursor.lastrowid or 0)
+             json.dumps(values["evidence"]), proposed_by, int(approved), revision)).fetchall()[0][0])
 
 
 def approve(decision_id: int, by: str, note: str | None) -> bool:

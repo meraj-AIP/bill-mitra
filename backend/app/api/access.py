@@ -79,12 +79,12 @@ class PolicyUpdate(Policy):
 
 
 @router.get("/permissions", response_model=list[Permission])
-async def permissions(_: RoleManager) -> list[Permission]:
+def permissions(_: RoleManager) -> list[Permission]:
     return [Permission(code=c, label=label, group=group) for c, (label, group) in rbac.PERMISSIONS.items()]
 
 
 @router.get("/roles", response_model=list[Role])
-async def list_roles(_: RoleReader) -> list[Role]:
+def list_roles(_: RoleReader) -> list[Role]:
     return roles.all_roles()
 
 
@@ -133,9 +133,9 @@ async def delete_role(slug: str, actor: RoleManager) -> Response:
 
 
 @router.get("/units", response_model=list[Unit])
-async def list_units(actor: UnitReader, parent_id: Annotated[str | None, Query(max_length=40)] = None,
-                     q: Annotated[str | None, Query(max_length=80)] = None, kind: units.Kind | None = None
-                     ) -> list[Unit]:
+def list_units(actor: UnitReader, parent_id: Annotated[str | None, Query(max_length=40)] = None,
+               q: Annotated[str | None, Query(max_length=80)] = None, kind: units.Kind | None = None
+               ) -> list[Unit]:
     return units.search(parent_id=parent_id, q=q, kind=kind, viewer=viewer(actor))
 
 
@@ -187,7 +187,7 @@ async def import_units(file: UploadFile, actor: UnitManager) -> units.ImportResu
 
 
 @router.get("/units/unmapped", response_model=list[Unmapped])
-async def list_unmapped(actor: UnitManager) -> list[Unmapped]:
+def list_unmapped(actor: UnitManager) -> list[Unmapped]:
     """Each name carries up to three likely sections the actor may map it to."""
     items = [u for u in units.unmapped() if in_scope(actor, DISCOM_UNITS[u.discom])]
     names = {d: units.section_names(d, viewer(actor)) for d in {u.discom for u in items}}
@@ -212,7 +212,7 @@ async def map_unmapped(body: MapUnmapped, actor: UnitManager) -> Response:
 
 
 @router.get("/policy", response_model=list[Policy])
-async def list_policy(actor: PolicyManager) -> list[Policy]:
+def list_policy(actor: PolicyManager) -> list[Policy]:
     return [p for p in policy_store.all_policies() if in_scope(actor, DISCOM_UNITS[p.discom])]
 
 

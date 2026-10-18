@@ -36,7 +36,7 @@ async def upload(file: UploadFile, account: ChatUser, language: Annotated[Langua
 
 
 @router.get("/jobs/{job_id}", response_model=extract.ReadJob)
-async def read_job(job_id: Annotated[str, Path(max_length=40)], account: ChatUser) -> extract.ReadJob:
+def read_job(job_id: Annotated[str, Path(max_length=40)], account: ChatUser) -> extract.ReadJob:
     """A queued read, for the page to poll. Only the account that uploaded the bill sees it."""
     found = extract_jobs.get_own(account.user_id, job_id)
     if found is None:
@@ -45,7 +45,7 @@ async def read_job(job_id: Annotated[str, Path(max_length=40)], account: ChatUse
 
 
 @router.get("", response_model=repos.BillPage)
-async def list_bills(
+def list_bills(
     account: ChatUser,
     page: int = Query(1, ge=1, le=1000),
     page_size: int = Query(10, ge=5, le=50),
@@ -56,7 +56,7 @@ async def list_bills(
 
 
 @router.get("/{bill_id}", response_model=report.BillReport)
-async def get_bill(bill_id: str, account: ChatUser, language: Language = "te") -> report.BillReport:
+def get_bill(bill_id: str, account: ChatUser, language: Language = "te") -> report.BillReport:
     found = report.load(account.user_id, bill_id, language)
     if found is None:
         raise HTTPException(404, NOT_FOUND)

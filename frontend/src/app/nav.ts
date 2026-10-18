@@ -24,6 +24,8 @@ export const ASSISTANT: readonly Permission[] = ['self.bills', 'chat.preview'];
 export const CONSOLE: readonly Permission[] = ['console.view'];
 export const COMPLAINTS: readonly Permission[] = ['complaints.view'];
 export const REVIEW: readonly Permission[] = ['cases.view'];
+// Approvals carry out replies, requests and decisions, so they need the permission to do those by hand.
+export const APPROVALS: readonly Permission[] = ['complaints.reply', 'cases.decide'];
 export const CONSUMER: readonly Permission[] = ['self.bills'];
 // System health has no permission of its own; the server serves it to account managers.
 export const HEALTH: readonly Permission[] = ['accounts.manage'];
@@ -52,6 +54,7 @@ export function navFor(account: Pick<Account, 'permissions'>): Nav {
   const staff: Entry[] = [
     { to: '/console', label: 'Console', any: CONSOLE },
     { to: '/console/complaints', label: 'Complaints', any: COMPLAINTS },
+    { to: '/approvals', label: 'Approvals', any: APPROVALS },
     { to: '/assistant', label: 'Consumer chat', any: ['chat.preview'] },
   ];
   // People who decide or approve start their day in the queue, so it comes first for them.

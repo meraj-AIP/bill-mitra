@@ -19,9 +19,9 @@ NOT_FOUND = "No parked item with this id."
 
 
 @router.get("", response_model=ParkedPage)
-async def parked(account: Operator, page: Annotated[int, Query(ge=1, le=1000)] = 1,
-                 page_size: Annotated[int, Query(ge=5, le=100)] = 20, kind: Kind | None = None,
-                 sort: Literal["newest", "oldest"] = "newest") -> ParkedPage:
+def parked(account: Operator, page: Annotated[int, Query(ge=1, le=1000)] = 1,
+           page_size: Annotated[int, Query(ge=5, le=100)] = 20, kind: Kind | None = None,
+           sort: Literal["newest", "oldest"] = "newest") -> ParkedPage:
     return store.page(account, page, page_size, kind, sort == "newest")
 
 

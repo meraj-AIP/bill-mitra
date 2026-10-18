@@ -125,7 +125,7 @@ class DraftOut(drafts.Draft):
 
 
 @router.get("/cases/{ticket}/draft", response_model=DraftOut | None)
-async def draft(ticket: str, account: Decider) -> DraftOut | None:
+def draft(ticket: str, account: Decider) -> DraftOut | None:
     """A suggested decision from the rules, for the AE to use or ignore. Null when no rule is sure enough."""
     complaint = find_case(account, ticket)
     row = store.row(ticket)

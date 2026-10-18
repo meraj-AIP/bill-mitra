@@ -26,6 +26,8 @@ from app.store.db import DISCOM_UNITS
 from app.store.units import Conflict
 
 KIND = "wrong_reading"
+# Case states in which the AE may record a decision.
+DECIDABLE = ("awaiting_review", "info_requested", "rejected")
 FIRST_MESSAGE = "Consumer reported this bill as wrong."
 ConsumerState = Literal["received", "waiting_for_you", "revised", "no_change"]
 

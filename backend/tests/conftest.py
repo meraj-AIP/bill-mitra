@@ -13,6 +13,15 @@ for key in ("OPENAI_API_KEY", "SARVAM_API_KEY", "SONIOX_API_KEY", "WHATSAPP_TOKE
     os.environ[key] = ""
 os.environ["AUTOMATION_ENABLED"] = "false"  # tests call the jobs directly with a fixed clock
 os.environ["QUEUE_RETRY_ENABLED"] = "false"  # the same for the queue recovery jobs
+# SQLite in the temp dir, unless TEST_DATABASE_URL names a Postgres database the suite may wipe. A DATABASE_URL in a
+# developer's .env is never used by tests.
+os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL", "")
+if os.environ["DATABASE_URL"]:
+    import psycopg
+
+    with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True) as _wipe:
+        _wipe.execute("DROP SCHEMA public CASCADE")
+        _wipe.execute("CREATE SCHEMA public")
 
 from app.config import get_settings  # noqa: E402  (settings must see the environment above)
 from app.services import llm, vision  # noqa: E402

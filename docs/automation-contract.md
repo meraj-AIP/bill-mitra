@@ -121,3 +121,33 @@ API (any signed-in staff account; consumers get 403):
 - GitHub Actions: `ci.yml` (pytest, ruff, typecheck, lint, build on push and PR), `uptime.yml` (every 15 minutes,
   fails when the live health check fails, so GitHub notifies the owner), `deploy.yml` (manual or on main after CI,
   SSH deploy only when the `DEPLOY_*` secrets exist).
+
+## 8. Approvals: the system prepares, an officer approves
+
+Routine work that an officer does the same way every time is prepared by the rules and waits on the Approvals tab.
+Nothing reaches a consumer and nothing is decided until a person approves it. Code: `app/flows/proposals.py`
+(what to propose), `app/api/proposals.py` (approve, reject, batch), `app/store/proposals.py`.
+
+| Kind | Proposed when | Approving does | Needs |
+| --- | --- | --- | --- |
+| `explain_correct` | A bill complaint on WhatsApp or the web, every line matches the tariff, the meter was read, no officer has written yet, nothing is being waited for | Sends the checked explanation and resolves the complaint | `complaints.reply` |
+| `request_bill` | A bill complaint came without a bill and the bill was never asked for | Asks the consumer for a photo of the bill | `complaints.reply` |
+| `request_meter` | The bill's meter status says the reading was estimated and no meter photo was asked for | Asks the consumer for a photo of the meter | `complaints.reply` |
+| `decide_correct` | A reading check where the pre-filled decision (section 2) says the bill is correct, and no misread was found | Records "bill correct" in the approver's name, tells the consumer, closes the case | `cases.decide` |
+
+Rules:
+
+- The job runs with the other automation jobs (`proposals` in `JOBS`). It looks only at open complaints that changed
+  since it last looked (`complaints.proposal_checked_at`), at most `PROPOSAL_BATCH` a pass, and leaves complaints
+  younger than `PROPOSAL_WAIT_MINUTES` (30) for a later pass, since the consumer may still be sending things.
+- One proposal per kind per complaint, ever. A rejected one is not offered again.
+- Approving checks the proposal again against the complaint as it is now. If the rules would no longer propose it,
+  it is marked `stale` and nothing is done. Otherwise it runs the same route an officer would use by hand, with all
+  of that route's permission, scope and state checks.
+- Taking a decision is one conditional update, so two officers approving at once never both carry it out.
+- Proposals on complaints that closed are marked `stale` on the next pass.
+- Reasons shown to the officer are fixed sentences with no consumer data and no figures. Every approval and
+  rejection is audited (`proposal.approve`, `proposal.reject`) under the officer's name, on top of the audit rows of
+  the action itself.
+- Batch approval takes up to 25 at a time; each is checked and carried out on its own, and the ones that cannot go
+  are listed with the reason.

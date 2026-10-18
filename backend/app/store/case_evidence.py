@@ -28,9 +28,10 @@ def records(ticket: str) -> tuple[str, list[dict[str, Any]]] | None:
 def add_month_request(ticket: str, months: list[str], note: str) -> int:
     """A request the system raised (requested_by NULL) for earlier bills of these months."""
     with tx() as conn:
-        cursor = conn.execute("INSERT INTO case_requests (ticket, kind, note, requested_by, months) "
-                              "VALUES (?, 'earlier_bills', ?, NULL, ?)", (ticket, note, json.dumps(months)))
-    return int(cursor.lastrowid or 0)
+        # The whole result is read before commit: SQLite cannot commit while a RETURNING statement is unfinished.
+        return int(conn.execute("INSERT INTO case_requests (ticket, kind, note, requested_by, months) "
+                                "VALUES (?, 'earlier_bills', ?, NULL, ?) RETURNING id",
+                                (ticket, note, json.dumps(months))).fetchall()[0][0])
 
 
 def month_request(ticket: str) -> dict[str, Any] | None:
@@ -86,7 +87,7 @@ def attached(ticket: str) -> list[dict[str, Any]]:
     """Bills attached to the case that still exist (a consumer may erase their data), oldest month first."""
     with tx() as conn:
         rows = conn.execute(
-            "SELECT k.bill_id, k.month, b.units, json_extract(b.extraction, '$.bill_amount') AS amount, b.media_id "
+            "SELECT k.bill_id, k.month, b.units, CAST(json_extract(b.extraction, '$.bill_amount') AS REAL) AS amount, b.media_id "
             "FROM case_bills k JOIN bills b ON b.id = k.bill_id WHERE k.ticket = ? ORDER BY k.month LIMIT 24",
             (ticket,)).fetchall()
     return [dict(r) for r in rows]

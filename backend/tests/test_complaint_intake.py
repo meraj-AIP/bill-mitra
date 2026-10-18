@@ -89,7 +89,7 @@ def test_migration_backfills_old_rows_and_grants_create_once(data_dir):
     conn.execute("UPDATE roles SET permissions = ? WHERE slug = 'officer'",
                  (json.dumps(rbac.default_permissions("officer")),))
     conn.commit()
-    assert path.exists()
+    assert db.is_postgres() or path.exists()
 
 
 # Staff raise
