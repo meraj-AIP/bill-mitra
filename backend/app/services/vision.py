@@ -7,7 +7,6 @@ The first pass stops a selfie or a shop receipt from ever being "read" as a bill
 import base64
 import io
 import logging
-import re
 from dataclasses import dataclass
 from math import ceil
 from typing import Any, Literal
@@ -20,7 +19,7 @@ from pydantic import BaseModel, ValidationError
 from app.config import get_settings
 from app.core import retry
 from app.domain import capture
-from app.domain.bill import ExtractedBill
+from app.domain.bill import ExtractedBill, real_date, real_month
 from app.services.openai_client import ProviderError, chat_json
 
 log = logging.getLogger(__name__)
@@ -191,23 +190,33 @@ def _content(images: list[bytes], detail: str, prompt: str) -> list[dict[str, An
     return content
 
 
-_MONTH = re.compile(r"^\d{4}-\d{2}$")
 _CODES = {"energy", "fixed", "customer", "duty", "fsa", "true_up", "surcharge", "adjustment", "other"}
+
+
+_DATES = ("previous_reading_date", "disconnection_date", "last_paid_date")
+
+
+def _list(value: Any) -> list[Any]:
+    """The model only promises a JSON object, so a key meant to hold a list can hold anything."""
+    return value if isinstance(value, list) else []
 
 
 def _clean(raw: dict[str, Any]) -> dict[str, Any]:
     """Drop the parts of a model answer that are malformed, so one bad cell does not lose the whole bill."""
     raw["source"] = "vision"
-    if not _MONTH.match(str(raw.get("bill_month") or "")):
+    if not real_month(str(raw.get("bill_month") or "")):
         raw["bill_month"] = None
+    for key in _DATES:
+        if raw.get(key) is not None and not real_date(str(raw[key])):
+            raw[key] = None
     raw["arrears"] = raw.get("arrears") or 0
     raw["line_items"] = [
         {**i, "code": i.get("code") if i.get("code") in _CODES else "other", "label": str(i.get("label") or "Charge")}
-        for i in raw.get("line_items") or [] if isinstance(i, dict) and isinstance(i.get("amount"), int | float)]
+        for i in _list(raw.get("line_items")) if isinstance(i, dict) and isinstance(i.get("amount"), int | float)]
     raw["usage_history"] = [
-        h for h in raw.get("usage_history") or []
-        if isinstance(h, dict) and _MONTH.match(str(h.get("month"))) and isinstance(h.get("units"), int | float)]
-    raw["unreadable_fields"] = [str(f) for f in raw.get("unreadable_fields") or []][:30]
+        h for h in _list(raw.get("usage_history"))
+        if isinstance(h, dict) and real_month(str(h.get("month"))) and isinstance(h.get("units"), int | float)]
+    raw["unreadable_fields"] = [str(f) for f in _list(raw.get("unreadable_fields"))][:30]
     return raw
 
 
@@ -246,6 +255,9 @@ async def extract(jpeg: bytes, seen: Classification, failed_check: str | None = 
         return ExtractedBill.model_validate(_clean(raw))
     except ValidationError as exc:
         log.warning("extraction failed validation: %s", exc.error_count())
+        raise ProviderError("invalid extraction") from exc
+    except (TypeError, ValueError) as exc:  # a shape _clean did not expect: the same as an invalid answer
+        log.warning("extraction had an unexpected shape: %s", type(exc).__name__)
         raise ProviderError("invalid extraction") from exc
 
 

@@ -486,6 +486,7 @@ Settings come from the environment or `.env` (repo root or `backend/`), read onl
 | `PRIVACY_NOTICE_VERSION`, `PRIVACY_CONTACT` | Version and contact shown in the privacy notice |
 | `RETENTION_DAYS` | Default 180 |
 | `REQUEST_TIMEOUT_S`, `MAX_UPLOAD_MB` | Defaults 45 seconds and 12 MB |
+| `UPLOAD_READ_DEADLINE_S` | Default 50 seconds. A dashboard upload waits this long for its read, then an extract job finishes it |
 
 Run with `./run.sh` (builds the web app once, serves everything on port 8000) or `./run.sh dev` (API with reload on 8000, Vite on 5173).
 

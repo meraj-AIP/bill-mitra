@@ -64,7 +64,9 @@ export function useExtractJob(jobId: string | null) {
       return job;
     },
     enabled: jobId !== null,
-    refetchInterval: (query) => (query.state.data && ['done', 'failed'].includes(query.state.data.status) ? false : POLL_MS),
+    // Stop on an error too (a job that no longer exists answers 404), or the page asks every few seconds forever.
+    refetchInterval: (query) =>
+      query.state.status === 'error' || (query.state.data && ['done', 'failed'].includes(query.state.data.status)) ? false : POLL_MS,
   });
 }
 

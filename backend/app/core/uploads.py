@@ -1,11 +1,18 @@
 """Upload checks shared by every channel: the bytes decide the type, never the client's label."""
 
+import asyncio
 import csv
 import io
+import logging
 
 from fastapi import HTTPException, UploadFile
+from PIL import Image, ImageOps
+from pillow_heif import register_heif_opener
 
 from app.config import get_settings
+
+log = logging.getLogger(__name__)
+register_heif_opener()
 
 DOCUMENTS = frozenset({"image/jpeg", "image/png", "image/webp", "image/heic", "application/pdf"})
 AUDIO = frozenset({"audio/webm", "audio/ogg", "audio/mpeg", "audio/mp4", "audio/wav", "audio/aac"})
@@ -46,7 +53,25 @@ async def read_checked(file: UploadFile, allowed: frozenset[str]) -> tuple[bytes
     mime = sniff(data[:16])
     if mime is None or mime not in allowed:
         raise HTTPException(415, "Upload a photo (JPG, PNG, WEBP, HEIC) or a PDF of the bill, or a voice note.")
-    return data, mime
+    return await displayable(data, mime)
+
+
+def _heic_to_jpeg(data: bytes) -> bytes:
+    out = io.BytesIO()
+    ImageOps.exif_transpose(Image.open(io.BytesIO(data))).convert("RGB").save(out, format="JPEG", quality=92)
+    return out.getvalue()
+
+
+async def displayable(data: bytes, mime: str) -> tuple[bytes, str]:
+    """iPhone photos arrive as HEIC, which most browsers cannot show, so they are kept as JPEG. A file that will not
+    convert stays as it came: the bill reader then asks for a retake, as for any photo it cannot open."""
+    if mime != "image/heic":
+        return data, mime
+    try:
+        return await asyncio.to_thread(_heic_to_jpeg, data), "image/jpeg"
+    except (OSError, ValueError, Image.DecompressionBombError) as exc:
+        log.warning("heic photo kept as uploaded: %s", type(exc).__name__)
+        return data, mime
 
 
 CSV_MAX_BYTES = 1024 * 1024
