@@ -5,7 +5,8 @@ code is sent, and the connections found are kept (masked) on the new account. Si
 the code. Staff keep their email and password.
 
 A development server with neither SMS nor WhatsApp connected shows the code on screen instead of sending it, and says
-so. A production server never does; without a channel it refuses.
+so, but only for the sample consumer and for numbers with no account yet: an on-screen code for a real account would let
+anyone who knows the number sign in. A production server never shows codes; without a channel it refuses.
 """
 
 import secrets
@@ -18,13 +19,13 @@ from app.core import ratelimit
 from app.core.hashing import digest, mobile_hash, service_hash
 from app.domain.bill import mask
 from app.services import discom_bills, notify, sms
-from app.store import account_connections, accounts
+from app.store import account_connections, accounts, demo_accounts
 from app.store import otp_codes as codes
 from app.store.accounts import Account
 
 Purpose = Literal["signup", "login"]
 Channel = Literal["sms", "whatsapp"]
-StartStatus = Literal["sent", "not_registered", "not_sent", "rate_limited", "locked", "unavailable"]
+StartStatus = Literal["sent", "not_registered", "not_sent", "rate_limited", "locked", "unavailable", "demo_only"]
 VerifyStatus = Literal["ok", "wrong", "locked", "no_account", "inactive"]
 
 CODE_MINUTES = 5
@@ -68,6 +69,11 @@ def on_screen() -> bool:
     return settings.app_env == "development" and not settings.sms_enabled and not notify.can_send_code()
 
 
+def demo_number(mobile: str) -> bool:
+    """The demo server's fixed-code number (DEMO_OTP_MOBILE). Its code is never sent: there is no phone behind it."""
+    return bool(get_settings().demo_otp_mobile) and mobile == get_settings().demo_otp_mobile
+
+
 def _code_hash(purpose: str, mhash: str, code: str) -> str:
     return digest("otp", f"{purpose}:{mhash}:{code}")
 
@@ -99,10 +105,13 @@ async def start(mobile: str, purpose: Purpose, channel: Channel, discom: str | N
     if not ratelimit.hit(f"otp:{mhash}", STARTS_PER_MOBILE, HOUR_S):
         _audit("auth.otp_start", mobile, "rate limited")
         return Started("rate_limited")
+    if on_screen() and accounts.by_login(mobile) is not None and not (demo_accounts.is_sample(mobile) or demo_number(mobile)):
+        _audit("auth.otp_start", mobile, "not shown on screen, the number has a real account")
+        return Started("demo_only")
     count = None
     if purpose == "signup":
         found = await registered(mobile, discom or "")
-        if found is None and not on_screen():
+        if found is None and not (on_screen() or demo_number(mobile)):
             return Started("unavailable")  # production signs up only numbers the DISCOM has confirmed
         if found is not None and not found:
             _audit("auth.otp_start", mobile, f"not registered with {discom}")
@@ -111,8 +120,11 @@ async def start(mobile: str, purpose: Purpose, channel: Channel, discom: str | N
     held = codes.get(purpose, mhash)
     if held and held["locked_until"] and held["locked_until"] > _ts(_now()):
         return Started("locked")
-    code = f"{secrets.randbelow(10**6):06d}"
+    code = get_settings().demo_otp_code if demo_number(mobile) else f"{secrets.randbelow(10**6):06d}"
     codes.put(purpose, mhash, _code_hash(purpose, mhash, code), _ts(_now() + timedelta(minutes=CODE_MINUTES)))
+    if demo_number(mobile):
+        _audit("auth.otp_start", mobile, f"{purpose}, demo number, fixed code")
+        return Started("sent", channel, dev_code=code if on_screen() else None, connections=count)
     if on_screen():
         _audit("auth.otp_start", mobile, f"{purpose}, development, code shown on screen")
         return Started("sent", channel, dev_code=code, connections=count)

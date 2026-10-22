@@ -102,6 +102,8 @@ START_REFUSED = {
     "locked": (429, "Too many wrong codes. Please wait 30 minutes and try again."),
     "unavailable": (503, "Codes cannot be sent this way right now. Try the other option, or try again later."),
     "not_sent": (502, "The code could not be sent. Try the other option, or try again in a minute."),
+    "demo_only": (403, "This demo server cannot send codes yet, so it signs in only the sample consumer and new numbers. "
+                       "Please use Bill Mitra on WhatsApp."),
 }
 VERIFY_REFUSED = {
     "wrong": (400, "That code is not right, or it has expired. Check it, or ask for a new one."),

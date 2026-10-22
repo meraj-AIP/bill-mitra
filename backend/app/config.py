@@ -106,6 +106,9 @@ class Settings(BaseSettings):
     sms_api_key: str = ""
     sms_sender_id: str = ""
     sms_template_id: str = ""
+    # Demo servers only: one consumer number whose sign in code is always this one, so a demo needs no phone.
+    demo_otp_mobile: str = Field(default="", pattern=r"^([6-9]\d{9})?$")
+    demo_otp_code: str = Field(default="", pattern=r"^(\d{6})?$")
 
     @model_validator(mode="after")
     def _production_keeps_ownership(self) -> "Settings":
@@ -113,6 +116,10 @@ class Settings(BaseSettings):
             raise ValueError("OWNERSHIP_CHECK=false is refused when APP_ENV=production.")
         if self.app_env == "production" and not self.hash_pepper:
             raise ValueError("HASH_PEPPER must be set when APP_ENV=production.")
+        if bool(self.demo_otp_mobile) != bool(self.demo_otp_code):
+            raise ValueError("Set DEMO_OTP_MOBILE and DEMO_OTP_CODE together, or neither.")
+        if self.app_env == "production" and self.demo_otp_mobile:
+            raise ValueError("DEMO_OTP_MOBILE is refused when APP_ENV=production: anyone could sign in with it.")
         return self
 
     @property

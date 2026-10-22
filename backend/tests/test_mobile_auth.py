@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from app.config import get_settings
 from app.main import app
 from app.services import discom_bills, sms
-from app.store import accounts
+from app.store import accounts, demo_accounts
 
 
 def _mobile() -> str:
@@ -31,6 +31,22 @@ def discom(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[str]]:
 
     monkeypatch.setattr(discom_bills, "_request", fake)
     return registry
+
+
+@pytest.fixture
+def sms_sent(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
+    """A connected SMS gateway that records what it would send, so codes are never shown on screen."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "sms_api_url", "https://sms.invalid/send")
+    monkeypatch.setattr(settings, "sms_api_key", "test-key-not-real")
+    sent: list[tuple[str, str]] = []
+
+    async def fake(mobile: str, code: str) -> bool:
+        sent.append((mobile, code))
+        return True
+
+    monkeypatch.setattr(sms, "send_code", fake)
+    return sent
 
 
 def _start(client: TestClient, mobile: str, purpose: str = "signup", channel: str = "sms", discom: str | None = "TGSPDCL"):
@@ -81,27 +97,47 @@ def test_wrong_codes_lock_the_number(discom):
         assert _start(client, mobile).status_code == 429
 
 
-def test_sign_in_with_a_code_and_an_unknown_number_is_told_to_sign_up(discom):
+def test_sign_in_with_a_code_and_an_unknown_number_is_told_to_sign_up(discom, sms_sent):
     mobile = _mobile()
     discom[f"TGSPDCL:{mobile}"] = ["99990000022222"]
     with TestClient(app) as client:
-        account_id = _sign_up(client, mobile, _start(client, mobile).json()["dev_code"]).json()["id"]
+        _start(client, mobile)
+        account_id = _sign_up(client, mobile, sms_sent[-1][1]).json()["id"]
         client.post("/api/auth/logout")
-        code = _start(client, mobile, purpose="login", discom=None).json()["dev_code"]
-        signed = client.post("/api/auth/otp/login", json={"mobile": mobile, "code": code})
+        _start(client, mobile, purpose="login", discom=None)
+        signed = client.post("/api/auth/otp/login", json={"mobile": mobile, "code": sms_sent[-1][1]})
         assert signed.status_code == 200 and signed.json()["id"] == account_id
         stranger = _mobile()
-        code = _start(client, stranger, purpose="login", discom=None).json()["dev_code"]
-        assert client.post("/api/auth/otp/login", json={"mobile": stranger, "code": code}).status_code == 404
+        _start(client, stranger, purpose="login", discom=None)
+        assert client.post("/api/auth/otp/login", json={"mobile": stranger, "code": sms_sent[-1][1]}).status_code == 404
 
 
-def test_signing_up_again_signs_in_to_the_same_account(discom):
+def test_signing_up_again_signs_in_to_the_same_account(discom, sms_sent):
     mobile = _mobile()
     discom[f"TGSPDCL:{mobile}"] = ["99990000033333"]
     with TestClient(app) as client:
-        first = _sign_up(client, mobile, _start(client, mobile).json()["dev_code"]).json()["id"]
-        again = _sign_up(client, mobile, _start(client, mobile).json()["dev_code"])
+        _start(client, mobile)
+        first = _sign_up(client, mobile, sms_sent[-1][1]).json()["id"]
+        _start(client, mobile)
+        again = _sign_up(client, mobile, sms_sent[-1][1])
         assert again.status_code == 200 and again.json()["id"] == first
+
+
+def test_an_on_screen_code_never_opens_a_real_account(discom, monkeypatch):
+    mobile = _mobile()
+    discom[f"TGSPDCL:{mobile}"] = ["99990000055555"]
+    with TestClient(app) as client:
+        assert _sign_up(client, mobile, _start(client, mobile).json()["dev_code"]).status_code == 200  # a new number may
+        client.post("/api/auth/logout")
+        for purpose in ("login", "signup"):
+            refused = _start(client, mobile, purpose=purpose)
+            assert refused.status_code == 403 and "dev_code" not in refused.text and "WhatsApp" in refused.json()["detail"]
+        monkeypatch.setattr(get_settings(), "demo_accounts_password", "test-only-demo-passphrase")
+        demo_accounts.ensure()
+        sample = _start(client, "6000000001", purpose="login", discom=None)
+        assert sample.status_code == 200 and sample.json()["dev_code"]
+        signed = client.post("/api/auth/otp/login", json={"mobile": "6000000001", "code": sample.json()["dev_code"]})
+        assert signed.status_code == 200 and signed.json()["role"] == "consumer"
 
 
 def test_a_connected_channel_sends_the_code_and_never_shows_it(discom, monkeypatch):
@@ -138,3 +174,25 @@ def test_old_password_sign_up_is_gone():
         body = {"name": "Test", "mobile": _mobile(), "password": "test-only-passphrase", "consent": True}
         assert client.post("/api/auth/register", json=body).status_code in (404, 405)
     assert accounts.by_login(body["mobile"]) is None
+
+
+def test_the_demo_number_takes_its_fixed_code_and_is_never_sent(sms_sent, monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "demo_otp_mobile", "9999012345")
+    monkeypatch.setattr(settings, "demo_otp_code", "123456")
+    with TestClient(app) as client:
+        started = _start(client, "9999012345")
+        assert started.status_code == 200 and started.json()["dev_code"] is None and sms_sent == []
+        assert _sign_up(client, "9999012345", "123456").status_code == 200
+        client.post("/api/auth/logout")
+        _start(client, "9999012345", purpose="login", discom=None)
+        assert client.post("/api/auth/otp/login", json={"mobile": "9999012345", "code": "123456"}).status_code == 200
+
+
+def test_production_refuses_a_fixed_code():
+    from app.config import Settings
+
+    with pytest.raises(ValueError, match="DEMO_OTP_MOBILE"):
+        Settings(app_env="production", hash_pepper="test-pepper-not-real", demo_otp_mobile="9999012345", demo_otp_code="123456")
+    with pytest.raises(ValueError, match="together"):
+        Settings(demo_otp_mobile="9999012345")

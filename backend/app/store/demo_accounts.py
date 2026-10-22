@@ -23,6 +23,15 @@ DEMO: tuple[tuple[str, str, str], ...] = (
 )
 
 
+def is_sample(login: str) -> bool:
+    """An account the demo seed made itself, so a sign in code shown on screen for it exposes nobody."""
+    login = accounts.normalise_login(login)
+    if all(login != sample for _, sample, _ in DEMO):
+        return False
+    found = _id_for(login)
+    return bool(found and found[1])
+
+
 class DemoLogin(BaseModel):
     role: str
     role_name: str
