@@ -135,6 +135,19 @@ def get(account_id: str) -> Account | None:
     return _one(row)
 
 
+def by_login(login: str) -> Account | None:
+    with tx() as conn:
+        row = conn.execute(f"{_SELECT} WHERE a.login = ?", (normalise_login(login),)).fetchone()
+    return _one(row)
+
+
+def signed_in(account_id: str) -> None:
+    """A sign in that did not go through a password (a one-time code): record it the same way."""
+    with tx() as conn:
+        conn.execute("UPDATE accounts SET failed_logins = 0, locked_until = NULL, last_login_at = ? WHERE id = ?",
+                     (_iso(_now()), account_id))
+
+
 def authenticate(login: str, password: str) -> Account | None:
     """Same answer for unknown login, wrong password, disabled or locked, so the response leaks nothing."""
     with tx() as conn:

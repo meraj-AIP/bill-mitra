@@ -36,7 +36,7 @@ export async function uploadBill(file: File, language: Language, onProgress?: (f
 /** Retries come from the client default: only an upload that broke off before the whole photo arrived is sent again. */
 export function useUploadBill(onProgress: (fraction: number) => void) {
   const client = useQueryClient();
-  return useMutation({
+  return useMutation({ meta: { quiet: true },
     mutationFn: ({ file, language }: { file: File; language: Language }) => uploadBill(file, language, onProgress),
     onSuccess: (outcome, { language }) => {
       if (outcome.kind === 'job') return;
@@ -105,7 +105,7 @@ const reportPath = (billId: string) => `/api/bills/${encodeURIComponent(billId)}
 /** Report a problem with this bill. A 409 means it is already reported; the bill is reloaded to show where it stands. */
 export function useReviewRequest(billId: string, language: Language) {
   const client = useQueryClient();
-  return useMutation({
+  return useMutation({ meta: { quiet: true },
     mutationFn: (note: string) => sendJson<ReviewSummary>(`${reportPath(billId)}?language=${language}`, note ? { note } : {}),
     onSuccess: (review) => {
       client.setQueriesData<BillReport>({ queryKey: billKey(billId) }, (old) => (old ? { ...old, review } : old));
@@ -120,7 +120,7 @@ export function useReviewRequest(billId: string, language: Language) {
 /** The consumer has no copies of the requested bills. The bill is reloaded so the report shows the new state. */
 export function useNoBills(billId: string) {
   const client = useQueryClient();
-  return useMutation({
+  return useMutation({ meta: { quiet: true },
     mutationFn: () => sendJson<unknown>(`${reportPath(billId)}/no-bills`, {}),
     onSettled: () => client.invalidateQueries({ queryKey: billKey(billId) }),
   });

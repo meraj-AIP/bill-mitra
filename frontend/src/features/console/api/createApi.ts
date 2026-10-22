@@ -7,7 +7,7 @@ import { queryKeys } from '@/shared/api/queryKeys';
 /** POST /api/console/complaints. The server checks complaints.create and that the section is in scope. */
 export function useCreateComplaint() {
   const client = useQueryClient();
-  return useMutation({
+  return useMutation({ meta: { action: 'Logging the complaint', success: 'Complaint logged' },
     mutationFn: (body: NewStaffComplaint) => sendJson<ComplaintDetail>('/api/console/complaints', body),
     onSuccess: (detail) => {
       client.setQueryData(queryKeys.consoleComplaint(detail.ticket), detail);

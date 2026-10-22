@@ -4,15 +4,17 @@ import { useState, type FormEvent } from 'react';
 
 import { SendStatus } from '@/shared/components/SendStatus';
 import { useDebounced } from '@/shared/hooks/useDebounced';
+import { rupees } from '@/shared/lib/format';
 
 import { useDecide, usePreview } from '../api/reviewApi';
 import type { CaseDetail, DecisionKind, ReasonCode } from '../api/types';
-import { emptyDraft, evidenceOptions, outcomeOf, parseAmount, problemsOf, toBody, withCited, type DecisionDraft } from '../model/decision';
+import { emptyDraft, evidenceOptions, outcomeOf, parseAmount, problemsOf, toBody, withCited, type DecisionDraft, type Outcome } from '../model/decision';
 import { MIN_NOTE, REASON } from '../model/labels';
 import { DecisionSummary } from './DecisionSummary';
 import { AmountFields, KindChoice } from './DecisionFields';
 import { EvidencePicker } from './EvidencePicker';
 import { Panel } from './Panel';
+import { useConfirm, type ConfirmOptions } from '@/shared/feedback';
 
 const NOTE_LIMIT = 1000;
 
@@ -66,8 +68,22 @@ function Blocking({ items }: { items: string[] }) {
 }
 
 /** Recording a decision. Every figure comes from the engine preview or the AE's own typed amount. */
+/** What recording the decision does, in the words the AE will be held to. */
+function decisionConfirm(kind: DecisionKind, o: Outcome): ConfirmOptions {
+  if (kind === 'correct') {
+    return { title: 'Record the bill as correct?', confirmLabel: 'Record decision',
+      body: 'The bill stands as printed.', points: ['The consumer is told the bill is correct.', 'The case closes.'] };
+  }
+  const change = o.original !== null && o.revised !== null ? `The bill goes from ${rupees(o.original)} to ${rupees(o.revised)}.` : undefined;
+  return { title: 'Record this revision?', confirmLabel: o.needsApproval ? 'Send for approval' : 'Record decision', tone: 'warning', body: change,
+    points: o.needsApproval
+      ? ['It is above your limit, so a billing approver must approve it first.', 'Nothing changes for the consumer until then.']
+      : ['The consumer is told the revised amount.', 'The revision then waits to be entered in the DISCOM billing system.'] };
+}
+
 export function DecisionPanel({ c, initial }: { c: CaseDetail; initial: DecisionDraft }) {
   const decide = useDecide(c.ticket);
+  const confirm = useConfirm();
   const [draft, setDraft] = useState<DecisionDraft>(initial);
   const [checked, setChecked] = useState(false);
   const reading = useDebounced(draft.kind === 'corrected_reading' ? parseAmount(draft.reading) : null, 400);
@@ -86,16 +102,17 @@ export function DecisionPanel({ c, initial }: { c: CaseDetail; initial: Decision
   // The engine's answer for the reading on screen is needed before a corrected reading can be sent.
   const waiting = draft.kind === 'corrected_reading' && (!fresh || preview.isFetching);
 
-  const submit = (event?: FormEvent) => {
+  const submit = async (event?: FormEvent) => {
     event?.preventDefault();
     setChecked(true);
     if (waiting || Object.values(problems).some(Boolean)) return;
+    if (!(await confirm(decisionConfirm(draft.kind, outcome)))) return;
     decide.mutate(toBody(draft), { onSuccess: () => { setDraft(emptyDraft()); setChecked(false); } });
   };
 
   return (
     <Panel title="Decision" tone="primary" caption="Look at the bill, the history and anything the consumer sent, then record what happens to this bill.">
-      <Stack component="form" noValidate onSubmit={submit} sx={{ gap: 2.5 }}>
+      <Stack component="form" noValidate onSubmit={(e) => void submit(e)} sx={{ gap: 2.5 }}>
         <KindChoice value={draft.kind} onChange={setKind} />
         <AmountFields c={c} draft={draft} onDraft={patch} preview={{ data: fresh, isFetching: preview.isFetching, error: preview.error }}
           problems={{ reading: readingProblem, reduction: show('reduction') }} />
@@ -104,7 +121,7 @@ export function DecisionPanel({ c, initial }: { c: CaseDetail; initial: Decision
         <EvidencePicker options={withCited(evidenceOptions(c), initial.evidence)} value={draft.evidence} onChange={(evidence) => patch({ evidence })} error={show('evidence')} />
         <DecisionSummary kind={draft.kind} outcome={outcome} c={c} />
         <Blocking items={blocking} />
-        <SendStatus state={decide} onTryAgain={() => submit()} />
+        <SendStatus state={decide} />
         <SubmitRow pending={decide.isPending} disabled={waiting && preview.isFetching} needsApproval={outcome.needsApproval} />
       </Stack>
     </Panel>

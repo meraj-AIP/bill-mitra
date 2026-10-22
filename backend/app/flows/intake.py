@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from app.core.hashing import service_hash
 from app.domain import complaint_types
 from app.domain.bill import ExtractedBill, mask
-from app.domain.complaint_reply import request_text
+from app.domain.complaint_reply import request_text, triage
 from app.flows import cases
 from app.flows.analysis import analyse
 from app.services import notify
@@ -50,6 +50,14 @@ def _bill_for(item: Raise) -> tuple[str | None, ExtractedBill | None]:
         return None, None
     stored = repos.get_own_bill(item.user_id, item.bill_id)
     return (stored.id, stored.bill) if stored else (None, None)
+
+
+def _checked(bill: ExtractedBill | None, user_id: str) -> dict[str, object]:
+    """What the bill check found, for a complaint that links a bill: its triage and any overcharge."""
+    if bill is None:
+        return {}
+    audit = analyse(bill, user_id).audit
+    return {"triage": triage(audit), "amount": audit.overcharge}
 
 
 def _ownership(bill: ExtractedBill | None, service_number: str | None) -> str:
@@ -104,6 +112,7 @@ async def submit(item: Raise) -> str:
     record = General(user_id=item.user_id, discom=discom, issue=issue_text(item.type, item.description),
                      language=item.language, channel=item.channel, reply_to=item.reply_to, bill_id=bill_id,
                      service_masked=mask(service_number), bill_month=bill.bill_month if bill else None,
+                     **_checked(bill, item.user_id),
                      section_name=bill.section if bill else None)
     staff = item.raised_by is not None
     ticket = complaints.create_general(record, placement, intake, item.description,

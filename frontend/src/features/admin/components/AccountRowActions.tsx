@@ -1,10 +1,9 @@
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
-import {
-  Alert, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, IconButton, Menu, MenuItem,
-} from '@mui/material';
+import { CircularProgress, IconButton, Menu, MenuItem } from '@mui/material';
 import { useState } from 'react';
 
 import type { Account } from '@/features/auth';
+import { reportError, useConfirm } from '@/shared/feedback';
 
 import { useUpdateAccount } from '../api/adminApi';
 
@@ -15,15 +14,20 @@ interface AccountRowActionsProps {
   onReset: () => void;
 }
 
-/** One menu per row. Deactivating asks again, so a slip of the mouse does not lock someone out. */
+/** One menu per row. Deactivating and activating both ask first, since either changes who can sign in. */
 export function AccountRowActions({ account, isSelf, onEdit, onReset }: AccountRowActionsProps) {
   const update = useUpdateAccount();
+  const confirm = useConfirm();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  const [confirming, setConfirming] = useState(false);
-  const setActive = (active: boolean) =>
-    update.mutate({ id: account.id, changes: { active } }, { onSuccess: () => setConfirming(false) });
   const pick = (action: () => void) => () => { setAnchor(null); action(); };
-  const closeConfirm = () => { setConfirming(false); update.reset(); };
+  const setActive = async (active: boolean) => {
+    const ok = await confirm(active
+      ? { title: `Activate ${account.name}?`, confirmLabel: 'Activate', body: 'They can sign in again with their current password.' }
+      : { title: `Deactivate ${account.name}?`, confirmLabel: 'Deactivate', tone: 'danger',
+        body: 'They are signed out everywhere and cannot sign in until an administrator activates the account again.',
+        points: ['Complaints and cases they hold stay with them; hand them over first if they are leaving.'] });
+    if (ok) update.mutate({ id: account.id, changes: { active } }, { onError: (e) => reportError(e, active ? 'Activating' : 'Deactivating') });
+  };
 
   return (
     <>
@@ -36,28 +40,13 @@ export function AccountRowActions({ account, isSelf, onEdit, onReset }: AccountR
         <MenuItem onClick={pick(onEdit)}>Edit</MenuItem>
         <MenuItem onClick={pick(onReset)}>Reset password</MenuItem>
         {account.active ? (
-          <MenuItem onClick={pick(() => setConfirming(true))} disabled={isSelf} sx={{ color: 'error.main' }}>
+          <MenuItem onClick={pick(() => void setActive(false))} disabled={isSelf} sx={{ color: 'error.main' }}>
             {isSelf ? 'You cannot deactivate yourself' : 'Deactivate'}
           </MenuItem>
         ) : (
-          <MenuItem onClick={pick(() => setActive(true))}>Activate</MenuItem>
+          <MenuItem onClick={pick(() => void setActive(true))}>Activate</MenuItem>
         )}
       </Menu>
-      {update.error && !confirming && <Alert severity="error" sx={{ mt: 1, textAlign: 'left' }}>{update.error.message}</Alert>}
-      <Dialog open={confirming} onClose={closeConfirm} maxWidth="xs" fullWidth>
-        <DialogTitle>Deactivate {account.name}?</DialogTitle>
-        <DialogContent>
-          <DialogContentText>They are signed out everywhere and cannot sign in until an administrator activates the account again.</DialogContentText>
-          {update.error && <Alert severity="error" sx={{ mt: 2 }}>{update.error.message}</Alert>}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={closeConfirm} autoFocus>Cancel</Button>
-          <Button variant="contained" color="error" onClick={() => setActive(false)} disabled={update.isPending}
-            startIcon={update.isPending ? <CircularProgress size={14} color="inherit" aria-hidden /> : null}>
-            Deactivate
-          </Button>
-        </DialogActions>
-      </Dialog>
     </>
   );
 }

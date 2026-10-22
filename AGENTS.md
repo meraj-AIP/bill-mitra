@@ -42,6 +42,11 @@ Setup and run steps are in [README.md](README.md).
 - Lists and tables use server side pagination, with page, filters and sort kept in the URL.
 - Keep every file under 300 lines. Split it before it gets there.
 - `npm run typecheck` and `npm run lint` must pass with zero warnings.
+- Every action that messages a consumer, changes a status, money or someone's access, or cannot be undone asks first
+  with `useConfirm()` from `@/shared/feedback`: say what happens and who is told, use `tone: 'danger'` for what cannot
+  be undone. Chat style replies on the consumer side stay one tap.
+- Every `useMutation` carries `meta`: `{ action, success }` so the one handler in `App.tsx` raises the right message,
+  or `{ quiet: true }` when the form shows the error itself with `<ActionError />`. Never print `error.message` raw.
 
 ## Backend
 

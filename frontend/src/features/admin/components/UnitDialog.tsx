@@ -1,12 +1,10 @@
-import {
-  Alert, Autocomplete, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem,
-  Stack, Switch, TextField,
-} from '@mui/material';
+import { Autocomplete, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Stack, Switch, TextField } from '@mui/material';
 import { useState, type FormEvent } from 'react';
 
 import { UNIT_KIND_LABEL, type Unit, type UnitKind } from '@/shared/api/types';
 
 import { useCreateUnit, useUpdateUnit, type NewUnit, type UnitChanges } from '../api/unitsApi';
+import { ActionError } from '@/shared/feedback';
 
 /** What may sit directly under each kind; DISCOMs are seeded and sections are leaves. */
 export const CHILD_KINDS: Record<UnitKind, UnitKind[]> = {
@@ -114,7 +112,7 @@ export function UnitDialog({ unit, parent, eros, onClose }: UnitDialogProps) {
         <DialogTitle>{unit ? `Edit ${unit.name}` : `Add under ${parent.name}`}</DialogTitle>
         <DialogContent>
           <Stack sx={{ gap: 2, pt: 1 }}>
-            {save.error && <Alert severity="error">{save.error.message}</Alert>}
+            <ActionError error={save.error} action="Saving the unit" />
             <Fields form={form} set={(changes) => setForm((f) => ({ ...f, ...changes }))} kinds={CHILD_KINDS[parent.kind]}
               editing={unit !== null} eros={eros} nameProblem={nameProblem} />
           </Stack>

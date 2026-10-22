@@ -53,7 +53,7 @@ Then open http://localhost:5173. A consumer lands on the Dashboard; the WhatsApp
 
 About seven minutes for the jury. The presenter brings two or three real bill photos (or PDFs) on a phone or laptop. Have a section AE and an officer account ready, scoped on the section printed on the demo bill.
 
-1. **Read and check, in Telugu.** Register as a consumer (or sign in). On the Dashboard (Telugu is the default) upload a bill. While it reads, the page shows each stage. Then walk the report: the bill next to the result, "Captured N of M fields", the line by line charges check and the plain Telugu explanation.
+1. **Read and check, in Telugu.** Sign up as a consumer: choose the DISCOM, enter the registered mobile and type the code (a development server shows it on screen). On a phone, consumers are sent to WhatsApp instead. On the Dashboard (Telugu is the default) upload a bill. While it reads, the page shows each stage. Then walk the report: the bill next to the result, "Captured N of M fields", the line by line charges check and the plain Telugu explanation.
 2. **History and next month.** Scroll to the usage chart (from the table printed on the bill and any earlier upload) and next month's estimate with the saving tip. Switch the explanation to English.
 3. **A bad photo.** Upload a blurry or tilted photo, or something that is not a bill. Bill Mitra says what it saw and asks for a retake, with tips.
 4. **Ask on WhatsApp.** Tap "Ask about this bill" to open the Assistant. Send the same photo, then type `what if 230 units?`. The rule engine prices it and the assistant explains the result, with a voice note.

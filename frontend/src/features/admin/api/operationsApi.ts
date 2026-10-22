@@ -52,11 +52,11 @@ function useRefresh() {
 /** Puts the job back in its queue. Not repeated on its own: a second requeue after a lost answer is not wanted. */
 export function useRetryParked() {
   const onSuccess = useRefresh();
-  return useMutation({ mutationFn: (job: ParkedJob) => sendJson<void>(`${jobPath(job)}/retry`), onSuccess });
+  return useMutation({ meta: { action: 'The retry', success: 'Put back in its queue' }, mutationFn: (job: ParkedJob) => sendJson<void>(`${jobPath(job)}/retry`), onSuccess });
 }
 
 /** Dismissing twice leaves the same result, so it may retry. */
 export function useDismissParked() {
   const onSuccess = useRefresh();
-  return useMutation({ ...IDEMPOTENT, mutationFn: (job: ParkedJob) => sendJson<void>(`${jobPath(job)}/dismiss`), onSuccess });
+  return useMutation({ meta: { action: 'Dismissing', success: 'Dismissed' }, ...IDEMPOTENT, mutationFn: (job: ParkedJob) => sendJson<void>(`${jobPath(job)}/dismiss`), onSuccess });
 }

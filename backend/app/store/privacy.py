@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from app.config import get_settings
-from app.store import media, repos, voice_cache
+from app.store import account_connections, media, otp_codes, repos, voice_cache
 from app.store.db import tx
 
 log = logging.getLogger(__name__)
@@ -23,6 +23,7 @@ def erase_account(account_id: str, user_id: str) -> None:
         used = repos.erase_chat(conn, user_id)
         conn.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
         voice_cache.erase(conn, user_id)
+        account_connections.erase(conn, account_id)
         conn.execute("DELETE FROM sessions WHERE account_id = ?", (account_id,))
         # Not a valid scrypt record, so no password can ever match it.
         conn.execute("UPDATE accounts SET active = 0, login = ?, name = 'Deleted account', password_hash = ?, "
@@ -54,6 +55,7 @@ def sweep() -> SweepResult:
         voice_cache.sweep(conn, days)
         conn.execute("UPDATE users SET current_bill_id = NULL WHERE current_bill_id IS NOT NULL AND "
                      "current_bill_id NOT IN (SELECT id FROM bills)")
+    otp_codes.sweep()
     files = media.discard_unreferenced(r["media_id"] for r in old) + media.discard_stale(days)
     result = SweepResult(sessions=sessions, whatsapp_seen=seen, bills=len(old), media=files)
     log.info("retention sweep removed %d sessions, %d webhook ids, %d bills, %d media files",

@@ -1,5 +1,5 @@
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
-import { Alert, Box, Button, CircularProgress, Stack } from '@mui/material';
+import { Box, Button, CircularProgress, Stack } from '@mui/material';
 
 import { useAuth } from '@/features/auth';
 import { EmptyState } from '@/shared/components/States';
@@ -8,16 +8,24 @@ import { useDecisionAction } from '../api/reviewApi';
 import type { CaseDetail, Decision } from '../api/types';
 import { DecisionCard } from './DecisionCard';
 import { Panel } from './Panel';
+import { useConfirm } from '@/shared/feedback';
 
 function Withdraw({ c, d }: { c: CaseDetail; d: Decision }) {
   const withdraw = useDecisionAction(c.ticket, 'withdraw');
+  const confirm = useConfirm();
+  const run = async () => {
+    if (await confirm({ title: 'Withdraw this decision?', confirmLabel: 'Withdraw', tone: 'danger',
+      body: 'The decision is cancelled and the case is open for a new one.',
+      points: ['If the consumer was told about it, they are told it is withdrawn.', 'It stays in the history as withdrawn.'] })) {
+      withdraw.mutate({ id: d.id });
+    }
+  };
   return (
     <Stack sx={{ mt: 1.5, gap: 1, alignItems: 'flex-end' }}>
-      <Button size="small" variant="outlined" color="inherit" disabled={withdraw.isPending} onClick={() => withdraw.mutate({ id: d.id })}
+      <Button size="small" variant="outlined" color="inherit" disabled={withdraw.isPending} onClick={() => void run()}
         startIcon={withdraw.isPending ? <CircularProgress size={14} color="inherit" aria-hidden /> : null}>
         Withdraw this decision
       </Button>
-      {withdraw.error && <Alert severity="error" sx={{ alignSelf: 'stretch' }}>{withdraw.error.message}</Alert>}
     </Stack>
   );
 }

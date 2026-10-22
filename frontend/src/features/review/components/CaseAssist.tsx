@@ -34,6 +34,6 @@ export function CaseAssist({ c }: { c: CaseDetail }) {
   return (
     <AssistCard subject="this case" view={view} pending={assist.isFetching || refresh.isPending} error={(assist.error ?? refresh.error)?.message ?? null}
       onAsk={() => refresh.mutate()}
-      onSendQuestion={c.can.request_info ? (text) => ask.mutateAsync({ kind: 'note', note: text }) : null} />
+      onSendQuestion={c.can.request_info ? (text) => ask.mutateAsync({ kind: 'note', note: text }) : null} foldQuestions />
   );
 }

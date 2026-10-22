@@ -26,7 +26,7 @@ function useKeepReport() {
  */
 export function useUscStart(language: Language) {
   const keep = useKeepReport();
-  return useMutation({
+  return useMutation({ meta: { quiet: true },
     mutationFn: async (body: UscRequest) => {
       const started = await sendJson<UscStarted>(`${BASE}/start?language=${language}`, body);
       const report = started.code_required ? null : await verifyBill(body, language);
@@ -38,7 +38,7 @@ export function useUscStart(language: Language) {
 
 export function useUscVerify(language: Language) {
   const keep = useKeepReport();
-  return useMutation({
+  return useMutation({ meta: { quiet: true },
     mutationFn: (body: UscRequest & { code: string }) => verifyBill(body, language),
     onSuccess: (report) => keep(report, language),
   });

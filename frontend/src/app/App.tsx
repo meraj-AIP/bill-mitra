@@ -7,7 +7,8 @@ import { AlertsPage } from '@/features/alerts';
 import { ApprovalsPage } from '@/features/approvals';
 import { landingFor, LoginPage, PrivacyPage, PublicOnly, RegisterPage, RequirePermission, useAuth, type Permission } from '@/features/auth';
 import { BillPage, DashboardPage } from '@/features/dashboard';
-import { NetworkError, onUnauthorized } from '@/shared/api/http';
+import { onUnauthorized } from '@/shared/api/http';
+import { ConfirmProvider, describeError, notify, reportError, Toasts } from '@/shared/feedback';
 import { queryKeys } from '@/shared/api/queryKeys';
 import { retryDelay, retryQuery, retryUnsent } from '@/shared/api/retry';
 import { EmptyState } from '@/shared/components/States';
@@ -41,9 +42,15 @@ const queryClient: QueryClient = new QueryClient({
     mutations: { retry: retryUnsent, retryDelay },
   },
   mutationCache: new MutationCache({
-    // A lost answer means the action may have happened, so reload what is on screen before anyone sends it again.
-    onError: (error) => {
-      if (error instanceof NetworkError && error.sent) void queryClient.invalidateQueries();
+    // Every action reports here, so success and failure read the same everywhere. A lost answer, a conflict or a
+    // record that is gone means the screen may be stale, so it is reloaded before anyone acts again.
+    onError: (error, variables, _context, mutation) => {
+      const meta = mutation.meta ?? {};
+      if (describeError(error).refresh) void queryClient.invalidateQueries();
+      if (!meta.quiet) reportError(error, meta.action, () => void mutation.execute(variables).catch(() => undefined));
+    },
+    onSuccess: (_data, _variables, _context, mutation) => {
+      if (mutation.meta?.success) notify({ severity: 'success', title: mutation.meta.success });
     },
   }),
 });
@@ -129,7 +136,10 @@ export function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <RouterProvider router={router} />
+        <ConfirmProvider>
+          <RouterProvider router={router} />
+        </ConfirmProvider>
+        <Toasts />
       </ThemeProvider>
     </QueryClientProvider>
   );

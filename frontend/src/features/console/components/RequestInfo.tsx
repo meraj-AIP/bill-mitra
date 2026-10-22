@@ -8,6 +8,7 @@ import { useReplyOptions, useRequestInfo, type RequestOption } from '../api/acti
 import { usePreset } from '../hooks/usePreset';
 import type { Focus } from '../model/focus';
 import { OptionCards } from './OptionCards';
+import { useConfirm } from '@/shared/feedback';
 
 function RequestPreview({ request, pending, onSend }: { request: RequestOption; pending: boolean; onSend: () => void }) {
   return (
@@ -23,8 +24,7 @@ function RequestPreview({ request, pending, onSend }: { request: RequestOption; 
   );
 }
 
-function AskOutcome({ done, error }: { done: boolean; error: string | null }) {
-  if (error) return <Typography variant="caption" sx={{ color: 'error.main' }}>{error}</Typography>;
+function AskOutcome({ done }: { done: boolean }) {
   return done ? <Typography variant="caption" sx={{ color: 'success.dark' }}>Asked. Their answer will appear in the conversation.</Typography> : null;
 }
 
@@ -45,6 +45,7 @@ function NotConnected({ complaint }: { complaint: ComplaintDetail }) {
 /** Ask the consumer for something that fits this complaint. Their next photo or message is filed under it. */
 export function RequestInfo({ complaint, preset }: { complaint: ComplaintDetail; preset: Focus | null }) {
   const ask = useRequestInfo(complaint.ticket);
+  const confirm = useConfirm();
   const options = useReplyOptions(complaint.ticket);
   const [kind, setKind] = useState<string | null>(null);
   usePreset(preset, 'request', true, setKind);
@@ -58,13 +59,19 @@ export function RequestInfo({ complaint, preset }: { complaint: ComplaintDetail;
     return <NothingToAsk complaint={complaint} />;
   }
   const chosen = requests.find((r) => r.kind === kind) ?? null;
+  const send = async (request: RequestOption) => {
+    if (await confirm({ title: `Ask for ${request.label.toLowerCase()}?`, confirmLabel: 'Send request', body: `\u201c${request.text}\u201d`,
+      points: ['Their next photo or message is filed under this complaint.'] })) {
+      ask.mutate(request.kind, { onSuccess: () => setKind(null) });
+    }
+  };
   return (
     <Stack sx={{ gap: 1 }}>
       <NotConnected complaint={complaint} />
       <OptionCards label="What to ask the consumer for" selected={chosen?.kind ?? null} onSelect={setKind}
         disabled={ask.isPending} items={requests.map((r) => ({ id: r.kind, label: r.label, why: r.why }))} />
-      {chosen && <RequestPreview request={chosen} pending={ask.isPending} onSend={() => ask.mutate(chosen.kind, { onSuccess: () => setKind(null) })} />}
-      <AskOutcome done={ask.isSuccess} error={ask.isError ? ask.error.message : null} />
+      {chosen && <RequestPreview request={chosen} pending={ask.isPending} onSend={() => void send(chosen)} />}
+      <AskOutcome done={ask.isSuccess} />
     </Stack>
   );
 }

@@ -84,7 +84,7 @@ export function PhotoReply({ ticket }: { ticket: string }) {
             {send.isPending && !send.isPaused && (
               <LinearProgress variant="determinate" value={Math.round(progress * 100)} aria-label="Photo upload progress" />
             )}
-            <SendStatus state={send} onTryAgain={submit} />
+            <SendStatus state={send} />
             <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1 }}>
               <Button variant="contained" onClick={submit} disabled={send.isPending || caption.length > CAPTION_LIMIT}
                 startIcon={send.isPending ? <CircularProgress size={16} color="inherit" aria-hidden /> : <SendOutlinedIcon />}>

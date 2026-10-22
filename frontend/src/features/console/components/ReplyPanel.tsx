@@ -11,6 +11,7 @@ import { useReply } from '../api/consoleApi';
 import { usePreset } from '../hooks/usePreset';
 import type { Focus } from '../model/focus';
 import { OptionCards } from './OptionCards';
+import { Cancelled, useConfirm, type ConfirmOptions } from '@/shared/feedback';
 
 function Destination({ complaint }: { complaint: ComplaintDetail }) {
   const whatsapp = complaint.reply_channel === 'whatsapp';
@@ -69,8 +70,23 @@ function DraftRow({ wording, asks, pending, error, onDraft }: DraftRowProps) {
 
 interface Loaded { key: string | null; text: string; wording: Wording | null; n: number }
 
+const CLOSING = new Set<ComplaintStatus>(['Resolved', 'Rejected']);
+
+/** Who gets the reply, and what else changes with it. A reply that closes the complaint is said plainly. */
+function replyConfirm(c: ComplaintDetail, body: string, status: ComplaintStatus | ''): ConfirmOptions {
+  const where = c.reply_channel === 'whatsapp' ? 'WhatsApp' : 'the web app';
+  const points = [c.reply_channel === 'whatsapp' && !c.whatsapp_ready
+    ? 'WhatsApp is not connected here, so it is saved as not delivered. Send it again once it is set up.'
+    : `The consumer gets it on ${where}.`];
+  if (status) points.push(`Then the complaint is set to ${status}, and the consumer is told.`);
+  return { title: status && CLOSING.has(status) ? `Send and set to ${status}?` : 'Send this reply?', confirmLabel: 'Send',
+    tone: status && CLOSING.has(status) ? 'warning' : 'default',
+    body: body.length > 220 ? `\u201c${body.slice(0, 220)}\u2026\u201d` : `\u201c${body}\u201d`, points };
+}
+
 export function ReplyPanel({ complaint, preset }: { complaint: ComplaintDetail; preset: Focus | null }) {
   const reply = useReply(complaint.ticket);
+  const confirm = useConfirm();
   const options = useReplyOptions(complaint.ticket);
   const ai = useDraftOption(complaint.ticket);
   const [status, setStatus] = useState<ComplaintStatus | ''>('');
@@ -89,6 +105,7 @@ export function ReplyPanel({ complaint, preset }: { complaint: ComplaintDetail; 
     ai.mutate(chosen.key, { onSuccess: (d) => load(chosen.key, d.text, d.worded_by === 'ai' ? 'ai' : 'rules_fallback') });
   };
   const send = async (body: string) => {
+    if (!(await confirm(replyConfirm(complaint, body, status)))) throw new Cancelled();
     await reply.mutateAsync({ body, ...(status ? { status } : {}), ...(chosen?.asks ? { asks: chosen.asks } : {}) });
     setStatus('');
     setLoaded((d) => ({ ...d, key: null, wording: null }));

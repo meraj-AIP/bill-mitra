@@ -1,44 +1,33 @@
-import { Alert, Button, CircularProgress, Divider, Link as MuiLink, Stack, TextField, Typography } from '@mui/material';
-import { useRef, useState, type FormEvent } from 'react';
+import { Alert, Divider, Link as MuiLink, Stack, Tab, Tabs, Typography } from '@mui/material';
+import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
-import { useLogin } from '../api/authApi';
-import { AuthFrame, FormError } from '../components/AuthFrame';
+import { AuthFrame } from '../components/AuthFrame';
+import { ConsumerSignIn } from '../components/ConsumerSignIn';
 import { DemoLogins } from '../components/DemoLogins';
-import { PasswordField } from '../components/PasswordField';
-import { normaliseLogin } from '../model/roles';
+import { StaffSignIn } from '../components/StaffSignIn';
+import { WhatsAppOnly } from '../components/WhatsAppOnly';
+import { usePhone } from '../hooks/usePhone';
+import { normaliseLogin, MOBILE_PATTERN } from '../model/roles';
+
+type Who = 'consumer' | 'staff';
 
 export function LoginPage() {
-  const login = useLogin();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const deleted = params.get('deleted') === '1';
-  const [values, setValues] = useState({ login: '', password: '' });
-  const [missing, setMissing] = useState(false);
-  const passwordRef = useRef<HTMLInputElement>(null);
+  const who: Who = params.get('as') === 'staff' ? 'staff' : 'consumer';
+  const phone = usePhone();
+  const [mobile, setMobile] = useState('');
+  const [staffLogin, setStaffLogin] = useState('');
+  const show = (next: Who) => setParams((p) => { p.set('as', next); return p; }, { replace: true });
+  // A sample mobile is a consumer, anything else is staff.
   const pick = (sample: string) => {
-    setMissing(false);
-    setValues({ login: sample, password: '' });
-    passwordRef.current?.focus();
-  };
-
-  // Where to go next is decided by PublicOnly once the account is cached.
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    if (!values.login.trim() || !values.password) {
-      setMissing(true);
-      return;
-    }
-    login.mutate({ login: normaliseLogin(values.login), password: values.password });
-  };
-
-  const error = missing ? 'Enter your email or mobile number and your password.' : (login.error?.message ?? null);
-  const set = (key: 'login' | 'password') => (event: { target: { value: string } }) => {
-    setMissing(false);
-    setValues((v) => ({ ...v, [key]: event.target.value }));
+    const login = normaliseLogin(sample);
+    if (MOBILE_PATTERN.test(login)) { setMobile(login); show('consumer'); } else { setStaffLogin(login); show('staff'); }
   };
 
   return (
-    <AuthFrame title="Sign in" lead="Consumers use their mobile number. Department staff use their work email."
+    <AuthFrame title="Sign in" lead="Consumers sign in with their mobile number and a one-time code. Staff use their work email."
       titleAction={<DemoLogins onPick={pick} />}
       footer={
         <Stack sx={{ gap: 1.5, alignItems: 'center', textAlign: 'center' }}>
@@ -48,29 +37,26 @@ export function LoginPage() {
           <MuiLink component={Link} to="/privacy" variant="caption" sx={{ fontWeight: 600 }}>Privacy notice</MuiLink>
         </Stack>
       }>
-      <Stack component="form" noValidate onSubmit={submit} sx={{ gap: 2.25 }} aria-busy={login.isPending}>
-        {deleted && !error && (
-          <Alert severity="success" variant="outlined" sx={{ bgcolor: 'success.light' }}>
-            Your account and its data have been deleted.
-          </Alert>
-        )}
-        <FormError message={error} />
-        <TextField label="Email or mobile number" name="username" autoComplete="username" autoFocus required fullWidth
-          value={values.login} onChange={set('login')} error={missing && !values.login.trim()}
-          slotProps={{ htmlInput: { autoCapitalize: 'none', spellCheck: false, autoCorrect: 'off' } }} />
-        <PasswordField label="Password" name="password" autoComplete="current-password" required fullWidth
-          value={values.password} onChange={set('password')} error={missing && !values.password} inputRef={passwordRef} />
-        <Button type="submit" variant="contained" size="large" fullWidth disabled={login.isPending}
-          startIcon={login.isPending ? <CircularProgress size={18} color="inherit" aria-hidden /> : null}
-          sx={{ mt: 0.5, py: 1.4 }}>
-          {login.isPending ? 'Signing in' : 'Sign in'}
-        </Button>
-      </Stack>
-      <Divider sx={{ my: 3 }} />
-      <Typography variant="body2" sx={{ textAlign: 'center' }}>
-        New here?{' '}
-        <MuiLink component={Link} to="/register" sx={{ fontWeight: 600 }}>Create an account</MuiLink>
-      </Typography>
+      {deleted && (
+        <Alert severity="success" variant="outlined" sx={{ bgcolor: 'success.light', mb: 2 }}>
+          Your account and its data have been deleted.
+        </Alert>
+      )}
+      <Tabs value={who} onChange={(_e, v: Who) => show(v)} variant="fullWidth" sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}>
+        <Tab value="consumer" label="Consumer" />
+        <Tab value="staff" label="Staff" />
+      </Tabs>
+      {who === 'staff' && <StaffSignIn key={staffLogin} login={staffLogin} />}
+      {who === 'consumer' && (phone ? <WhatsAppOnly /> : <ConsumerSignIn mobile={mobile} onMobile={setMobile} />)}
+      {who === 'consumer' && !phone && (
+        <>
+          <Divider sx={{ my: 3 }} />
+          <Typography variant="body2" sx={{ textAlign: 'center' }}>
+            New here?{' '}
+            <MuiLink component={Link} to="/register" sx={{ fontWeight: 600 }}>Create an account</MuiLink>
+          </Typography>
+        </>
+      )}
     </AuthFrame>
   );
 }

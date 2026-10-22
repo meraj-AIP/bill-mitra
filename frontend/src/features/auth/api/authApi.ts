@@ -67,17 +67,75 @@ export function useDemoLogins() {
 
 export function useLogin() {
   const signedIn = useSignedIn();
-  return useMutation({
+  return useMutation({ meta: { quiet: true },
     mutationFn: (body: { login: string; password: string }) => sendJson<Account>('/api/auth/login', body),
     onSuccess: signedIn,
   });
 }
 
-export function useRegister() {
+export type CodeChannel = 'sms' | 'whatsapp';
+export type CodePurpose = 'signup' | 'login';
+
+export interface CodeChannels {
+  channels: CodeChannel[];
+  /** Development only: no channel is connected, so the code is shown on the page. */
+  on_screen: boolean;
+  /** Where phones are sent to chat instead of signing in here. */
+  whatsapp_number: string | null;
+}
+
+export interface CodeSent {
+  channel: CodeChannel;
+  expires_in: number;
+  resend_in: number;
+  /** On sign up: how many connections the DISCOM holds for the number. */
+  connections: number | null;
+  dev_code: string | null;
+}
+
+export interface Connection {
+  discom: Discom;
+  service_masked: string;
+  section: string | null;
+}
+
+export function useCodeChannels() {
+  return useQuery({
+    queryKey: ['auth', 'code-channels'],
+    queryFn: ({ signal }) => getJson<CodeChannels>('/api/auth/otp/channels', signal),
+    staleTime: Infinity,
+  });
+}
+
+export function useStartCode() {
+  return useMutation({ meta: { quiet: true },
+    mutationFn: (body: { mobile: string; purpose: CodePurpose; channel: CodeChannel; discom?: Discom }) =>
+      sendJson<CodeSent>('/api/auth/otp/start', body),
+  });
+}
+
+export function useSignUpWithCode() {
   const signedIn = useSignedIn();
-  return useMutation({
-    mutationFn: (body: { name: string; mobile: string; password: string; consent: true }) => sendJson<Account>('/api/auth/register', body),
+  return useMutation({ meta: { quiet: true },
+    mutationFn: (body: { mobile: string; code: string; name: string; discom: Discom; consent: true }) =>
+      sendJson<Account>('/api/auth/otp/signup', body),
     onSuccess: signedIn,
+  });
+}
+
+export function useSignInWithCode() {
+  const signedIn = useSignedIn();
+  return useMutation({ meta: { quiet: true },
+    mutationFn: (body: { mobile: string; code: string }) => sendJson<Account>('/api/auth/otp/login', body),
+    onSuccess: signedIn,
+  });
+}
+
+export function useMyConnections(enabled: boolean) {
+  return useQuery({
+    queryKey: ['auth', 'connections'],
+    queryFn: ({ signal }) => getJson<Connection[]>('/api/auth/connections', signal),
+    enabled,
   });
 }
 
@@ -90,7 +148,7 @@ export function leaveTo(path: string): void {
 }
 
 export function useLogout() {
-  return useMutation({
+  return useMutation({ meta: { action: 'Signing out' },
     ...IDEMPOTENT,
     mutationFn: () => sendJson<void>('/api/auth/logout'),
     onSettled: () => leaveTo('/login'),
@@ -98,7 +156,7 @@ export function useLogout() {
 }
 
 export function useChangePassword() {
-  return useMutation({
+  return useMutation({ meta: { quiet: true, success: 'Password changed' },
     mutationFn: (body: { current_password: string; new_password: string }) => sendJson<void>('/api/auth/password', body),
   });
 }
@@ -120,7 +178,7 @@ export function usePrivacy() {
 
 /** Consumers only. The server erases their data and ends the session. */
 export function useDeleteMe() {
-  return useMutation({
+  return useMutation({ meta: { quiet: true },
     mutationFn: () => sendJson<void>('/api/me', undefined, 'DELETE'),
     onSuccess: () => leaveTo('/login?deleted=1'),
   });

@@ -44,7 +44,7 @@ export const theme = createTheme(base, {
         body: { WebkitFontSmoothing: 'antialiased', backgroundColor: p.background.default },
         '::selection': { backgroundColor: p.info.light },
         ':focus-visible': { outline: `2px solid ${p.primary.main}`, outlineOffset: 2 },
-        '@media (prefers-reduced-motion: no-preference)': { html: { scrollBehavior: 'smooth' } },
+        // No smooth scrolling on html: it made every page change glide. Jumps within a page ask for it themselves.
         '@media (prefers-reduced-motion: reduce)': {
           '*, *::before, *::after': { animationDuration: '0.01ms !important', transitionDuration: '0.01ms !important' },
         },

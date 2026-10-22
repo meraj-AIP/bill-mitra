@@ -174,6 +174,8 @@ T = {
     "btn_skip": "Skip",
     "cflow_ask_usc": "Type your service number (USC) as printed on the bill. If you do not have it, tap Skip.",
     "cflow_usc_invalid": "That does not look like a service number. It has 5 to 16 digits on your bill. Type it again or tap Skip.",
+    "cflow_pick_usc": "These connections are registered to this mobile number. Which one is the complaint about?",
+    "cflow_usc_row_type": "Type another number",
     "cflow_ask_desc": "In one or two lines, tell us what the problem is.",
     "cflow_desc_short": "Please write a few more words about the problem.",
     "cflow_preview": "I will record this complaint:\nProblem: {type}\nCompany: {discom}\nService number: {service}\nYou said: {description}",

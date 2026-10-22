@@ -43,7 +43,7 @@ export function useComplaintAssist(complaint: { ticket: string; status: string; 
 /** Refresh: a new brief written now, which then becomes the shared one. */
 export function useRefreshAssist(ticket: string) {
   const client = useQueryClient();
-  return useMutation({
+  return useMutation({ meta: { action: 'The AI brief' },
     mutationFn: () => sendJson<ComplaintAssist>(assistUrl(ticket)),
     onSuccess: () => void client.invalidateQueries({ queryKey: assistKey(ticket) }),
   });

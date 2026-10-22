@@ -42,7 +42,7 @@ def _script(monkeypatch: pytest.MonkeyPatch, seen: vision.Classification, *bills
     async def classify(_jpeg: bytes) -> vision.Classification:
         return seen
 
-    async def extract(_jpeg: bytes, _seen, failed_check=None):
+    async def extract(_jpeg: bytes, _seen, failed_check=None, suspects=None, doubts=None):
         calls.append(failed_check)
         return bills[len(calls) - 1]
 

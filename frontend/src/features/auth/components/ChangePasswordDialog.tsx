@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react';
 import { useChangePassword } from '../api/authApi';
 import { MIN_PASSWORD, passwordProblem } from '../model/roles';
 import { PasswordField } from './PasswordField';
+import { ActionError } from '@/shared/feedback';
 
 const EMPTY = { current: '', next: '', confirm: '' };
 
@@ -45,7 +46,7 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
             <Alert severity="success">Password changed. You stay signed in here; other devices are signed out.</Alert>
           ) : (
             <Stack sx={{ gap: 1, pt: 1 }}>
-              {change.error && <Alert severity="error" sx={{ mb: 1 }}>{change.error.message}</Alert>}
+              <ActionError error={change.error} action="The password change" sx={{ mb: 1 }} />
               <PasswordField label="Current password" autoComplete="current-password" autoFocus value={values.current}
                 onChange={set('current')} error={Boolean(show('current'))} helperText={show('current') ?? ' '} fullWidth />
               <PasswordField label="New password" autoComplete="new-password" value={values.next} onChange={set('next')}

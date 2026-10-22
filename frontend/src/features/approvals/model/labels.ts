@@ -15,6 +15,14 @@ export const KIND_ACTION: Record<ProposalKind, string> = {
   decide_correct: 'Approving records "bill correct" in your name, tells the consumer and closes the case.',
 };
 
+/** The same, short enough for a table cell. */
+export const KIND_EFFECT: Record<ProposalKind, string> = {
+  explain_correct: 'Sends the reply and resolves',
+  request_bill: 'Asks for a bill photo',
+  request_meter: 'Asks for a meter photo',
+  decide_correct: 'Records it and closes the case',
+};
+
 export const STATE_LABEL: Record<ProposalState, string> = {
   pending: 'Waiting',
   approved: 'Approved',

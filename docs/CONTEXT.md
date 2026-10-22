@@ -133,7 +133,7 @@ What is not built or not live:
 - Complaints are recorded in Bill Mitra only. Nothing goes to 1912. Revisions are marked applied by hand with a billing reference; nothing is written to the DISCOM's billing system.
 - DISCOM billing records connector is built but not connected. History and Gruha Jyothi eligibility come from the bill and earlier uploads.
 - No real org tree or staff list loaded yet. No single sign on. No SLA alerts.
-- No SMS OTP at sign up. One API process only, so no horizontal scaling yet.
+- Consumer sign up and sign in use a one-time code by SMS or WhatsApp, but no SMS gateway is connected yet. One API process only, so no horizontal scaling yet.
 - Urdu voice is not available.
 
 ## 8. Open items to verify before the pilot

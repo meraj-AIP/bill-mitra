@@ -1,6 +1,6 @@
 export { COMPLAINT_STATUSES, PRIORITIES, REPLY_LIMIT, SOURCES, STAFF_SOURCES, TRIAGES } from './api/types';
 export type {
-  ComplaintDetail, ComplaintMessage, ComplaintRequest, ComplaintRow, Handoff, RequestAnswer, TimelineEntry, WaitingOn, ComplaintStatus, ComplaintType, NewStaffComplaint, Person, Priority, Source,
+  ComplaintDetail, ComplaintMessage, SenderCheck, SenderStatus, ComplaintRequest, ComplaintRow, Handoff, RequestAnswer, TimelineEntry, WaitingOn, ComplaintStatus, ComplaintType, NewStaffComplaint, Person, Priority, Source,
   StaffSource, Triage,
 } from './api/types';
 export { useComplaintTypes } from './api/typesApi';
@@ -12,6 +12,7 @@ export { RequestList } from './components/RequestList';
 export { holderOf, splitNote } from './model/handoff';
 export { isPhoto, messagePhoto, pagePhotos } from './model/photos';
 export { DemoChip, DueChip } from './components/DueChip';
+export { SenderChip } from './components/SenderChip';
 export { TypeSelect } from './components/TypeSelect';
 export { DescriptionField, descriptionOk } from './components/DescriptionField';
 export { DetailSkeleton } from './components/DetailSkeleton';

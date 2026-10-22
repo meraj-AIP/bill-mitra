@@ -122,3 +122,40 @@ shows a "Demo" chip; `remove` deletes only demo rows and their messages. The sta
   USC, DISCOM, section, bill month, source, raised by, ownership), the linked bill summary when there is one, the
   timeline (who did what, System for automatic steps), the conversation, and actions (reply, status, assign, request
   info) in one side column.
+
+## 7. Registered mobile (`app/flows/sender_check.py`)
+
+Every complaint and reading check records whether it came from the mobile the DISCOM holds for the connection. It is
+a flag for staff today; nothing is refused because of it.
+
+The mobile checked is the complaint's reply address: the WhatsApp number (Meta has proved the sender holds it), or the
+caller's number staff typed. A complaint raised on the web uses the account's mobile when the DISCOM confirmed it at
+sign up (the consumer proved it with a one-time code). Any other web complaint has no proven mobile and is marked
+`no_mobile`.
+
+What the DISCOM needs to provide, beside the two lookups in section 4 (same base URL and token):
+
+`GET {DISCOM_BILLS_URL}/mobiles/{10 digit mobile}/consumers?discom=TGSPDCL` returns
+`{"consumers": [{"service_number": "...", "section": "..."}]}`, the connections registered to the mobile. 404 means
+none. It is asked once per DISCOM.
+
+| Status | Meaning |
+| --- | --- |
+| `verified` | The mobile is registered for the connection the complaint is about |
+| `other_connection` | The mobile is registered with the DISCOM, but for other connections |
+| `registered` | The mobile is registered; the complaint names no connection yet |
+| `not_registered` | The DISCOM holds no connection for the mobile |
+| `not_checked` | No lookup is connected |
+| `no_mobile` | Raised on the web app |
+
+Rules:
+
+- The check runs in the background with the queue jobs (every 30 seconds), so no consumer waits on the DISCOM. A failed
+  lookup is tried again after 15 minutes.
+- Only hashes and masked numbers are stored (`sender_connections`); plain service numbers and the mobile never go in a
+  log, a URL we log, or a new column.
+- On WhatsApp, the complaint chat offers the connections registered to the sender's number as a list to tap, instead
+  of typing the service number (up to 8; "Type another number" and Skip are always offered). The web chat never does.
+- In development with `OWNERSHIP_CHECK=false`, the sender's own uploaded bills stand in for the DISCOM, and staff see
+  that the data is a stand-in.
+- Staff see the result as a chip on the complaint and case pages, with the connections on that mobile in its tooltip.

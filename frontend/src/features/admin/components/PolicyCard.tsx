@@ -7,6 +7,7 @@ import type { Policy } from '@/features/review';
 import { rupees } from '@/shared/lib/format';
 
 import { useSavePolicy } from '../api/policyApi';
+import { useConfirm } from '@/shared/feedback';
 
 type Draft = Record<'ae_limit' | 'spike_ratio' | 'spike_min_increase' | 'min_history_months' | 'decision_sla_days', string>;
 
@@ -67,9 +68,12 @@ export function PolicyCard({ policy }: { policy: Policy }) {
     onChange: (e: { target: { value: string } }) => { save.reset(); setDraft((d) => ({ ...d, [key]: e.target.value })); },
   });
 
-  const submit = (event: FormEvent) => {
+  const confirm = useConfirm();
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (Object.keys(problems).length > 0) return;
+    if (!(await confirm({ title: `Save the ${policy.discom} review policy?`, confirmLabel: 'Save policy', tone: 'warning',
+      points: ['It applies to every new decision in this DISCOM from now on.', 'Decisions already recorded are not changed.'] }))) return;
     save.mutate({
       discom: policy.discom, custom_needs_approval: custom, ae_limit: noLimit ? null : Number(draft.ae_limit),
       spike_ratio: Number(draft.spike_ratio), spike_min_increase: Number(draft.spike_min_increase),
@@ -78,7 +82,7 @@ export function PolicyCard({ policy }: { policy: Policy }) {
   };
 
   return (
-    <Paper component="form" variant="outlined" noValidate onSubmit={submit} aria-labelledby={`policy-${policy.discom}`} sx={{ p: { xs: 2, sm: 3 } }}>
+    <Paper component="form" variant="outlined" noValidate onSubmit={(e) => void submit(e)} aria-labelledby={`policy-${policy.discom}`} sx={{ p: { xs: 2, sm: 3 } }}>
       <Typography id={`policy-${policy.discom}`} variant="h2" sx={{ mb: 1.5 }}>{policy.discom}</Typography>
       <ApprovalNote limit={noLimit ? null : Number(draft.ae_limit) || 0} custom={custom} />
       <Row title="AE limit" hint="The most a section AE can take off a bill alone after correcting the reading. Leave empty for no limit.">
@@ -100,7 +104,6 @@ export function PolicyCard({ policy }: { policy: Policy }) {
       <Row title="Days to decide" hint="A case open longer than this many calendar days is marked overdue.">
         <TextField {...field('decision_sla_days')} label="Days" slotProps={{ htmlInput: { step: 1, min: 1 } }} />
       </Row>
-      {save.error && <Alert severity="error" sx={{ mb: 2 }}>{save.error.message}</Alert>}
       <Stack direction="row" sx={{ gap: 1.5, alignItems: 'center', justifyContent: 'flex-end', pt: 2, borderTop: 1, borderColor: 'divider' }}>
         {save.isSuccess && !dirty && <Typography variant="body2" role="status" sx={{ color: 'success.dark' }}>Saved</Typography>}
         <Button disabled={!dirty || save.isPending} onClick={() => { setDraft(toDraft(policy)); setCustom(policy.custom_needs_approval); }}>Undo changes</Button>

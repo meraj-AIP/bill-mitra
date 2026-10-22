@@ -19,6 +19,7 @@ from app.domain.conversation.intents import DISPUTE_TYPES, classify
 from app.flows import cases, intake, usc_chat
 from app.flows.analysis import analyse
 from app.flows.turn import Turn
+from app.services import discom_bills
 from app.store import chat_drafts, policy, repos
 
 AWAIT_USC = "cdraft:usc"
@@ -28,6 +29,7 @@ DISCOMS = (("TGSPDCL", "btn_spdcl"), ("TGNPDCL", "btn_npdcl"))
 MIN_DESCRIPTION = 3
 MAX_DESCRIPTION = 1000
 PREVIEW_WORDS = 600
+MAX_PICK = 8  # list rows are capped at 10, and two go to "type another" and Skip
 
 Draft = dict[str, Any]
 
@@ -126,9 +128,40 @@ def _answered(draft: Draft, value: str) -> Draft:
     return draft | {"answers": (draft.get("answers") or {}) | {question.key: value}}
 
 
-async def _ask_usc(turn: Turn) -> None:
+def _without_options(draft: Draft) -> Draft:
+    return {k: v for k, v in draft.items() if k != "usc_options"}
+
+
+async def _ask_usc(turn: Turn, draft: Draft) -> None:
+    """The connections registered to the sender's WhatsApp number, to tap; otherwise the number is typed."""
+    found = await _registered(turn, str(draft["discom"]))
+    if not found:
+        chat_drafts.save(turn.state.user_id, draft)
+        await _type_usc(turn)
+        return
+    chat_drafts.save(turn.state.user_id, draft | {"usc_options": [c.service_number for c in found]})
+    turn.state.awaiting = None
+    rows = [ListRow(id=f"cusc_pick:{i}", title=mask(c.service_number) or "", description=(c.section or c.discom)[:72])
+            for i, c in enumerate(found)]
+    rows += [ListRow(id="cusc_type", title=turn.t("cflow_usc_row_type")), ListRow(id="cusc_skip", title=turn.t("btn_skip"))]
+    await turn.tracer.message(ListOut(body=turn.t("cflow_pick_usc"), button_label=turn.t("cflow_list_button"),
+                                      rows=rows, language=turn.lang))
+
+
+async def _type_usc(turn: Turn) -> None:
     turn.state.awaiting = AWAIT_USC
     await turn.buttons(turn.t("cflow_ask_usc"), [("cusc_skip", "btn_skip")])
+
+
+async def _registered(turn: Turn, discom: str) -> list[discom_bills.Connection]:
+    """Only on WhatsApp, where Meta has proved the sender holds the number. A failed lookup just means typing it."""
+    if turn.inbound.channel != "whatsapp" or not turn.inbound.reply_to:
+        return []
+    try:
+        found = await discom_bills.connections_for_mobile(turn.inbound.reply_to, turn.state.user_id, (discom,))
+    except discom_bills.LookupFailed:
+        return []
+    return found.found[:MAX_PICK]
 
 
 def _answer_lines(turn: Turn, draft: Draft) -> list[str]:
@@ -210,10 +243,14 @@ async def _on_draft_button(turn: Turn, reply_id: str, draft: Draft) -> None:
         kept = {"description": draft["description"]} if draft.get("description") else {}
         await _after_type(turn, {"flow": "complaint", "type": value, "answers": {}, **kept})
     elif kind == "cdis" and value in dict(DISCOMS) and draft.get("type"):
-        chat_drafts.save(turn.state.user_id, draft | {"discom": value})
-        await _ask_usc(turn)
+        await _ask_usc(turn, draft | {"discom": value})
     elif reply_id == "cusc_skip" and draft.get("discom"):
-        await _next(turn, draft)
+        await _next(turn, _without_options(draft))
+    elif kind == "cusc_pick" and value.isdigit() and int(value) < len(draft.get("usc_options") or []):
+        await _next(turn, _without_options(draft) | {"usc": draft["usc_options"][int(value)]})
+    elif reply_id == "cusc_type" and draft.get("discom"):
+        chat_drafts.save(turn.state.user_id, _without_options(draft))
+        await _type_usc(turn)
     elif question is not None and (reply_id == "cfq_skip" or value in question.options):
         await _next(turn, _answered(draft, "" if reply_id == "cfq_skip" else value))
     elif reply_id == "cdraft_send" and draft.get("description"):
@@ -231,7 +268,7 @@ async def on_button(turn: Turn, reply_id: str) -> bool:
     if reply_id == "cnew":
         await start(turn)
         return True
-    if not reply_id.startswith(("ccat:", "ctype:", "cdis:", "cusc_skip", "cdraft_", "cfq:", "cfq_skip")):
+    if not reply_id.startswith(("ccat:", "ctype:", "cdis:", "cusc_", "cdraft_", "cfq:", "cfq_skip")):
         return False
     draft = chat_drafts.get(turn.state.user_id)
     if draft is None or draft.get("flow") != "complaint":

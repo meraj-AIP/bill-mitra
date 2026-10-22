@@ -6,6 +6,7 @@ import { useAskQuestion, useReplyOptions, type ReplyOptions } from '../api/actio
 import { useComplaintAssist, useRefreshAssist, type ComplaintAssist as Assist, type NextAction } from '../api/assistApi';
 import { useSetStatus } from '../api/consoleApi';
 import { reveal, type FocusTarget } from '../model/focus';
+import { useConfirm } from '@/shared/feedback';
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/[\s-]+/g, '_');
 const statusFor = (key: string): ComplaintStatus | undefined => COMPLAINT_STATUSES.find((s) => norm(s) === norm(key));
@@ -52,19 +53,24 @@ interface Props {
 export function useNextStep(complaint: ComplaintDetail, next: NextAction | null, canReply: boolean, onFocus: Props['onFocus']): AssistView['action'] {
   const options = useReplyOptions(complaint.ticket);
   const setStatus = useSetStatus(complaint.ticket);
+  const confirm = useConfirm();
   // Hand over has its own check on the server; the other steps need the reply permission.
   const step = next && (canReply || next.kind === 'assign') ? stepFor(next, options.data, complaint) : null;
   if (!step || !next) return null;
-  const run = () => {
+  const run = async () => {
     if (step.status) {
-      setStatus.mutate(step.status, { onSuccess: () => reveal('status') });
+      if (await confirm({ title: `Set the complaint to ${step.status}?`, confirmLabel: `Set to ${step.status}`,
+        tone: step.status === 'Resolved' || step.status === 'Rejected' ? 'warning' : 'default',
+        body: 'The consumer gets a short message about it.' })) {
+        setStatus.mutate(step.status, { onSuccess: () => reveal('status') });
+      }
       return;
     }
     // A hand over opens with the suggested person picked; its key is only the action's name.
     onFocus(step.target, step.target === 'handoff' ? next.account_id ?? '' : next.key);
     reveal(step.target);
   };
-  return { label: step.label, why: next.why, run, pending: setStatus.isPending, error: setStatus.error?.message ?? null };
+  return { label: step.label, why: next.why, run: () => void run(), pending: setStatus.isPending, error: null };
 }
 
 export function ComplaintAssist({ complaint, onFocus }: Props) {

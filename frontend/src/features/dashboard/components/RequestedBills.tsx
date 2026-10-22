@@ -1,9 +1,7 @@
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import RadioButtonUncheckedIcon from '@mui/icons-material/RadioButtonUnchecked';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
-import {
-  Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Paper, Stack, Typography,
-} from '@mui/material';
+import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Paper, Stack, Typography } from '@mui/material';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
@@ -11,6 +9,7 @@ import type { ReviewSummary } from '@/features/review';
 import { monthLabel } from '@/shared/lib/format';
 
 import { useNoBills } from '../api/billsApi';
+import { ActionError } from '@/shared/feedback';
 
 function NoBillsDialog({ billId, onClose }: { billId: string; onClose: () => void }) {
   const noBills = useNoBills(billId);
@@ -19,7 +18,7 @@ function NoBillsDialog({ billId, onClose }: { billId: string; onClose: () => voi
       <DialogTitle>Continue without these bills?</DialogTitle>
       <DialogContent>
         <DialogContentText>We check this bill with the bills we already have and tell you the outcome.</DialogContentText>
-        {noBills.error && <Alert severity="error" sx={{ mt: 2 }}>{noBills.error.message}</Alert>}
+        <ActionError error={noBills.error} sx={{ mt: 2 }} />
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onClose}>Cancel</Button>

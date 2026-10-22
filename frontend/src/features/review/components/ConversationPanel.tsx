@@ -1,4 +1,4 @@
-import { Alert, Box, Button, CircularProgress, FormControlLabel, Radio, RadioGroup, Stack, TextField, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, FormControlLabel, Radio, RadioGroup, Stack, TextField, Typography } from '@mui/material';
 import { useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 
 import { MessageThread, RequestList } from '@/features/complaints';
@@ -7,6 +7,7 @@ import { useAskConsumer } from '../api/reviewApi';
 import type { CaseDetail, RequestKind } from '../api/types';
 import { CASE_SECTION, REQUEST_KIND } from '../model/labels';
 import { Panel } from './Panel';
+import { useConfirm } from '@/shared/feedback';
 
 const NOTE_LIMIT = 500;
 
@@ -15,13 +16,18 @@ function AskConsumer({ c }: { c: CaseDetail }) {
   const [kind, setKind] = useState<RequestKind>('earlier_bills');
   const [note, setNote] = useState('');
   const needsNote = kind === 'note' && !note.trim();
-  const submit = (event: FormEvent) => {
+  const confirm = useConfirm();
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (needsNote || note.length > NOTE_LIMIT) return;
+    if (!(await confirm({ title: `Ask the consumer for ${REQUEST_KIND[kind].label.toLowerCase()}?`, confirmLabel: 'Send request',
+      body: note.trim() ? `With your line: \u201c${note.trim()}\u201d` : REQUEST_KIND[kind].hint,
+      points: [`They are messaged on ${c.channel === 'whatsapp' ? 'WhatsApp' : 'the web app'}, in their language.`,
+        'Their next photo or message is filed under this case.'] }))) return;
     ask.mutate(note.trim() ? { kind, note: note.trim() } : { kind }, { onSuccess: () => setNote('') });
   };
   return (
-    <Stack component="form" onSubmit={submit} id={CASE_SECTION.ask} tabIndex={-1}
+    <Stack component="form" onSubmit={(e) => void submit(e)} id={CASE_SECTION.ask} tabIndex={-1}
       sx={{ gap: 1.5, pt: 2, mt: 2, borderTop: 1, borderColor: 'divider', scrollMarginTop: 80, '&:focus': { outline: 'none' } }}>
       <Typography variant="subtitle1" component="h3">Ask the consumer</Typography>
       <RadioGroup row value={kind} onChange={(e) => setKind(e.target.value as RequestKind)} aria-label="What to ask for">
@@ -33,7 +39,6 @@ function AskConsumer({ c }: { c: CaseDetail }) {
       <TextField size="small" multiline minRows={2} label={kind === 'note' ? 'What do you need to know?' : 'Add a line (optional)'}
         value={note} onChange={(e) => setNote(e.target.value)} error={note.length > NOTE_LIMIT}
         helperText={`${note.length} of ${NOTE_LIMIT} characters`} />
-      {ask.error && <Alert severity="error">{ask.error.message}</Alert>}
       <Box>
         <Button type="submit" variant="outlined" disabled={ask.isPending || needsNote}
           startIcon={ask.isPending ? <CircularProgress size={14} color="inherit" aria-hidden /> : null}>

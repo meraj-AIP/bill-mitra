@@ -42,9 +42,10 @@ export const SOURCE_LABEL: Record<Source, string> = {
   field: 'Field visit',
 };
 
+/** Whether the connection is shown to be the consumer's. The registered mobile is a separate check (SenderChip). */
 export const OWNERSHIP_LABEL: Record<Ownership, string> = {
-  verified: 'Verified with the registered mobile',
-  unverified: 'Not verified',
+  verified: 'Shown: their own bill is linked',
+  unverified: 'Service number given, not shown',
   not_needed: 'Not needed for this type',
 };
 

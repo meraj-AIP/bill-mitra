@@ -1,56 +1,28 @@
-import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
-import { Alert, Box, Button, Chip, Collapse, Container, Drawer, Stack } from '@mui/material';
+import { Alert, Box, Button, Container, Drawer, Stack, useMediaQuery, useTheme } from '@mui/material';
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import { useAuth } from '@/features/auth';
-import {
-  ComplaintEvidence, ComplaintFacts, ComplaintTimeline, DetailSkeleton, pagePhotos, RequestList, type ComplaintDetail,
-} from '@/features/complaints';
+import { DetailSkeleton, pagePhotos, type ComplaintDetail } from '@/features/complaints';
 import { isStatus } from '@/shared/api/http';
-import { Panel } from '@/shared/components/Panel';
 import { PhotoGallery } from '@/shared/components/PhotoGallery';
 import { EmptyState, ErrorState } from '@/shared/components/States';
 
 import { useConsoleComplaint } from '../api/consoleApi';
+import { CaseFile } from '../components/CaseFile';
 import { ComplaintAssist } from '../components/ComplaintAssist';
 import { DetailHeader } from '../components/DetailHeader';
 import { ComplaintBrief } from '../components/ComplaintBrief';
+import { ComplaintSnapshot } from '../components/ComplaintSnapshot';
 import { OwnerPanel } from '../components/OwnerPanel';
-import { ThreadPanel } from '../components/ThreadPanel';
 import { WorkPanel } from '../components/WorkPanel';
 import type { Focus, FocusTarget } from '../model/focus';
 
 const INBOX = '/console/complaints';
 
-/** What we hold, the bill, requests and the timeline: there when needed, out of the way while replying. */
-function MoreDetails({ data, requests, waiting }: { data: ComplaintDetail; requests: NonNullable<ComplaintDetail['requests']>; waiting: number }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Box>
-      <Button onClick={() => setOpen(!open)} aria-expanded={open} color="inherit"
-        endIcon={<ExpandMoreRoundedIcon sx={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 200ms' }} />}>
-        {open ? 'Hide full details' : 'Full details: what we hold, the bill, requests and timeline'}
-      </Button>
-      <Collapse in={open} unmountOnExit>
-        <Stack sx={{ gap: 3, mt: 1.5 }}>
-          <ComplaintFacts complaint={data} />
-          <ComplaintEvidence complaint={data} staff />
-          {requests.length > 0 && (
-            <Panel title="Requests to the consumer"
-              caption={waiting ? `${waiting} waiting for an answer.` : 'Everything asked has been answered.'}>
-              <RequestList requests={requests} />
-            </Panel>
-          )}
-          <ComplaintTimeline complaint={data} />
-        </Stack>
-      </Collapse>
-    </Box>
-  );
-}
-
-// The page band above the conversation, measured on a laptop screen, so thread and reply fit without scrolling.
-const THREAD_HEIGHT = { xs: '420px', md: 'max(300px, calc(100dvh - 470px))' };
+// Two columns from md up: the brief and the case file on the left, owner and response on the right, each column as
+// tall as its own content, so neither leaves a gap in the other. Below md: brief, response, case file.
+const COLUMNS = { md: 'minmax(0, 1fr) 380px', lg: 'minmax(0, 1fr) 420px' };
 
 function Detail({ data }: { data: ComplaintDetail }) {
   const [focus, setFocus] = useState<Focus | null>(null);
@@ -65,11 +37,21 @@ function Detail({ data }: { data: ComplaintDetail }) {
     setAssistOpen(false);
     setFocus((f) => ({ target, key, n: (f?.n ?? 0) + 1 }));
   };
-  const waiting = requests.filter((r) => r.status === 'open').length;
+  // One mount of each panel, placed by width, so a half-typed reply survives and section ids stay unique.
+  const wide = useMediaQuery(useTheme().breakpoints.up('md'));
+  const brief = <ComplaintBrief complaint={data} canReply={canReply} onFocus={open} onOpenAssist={() => setAssistOpen(true)} />;
+  const rail = (
+    <Stack component="aside" aria-label="Owner and response" sx={{ gap: 2, minWidth: 0 }}>
+      <OwnerPanel complaint={data} focus={focus} />
+      <WorkPanel complaint={data} focus={focus} />
+    </Stack>
+  );
+  const file = <CaseFile complaint={data} requests={requests} />;
   return (
     <PhotoGallery photos={photos}>
       <Stack sx={{ gap: 2 }}>
         <DetailHeader complaint={data} backTo={INBOX} onAssist={null} />
+        <ComplaintSnapshot complaint={data} />
         {data.kind === 'wrong_reading' && (
           <Alert severity="info" action={canCase
             ? <Button color="inherit" size="small" component={Link} to={`/review/${encodeURIComponent(data.ticket)}`}>Open the case</Button> : undefined}>
@@ -77,20 +59,14 @@ function Detail({ data }: { data: ComplaintDetail }) {
               : 'This is a reading check. A section AE decides and closes it in its review case.'}
           </Alert>
         )}
-        <Box sx={{ display: 'grid', gap: 2, alignItems: 'start', gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'minmax(0, 1fr) 320px', lg: 'minmax(0, 1fr) 340px' } }}>
-          <ComplaintBrief complaint={data} canReply={canReply} onFocus={open} onOpenAssist={() => setAssistOpen(true)} />
-          <OwnerPanel complaint={data} focus={focus} />
-        </Box>
-        <Box sx={{ display: 'grid', gap: 2, alignItems: 'start', gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'minmax(0, 1fr) 380px', lg: 'minmax(0, 1fr) 420px' } }}>
-          <Stack sx={{ gap: 1.5, minWidth: 0 }}>
-            <Panel title="Conversation" aside={waiting > 0
-              ? <Chip size="small" color="info" variant="outlined" label={`${waiting} ${waiting === 1 ? 'request' : 'requests'} waiting`} /> : undefined}>
-              <ThreadPanel ticket={data.ticket} messages={data.messages} inApp={data.source === 'consumer_web'} height={THREAD_HEIGHT} />
-            </Panel>
-          </Stack>
-          <WorkPanel complaint={data} focus={focus} />
-        </Box>
-        <MoreDetails data={data} requests={requests} waiting={waiting} />
+        {wide ? (
+          <Box sx={{ display: 'grid', gap: 2, alignItems: 'start', gridTemplateColumns: COLUMNS }}>
+            <Stack sx={{ gap: 2, minWidth: 0 }}>{brief}{file}</Stack>
+            {rail}
+          </Box>
+        ) : (
+          <Stack sx={{ gap: 2 }}>{brief}{rail}{file}</Stack>
+        )}
       </Stack>
       {canReply && (
         <Drawer anchor="right" open={assistOpen} onClose={() => setAssistOpen(false)}

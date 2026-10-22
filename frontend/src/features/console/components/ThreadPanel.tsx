@@ -5,6 +5,7 @@ import { useAuth } from '@/features/auth';
 import { MessageThread, type ComplaintDetail } from '@/features/complaints';
 
 import { useRetry } from '../api/actionsApi';
+import { useConfirm } from '@/shared/feedback';
 
 /**
  * The thread scrolls inside its own box, so a new message moves this box and never the page.
@@ -21,6 +22,11 @@ interface ThreadPanelProps {
 export function ThreadPanel({ ticket, messages, inApp = false, height = { xs: '420px', md: '520px' } }: ThreadPanelProps) {
   const box = useRef<HTMLDivElement>(null);
   const retry = useRetry(ticket);
+  const confirm = useConfirm();
+  const sendAgain = async (id: number) => {
+    if (await confirm({ title: 'Send this message again?', confirmLabel: 'Send again',
+      body: 'It did not reach the consumer last time. It goes again exactly as written.' })) retry.mutate(id);
+  };
   const canRetry = useAuth().can('complaints.reply');
   useLayoutEffect(() => {
     if (box.current) box.current.scrollTop = box.current.scrollHeight;
@@ -28,7 +34,7 @@ export function ThreadPanel({ ticket, messages, inApp = false, height = { xs: '4
   return (
     <Box ref={box} sx={{ maxHeight: height, overflowY: 'auto', overscrollBehavior: 'contain', pr: 0.5 }}>
       {retry.isError && <Alert severity="error" sx={{ mb: 1.5 }}>{retry.error.message}</Alert>}
-      <MessageThread messages={messages} viewer="staff" {...(canRetry ? { onRetry: (id: number) => retry.mutate(id) } : {})} inApp={inApp} />
+      <MessageThread messages={messages} viewer="staff" {...(canRetry ? { onRetry: (id: number) => void sendAgain(id) } : {})} inApp={inApp} />
     </Box>
   );
 }

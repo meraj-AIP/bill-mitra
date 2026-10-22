@@ -6,8 +6,7 @@ import { ChartsReferenceLine } from '@mui/x-charts/ChartsReferenceLine';
 import { formatCount, monthLabel, rupees } from '@/shared/lib/format';
 
 import type { CaseDetail, HistorySource } from '../api/types';
-import { ratioText } from '../model/labels';
-import { Figure, Panel } from './Panel';
+import { Panel } from './Panel';
 
 const SOURCES: HistorySource[] = ['printed', 'uploaded', 'discom', 'this_bill'];
 const SOURCE_LABEL: Record<HistorySource, string> = {
@@ -63,13 +62,6 @@ export function FlagPanel({ c }: { c: CaseDetail }) {
       {!s.flagged && !wentBack && (
         <Alert severity="info" sx={{ mb: 2 }}>The engine did not flag this bill. The consumer asked for a check themselves.</Alert>
       )}
-      <Box sx={{ display: 'grid', gap: 2, mb: 2, gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(4, minmax(0, 1fr))' } }}>
-        <Figure label="This month" value={`${formatCount(s.units)} units`} />
-        <Figure label="Usual month" value={s.median_units === null ? 'No history' : `${formatCount(s.median_units)} units`} />
-        <Figure label="Compared with usual" value={ratioText(s.ratio) || 'Not comparable'} strong={s.ratio !== null} />
-        <Figure label="A usual month costs" value={s.usual_amount === null ? 'Not known' : rupees(s.usual_amount)}
-          note={c.printed_amount === null ? undefined : `Printed: ${rupees(c.printed_amount)}`} />
-      </Box>
       <HistoryBars c={c} />
     </Panel>
   );

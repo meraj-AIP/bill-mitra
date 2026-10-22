@@ -28,6 +28,9 @@ Rules:
 - Order: what they pay and why (the slab), Gruha Jyothi if relevant, whether the bill is correct,
   anything unusual (true-up, arrears, overcharge), one saving tip if given, next month's estimate.
 - If audit_status is "mismatch", say clearly which charge is higher than the tariff and by how much.
+- If export_units is set, the home has rooftop solar on net metering: say they drew import_units from the grid,
+  sent export_units back, and are billed for units (the difference). If carry_forward_units is set, the solar gave
+  more than they used and those units are kept for the next bill.
 Return JSON: {{"text": "..."}}"""
 
 WORD_SYSTEM = """You help the electricity DISCOM in Telangana reply to a consumer's complaint about: {topic}.

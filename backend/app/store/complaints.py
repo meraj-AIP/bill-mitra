@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 
+from app.core.hashing import service_hash
 from app.domain import complaint_types
 from app.domain.bill import ExtractedBill
 from app.store import handoffs, policy
@@ -157,8 +158,10 @@ def create(user_id: str, bill_id: str | None, bill: ExtractedBill, issue: str, a
     """Record a complaint about a bill and open its thread with the consumer's own words."""
     where = placement or Placement(section_id=None, unit_id=None)
     type_code = complaint_types.WRONG_READING if kind == "wrong_reading" else complaint_types.LEGACY_GENERAL
+    # The hash lets the sender check match the connection to the consumer's registered mobile.
     intake = intake or intake_for(type_code, _source(channel, kind), bill.discom,
-                                  ownership="verified" if bill_id else "not_needed")
+                                  ownership="verified" if bill_id else "not_needed",
+                                  service_number_hash=service_hash(bill.service_number) if bill.service_number else None)
     values = {"user_id": user_id, "bill_id": bill_id, "service_masked": bill.masked_service_number(),
               "bill_month": bill.bill_month, "discom": bill.discom, "issue": issue, "amount": amount,
               "language": language, "channel": channel, "reply_to": reply_to, "triage": triage, "kind": kind,
@@ -188,12 +191,15 @@ class General(BaseModel):
     service_masked: str | None = None
     bill_month: str | None = None
     section_name: str | None = None
+    # From the linked bill's check, so the inbox and the detail say what the check found. None without a bill.
+    triage: str | None = None
+    amount: float = 0.0
 
 
 def create_general(complaint: General, placement: Placement, intake: Intake, first_message: str,
                    author_kind: AuthorKind = "consumer", author_id: str | None = None,
                    created_at: str | None = None) -> str:
-    values = {**complaint.model_dump(), "amount": 0.0, "kind": "general", "unit_id": placement.unit_id,
+    values = {**complaint.model_dump(), "kind": "general", "unit_id": placement.unit_id,
               "section_id": placement.section_id, "assigned_to": placement.assigned_to}
     if created_at:
         values |= {"created_at": created_at, "updated_at": created_at}

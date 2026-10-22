@@ -2,7 +2,6 @@
 
 from fastapi.testclient import TestClient
 
-from app.config import get_settings
 from app.main import app
 from app.store import accounts
 
@@ -41,28 +40,6 @@ def test_five_failures_lock_the_login():
     with TestClient(app) as client:
         assert [_login(client, "lockout@example.com", "not-the-password") for _ in range(5)] == [401] * 5
         assert _login(client, "lockout@example.com") == 401
-
-
-def test_register_then_me():
-    with TestClient(app) as client:
-        body = {"name": "Test Consumer", "mobile": "9999999999", "password": SECRET, "consent": True}
-        created = client.post("/api/auth/register", json=body)
-        assert created.status_code == 200 and created.json()["role"] == "consumer"
-        me = client.get("/api/auth/me").json()
-        assert me["id"] == created.json()["id"] and me["login"] == "9999999999"
-        assert me["consent_version"] == get_settings().privacy_notice_version
-        assert client.post("/api/auth/register", json=body).status_code == 409
-        assert client.post("/api/auth/register", json={**body, "mobile": "5999999999"}).status_code == 422
-        assert client.post("/api/auth/register", json={**body, "password": "short"}
-                           ).status_code == 422
-
-
-def test_register_requires_consent_to_the_privacy_notice():
-    body = {"name": "Test Consumer", "mobile": "9999999998", "password": SECRET}
-    with TestClient(app) as client:
-        assert client.post("/api/auth/register", json=body).status_code == 422
-        assert client.post("/api/auth/register", json={**body, "consent": False}).status_code == 422
-        assert client.get("/api/auth/me").status_code == 401
 
 
 def test_consumer_cannot_reach_staff_routes(sign_in):

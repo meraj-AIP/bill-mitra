@@ -7,6 +7,7 @@ import { useState, type FormEvent } from 'react';
 import { useCreateRole, useResetRole, useUpdateRole, type Role, type RoleDraft } from '../api/rolesApi';
 import { separationProblem } from '../model/permissionText';
 import { PermissionGroups } from './PermissionGroups';
+import { useConfirm } from '@/shared/feedback';
 
 interface RoleDialogProps {
   /** Null to create a new role. */
@@ -109,18 +110,30 @@ export function RoleDialog({ role, onClose }: RoleDialogProps) {
   const error = save.error ?? reset.error;
   const patch = (changes: Partial<RoleDraft>) => setDraft((d) => ({ ...d, ...changes }));
 
-  const submit = (event: FormEvent) => {
+  const confirm = useConfirm();
+  const held = role?.accounts ?? 0;
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
     setChecked(true);
     if (readOnly || Object.values(problems).some(Boolean)) return;
     const body = { ...draft, name: draft.name.trim(), description: draft.description.trim() };
+    if (role && held > 0 && !(await confirm({ title: `Save changes to ${role.name}?`, confirmLabel: 'Save role', tone: 'warning',
+      body: `${held} ${held === 1 ? 'account holds' : 'accounts hold'} this role.`,
+      points: ['What they can see and do changes the next time each page loads.'] }))) return;
     if (role) update.mutate({ slug: role.slug, changes: body }, { onSuccess: onClose });
     else create.mutate(body, { onSuccess: onClose });
   };
 
+  const resetRole = async () => {
+    if (role && await confirm({ title: `Reset ${role.name} to its defaults?`, confirmLabel: 'Reset role', tone: 'danger',
+      points: ['Every permission change made to this role is undone.', held ? `${held} ${held === 1 ? 'account holds' : 'accounts hold'} it.` : 'No account holds it yet.'] })) {
+      reset.mutate(role.slug, { onSuccess: onClose });
+    }
+  };
+
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="md" scroll="paper">
-      <Box component="form" noValidate onSubmit={submit} sx={{ display: 'contents' }}>
+      <Box component="form" noValidate onSubmit={(e) => void submit(e)} sx={{ display: 'contents' }}>
         <DialogTitle>{titleOf(role)}</DialogTitle>
         <DialogContent dividers>
           <Stack sx={{ gap: 2.5 }}>
@@ -134,7 +147,7 @@ export function RoleDialog({ role, onClose }: RoleDialogProps) {
           </Stack>
         </DialogContent>
         <Actions role={role} readOnly={readOnly} pending={save.isPending || reset.isPending} onClose={onClose}
-          onReset={() => role && reset.mutate(role.slug, { onSuccess: onClose })} />
+          onReset={() => void resetRole()} />
       </Box>
     </Dialog>
   );

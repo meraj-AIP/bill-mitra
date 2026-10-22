@@ -11,7 +11,7 @@ export function usePolicies() {
 
 export function useSavePolicy() {
   const client = useQueryClient();
-  return useMutation({
+  return useMutation({ meta: { action: 'Saving the policy', success: 'Review policy saved' },
     ...IDEMPOTENT,
     mutationFn: (policy: Policy) => sendJson<Policy>(`/api/admin/policy/${policy.discom}`, policy, 'PUT'),
     onSuccess: (saved) => {

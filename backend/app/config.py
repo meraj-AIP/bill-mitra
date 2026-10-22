@@ -98,6 +98,12 @@ class Settings(BaseSettings):
     discom_bills_token: str = ""
     # Approved WhatsApp authentication template that carries a one-time code. Empty means codes cannot be sent.
     whatsapp_code_template: str = ""
+    # SMS for one-time sign in codes (app/services/sms.py). Empty means SMS is not connected. In India the provider
+    # needs a DLT registered sender id and template; the code is the template's one variable.
+    sms_api_url: str = ""
+    sms_api_key: str = ""
+    sms_sender_id: str = ""
+    sms_template_id: str = ""
 
     @model_validator(mode="after")
     def _production_keeps_ownership(self) -> "Settings":
@@ -111,6 +117,10 @@ class Settings(BaseSettings):
     def dev_bills(self) -> bool:
         """Development shortcut: stored bills stand in for the DISCOM and ownership is not checked."""
         return self.app_env == "development" and not self.ownership_check
+
+    @property
+    def sms_enabled(self) -> bool:
+        return bool(self.sms_api_url and self.sms_api_key)
 
     @property
     def discom_bills_live(self) -> bool:

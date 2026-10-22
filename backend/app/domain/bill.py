@@ -53,6 +53,9 @@ class ExtractedBill(BaseModel):
     previous_status: str | None = Field(default=None, pattern=r"^\d{2}$")
     units: int | None = None
     export_units: int | None = None
+    # Net-metered bills print the export register's own readings; their difference is the export.
+    export_previous_reading: float | None = None
+    export_present_reading: float | None = None
     # Net-metered bills print import, export and the billed (net) units; the billed figure is a cross-check.
     billed_units: int | None = None
     load_kw: float | None = None

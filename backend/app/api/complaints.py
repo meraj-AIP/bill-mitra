@@ -25,11 +25,12 @@ from app.flows.complaint import LABEL_EN
 from app.flows.complaint_timeline import timeline
 from app.flows.evidence import TimelineEntry
 from app.services import notify
-from app.store import accounts, repos, units
+from app.store import accounts, repos, sender_checks, units
 from app.store import complaints as store
 from app.store.accounts import Account
 from app.store.complaints import OPEN_STATUSES, Complaint, Kind, Sort, Status
 from app.store.db import DISCOM_UNITS
+from app.store.sender_checks import SenderCheck
 
 router = APIRouter(tags=["complaints"])
 
@@ -132,6 +133,7 @@ class ComplaintDetail(ComplaintRow):
     messages: list[ComplaintMessage]
     reply_channel: Literal["whatsapp", "web"]
     whatsapp_ready: bool
+    sender: SenderCheck | None = None  # whether it came from the DISCOM's registered mobile
 
 
 class RowPage(BaseModel):
@@ -182,7 +184,7 @@ def _detail(complaint: Complaint, account: Account | None = None) -> ComplaintDe
                            requests=thread.requests(complaint.ticket), timeline=timeline(complaint.ticket, row),
                            messages=thread.messages(complaint.ticket),
                            reply_channel=notify.reply_channel(complaint),  # type: ignore[arg-type]
-                           whatsapp_ready=get_settings().whatsapp_enabled)
+                           whatsapp_ready=get_settings().whatsapp_enabled, sender=sender_checks.for_ticket(complaint.ticket))
 
 
 def visible_to(account: Account, complaint: Complaint) -> bool:

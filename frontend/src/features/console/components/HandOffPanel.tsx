@@ -10,6 +10,7 @@ import { useAssign, useSendBack } from '../api/actionsApi';
 import { usePreset } from '../hooks/usePreset';
 import type { Focus } from '../model/focus';
 import { NoteForm } from './NoteForm';
+import { useConfirm } from '@/shared/feedback';
 
 type Mode = { kind: 'hand_over'; person: string } | { kind: 'send_back' } | null;
 
@@ -46,19 +47,34 @@ function Controls({ complaint, people, sendBackTo, preset }: ControlsProps) {
   const [mode, setMode] = useState<Mode>(null);
   usePreset(preset, 'handoff', true, (key) => setMode({ kind: 'hand_over', person: people.some((p) => p.id === key) ? key : '' }));
   const close = () => { setMode(null); assign.reset(); sendBack.reset(); };
+  const confirm = useConfirm();
+  const handOver = async (note: string, person: string) => {
+    const name = people.find((p) => p.id === person)?.name ?? 'them';
+    if (await confirm({ title: `Hand this complaint to ${name}?`, confirmLabel: 'Hand over',
+      points: [`${name} is alerted and holds it from now.`, note ? `Your note goes with it: \u201c${note}\u201d` : 'No note goes with it.',
+        'The consumer is not told who handles it.'] })) {
+      assign.mutate({ account_id: person, note }, { onSuccess: close });
+    }
+  };
+  const returnIt = async (note: string) => {
+    if (await confirm({ title: `Send it back to ${sendBackTo ?? 'them'}?`, confirmLabel: 'Send back', tone: 'warning',
+      points: [`${sendBackTo ?? 'They'} hold it again and are alerted.`, `Your reason goes with it: \u201c${note}\u201d`] })) {
+      sendBack.mutate(note, { onSuccess: close });
+    }
+  };
 
   if (mode?.kind === 'hand_over') {
     return (
       <NoteForm key="hand_over" people={people} initialPerson={mode.person} noteLabel="Note for the next person" submitLabel="Hand over"
         state={assign} onCancel={close}
-        onSubmit={(note, person) => assign.mutate({ account_id: person, note }, { onSuccess: close })} />
+        onSubmit={(note, person) => void handOver(note, person)} />
     );
   }
   if (mode?.kind === 'send_back' && sendBackTo) {
     return (
       <NoteForm key="send_back" noteLabel={`Why it goes back to ${sendBackTo}`} submitLabel="Send back"
         state={sendBack} onCancel={close}
-        onSubmit={(note) => sendBack.mutate(note, { onSuccess: close })} />
+        onSubmit={(note) => void returnIt(note)} />
     );
   }
   return (

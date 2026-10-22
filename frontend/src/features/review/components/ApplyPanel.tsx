@@ -7,12 +7,20 @@ import { rupees } from '@/shared/lib/format';
 import { useDecisionAction } from '../api/reviewApi';
 import type { CaseDetail, Decision } from '../api/types';
 import { Panel } from './Panel';
+import { useConfirm } from '@/shared/feedback';
 
 function Apply({ c, d }: { c: CaseDetail; d: Decision }) {
   const { account } = useAuth();
   const applied = useDecisionAction(c.ticket, 'applied');
   const [ref, setRef] = useState('');
   const own = d.proposed_by.id === account?.id;
+  const confirm = useConfirm();
+  const markApplied = async () => {
+    if (!(await confirm({ title: 'Mark this revision applied?', confirmLabel: 'Mark applied',
+      body: `Confirm the revised amount of ${rupees(d.revised_amount)} is now in the DISCOM billing system.`,
+      points: [`Billing reference: ${ref.trim()}`, 'The consumer is told the corrected bill is in place.', 'The case closes.'] }))) return;
+    applied.mutate({ id: d.id, body: { billing_ref: ref.trim() } });
+  };
   return (
     <Stack sx={{ gap: 1.5 }}>
       <Alert severity="success" variant="outlined">
@@ -23,12 +31,11 @@ function Apply({ c, d }: { c: CaseDetail; d: Decision }) {
         <TextField size="small" label="Billing reference" value={ref} onChange={(e) => setRef(e.target.value)} disabled={own}
           helperText="The adjustment or voucher number from the billing system." sx={{ flex: 1, maxWidth: 360 }} />
         <Button variant="contained" disabled={own || !ref.trim() || applied.isPending}
-          onClick={() => applied.mutate({ id: d.id, body: { billing_ref: ref.trim() } })}
+          onClick={() => void markApplied()}
           startIcon={applied.isPending ? <CircularProgress size={14} color="inherit" aria-hidden /> : null}>
           Mark applied
         </Button>
       </Stack>
-      {applied.error && <Alert severity="error">{applied.error.message}</Alert>}
     </Stack>
   );
 }

@@ -41,7 +41,7 @@ export function useReplyOptions(ticket: string) {
 }
 
 export function useDraftOption(ticket: string) {
-  return useMutation({
+  return useMutation({ meta: { action: 'Rewording the reply' },
     ...IDEMPOTENT,
     mutationFn: (optionKey: string) => sendJson<Draft>(`${path(ticket)}/draft`, { option_key: optionKey }),
   });
@@ -49,7 +49,7 @@ export function useDraftOption(ticket: string) {
 
 export function useRequestInfo(ticket: string) {
   const apply = useApplyDetail(ticket);
-  return useMutation({
+  return useMutation({ meta: { action: 'The request', success: 'Request sent to the consumer' },
     mutationFn: (kind: InfoKind) => sendJson<ComplaintDetail>(`${path(ticket)}/request`, { kind }),
     onSuccess: apply,
   });
@@ -57,7 +57,7 @@ export function useRequestInfo(ticket: string) {
 
 export function useRetry(ticket: string) {
   const apply = useApplyDetail(ticket);
-  return useMutation({
+  return useMutation({ meta: { action: 'Sending it again', success: 'Sent again' },
     mutationFn: (messageId: number) => sendJson<ComplaintDetail>(`${path(ticket)}/messages/${messageId}/retry`),
     onSuccess: apply,
   });
@@ -68,7 +68,7 @@ export const HANDOFF_NOTE = { min: 10, max: 300 } as const;
 
 export function useAssign(ticket: string) {
   const apply = useApplyDetail(ticket);
-  return useMutation({
+  return useMutation({ meta: { action: 'The hand over', success: 'Handed over' },
     mutationFn: (body: { account_id: string; note: string }) => sendJson<ComplaintDetail>(`${path(ticket)}/assign`, body),
     onSuccess: apply,
   });
@@ -77,7 +77,7 @@ export function useAssign(ticket: string) {
 /** Returns the complaint to whoever handed it over, with a note. */
 export function useSendBack(ticket: string) {
   const apply = useApplyDetail(ticket);
-  return useMutation({
+  return useMutation({ meta: { action: 'Sending it back', success: 'Sent back' },
     mutationFn: (note: string) => sendJson<ComplaintDetail>(`${path(ticket)}/return`, { note }),
     onSuccess: apply,
   });
@@ -86,7 +86,7 @@ export function useSendBack(ticket: string) {
 /** A question in the consumer's language, sent as a request of kind note so their answer is filed under it. */
 export function useAskQuestion(ticket: string) {
   const apply = useApplyDetail(ticket);
-  return useMutation({
+  return useMutation({ meta: { action: 'The question', success: 'Question sent to the consumer' },
     mutationFn: (note: string) => sendJson<ComplaintDetail>(`${path(ticket)}/request`, { kind: 'note', note }),
     onSuccess: apply,
   });
@@ -96,7 +96,7 @@ export interface BulkResult { done: string[]; skipped: Array<{ ticket: string; r
 
 export function useBulk() {
   const client = useQueryClient();
-  return useMutation({
+  return useMutation({ meta: { action: 'The bulk action' },
     mutationFn: (body: { tickets: string[]; status?: ComplaintStatus; send_explanation: boolean }) =>
       sendJson<BulkResult>('/api/console/complaints/bulk', body),
     onSuccess: () => {

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { COMPLAINT_STATUSES, type ComplaintStatus } from '@/features/complaints';
 
 import { useBulk, type BulkResult } from '../api/actionsApi';
+import { useConfirm } from '@/shared/feedback';
 
 interface BulkBarProps {
   tickets: string[];
@@ -24,8 +25,21 @@ export function BulkBar({ tickets, onDone }: BulkBarProps) {
   const bulk = useBulk();
   const [status, setStatus] = useState<ComplaintStatus | ''>('');
   const [result, setResult] = useState<BulkResult | null>(null);
+  const confirm = useConfirm();
   const run = async (body: { status?: ComplaintStatus; send_explanation: boolean }) => {
-    setResult(await bulk.mutateAsync({ tickets, ...body }));
+    const n = `${tickets.length} ${tickets.length === 1 ? 'complaint' : 'complaints'}`;
+    const points = [
+      ...(body.send_explanation ? ['Each consumer gets the checked explanation of their bill, worded by the rules.'] : []),
+      ...(body.status ? [`Each is set to ${body.status}, and the consumer is told.`] : []),
+      'Reading checks and complaints outside your scope are skipped and listed.',
+    ];
+    if (!(await confirm({ title: `Apply to ${n}?`, confirmLabel: `Apply to ${tickets.length}`,
+      tone: body.status === 'Resolved' || body.status === 'Rejected' ? 'warning' : 'default', points }))) return;
+    try {
+      setResult(await bulk.mutateAsync({ tickets, ...body }));
+    } catch {
+      return; // the action's own message says what went wrong; the selection stays for another try
+    }
     setStatus('');
     onDone();
   };
@@ -33,7 +47,6 @@ export function BulkBar({ tickets, onDone }: BulkBarProps) {
   return (
     <Stack sx={{ gap: 1 }}>
       {result && <Outcome result={result} />}
-      {bulk.isError && <Alert severity="error">{bulk.error.message}</Alert>}
       {tickets.length > 0 && (
         <Paper variant="outlined" sx={{ p: 1.5, display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center', bgcolor: 'info.light' }}>
           <Typography variant="subtitle2" sx={{ flex: 1, minWidth: 140 }}>{tickets.length} selected</Typography>

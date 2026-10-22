@@ -66,12 +66,12 @@ function useRefreshAccounts() {
 
 export function useCreateAccount() {
   const onSuccess = useRefreshAccounts();
-  return useMutation({ mutationFn: (body: NewAccount) => sendJson<Account>('/api/admin/accounts', body), onSuccess });
+  return useMutation({ meta: { quiet: true, success: 'Account created' }, mutationFn: (body: NewAccount) => sendJson<Account>('/api/admin/accounts', body), onSuccess });
 }
 
 export function useUpdateAccount() {
   const onSuccess = useRefreshAccounts();
-  return useMutation({
+  return useMutation({ meta: { quiet: true, success: 'Account saved' },
     ...IDEMPOTENT,
     mutationFn: ({ id, changes }: { id: string; changes: AccountChanges }) =>
       sendJson<Account>(`/api/admin/accounts/${encodeURIComponent(id)}`, changes, 'PATCH'),
@@ -81,7 +81,7 @@ export function useUpdateAccount() {
 
 export function useResetPassword() {
   const onSuccess = useRefreshAccounts();
-  return useMutation({
+  return useMutation({ meta: { quiet: true, success: 'Password reset' },
     ...IDEMPOTENT,
     mutationFn: ({ id, password }: { id: string; password: string }) =>
       sendJson<void>(`/api/admin/accounts/${encodeURIComponent(id)}/reset-password`, { password }),
@@ -101,7 +101,7 @@ export function useAuditLog(page: number, pageSize: number, action: string) {
 
 export function useImportAccounts() {
   const onSuccess = useRefreshAccounts();
-  return useMutation({
+  return useMutation({ meta: { action: 'The import', success: 'Import finished' },
     mutationFn: (file: File) => {
       const form = new FormData();
       form.append('file', file, file.name);

@@ -6,6 +6,7 @@ import type { UnitRef } from '@/shared/api/types';
 
 import { useUpdateAccount, type AccountChanges } from '../api/adminApi';
 import { StaffFields } from './StaffFields';
+import { ActionError } from '@/shared/feedback';
 
 interface EditAccountDialogProps {
   account: Account;
@@ -42,7 +43,7 @@ export function EditAccountDialog({ account, isSelf, onClose }: EditAccountDialo
         <DialogTitle>Edit account</DialogTitle>
         <DialogContent>
           <Stack sx={{ gap: 2, pt: 1 }}>
-            {update.error && <Alert severity="error">{update.error.message}</Alert>}
+            <ActionError error={update.error} action="Saving the account" />
             <Typography variant="body2" sx={{ color: 'text.secondary' }}>Signs in as {account.login}</Typography>
             <TextField label="Full name" value={name} onChange={(e) => setName(e.target.value)} fullWidth autoFocus
               error={Boolean(nameProblem)} helperText={nameProblem ?? ' '} />

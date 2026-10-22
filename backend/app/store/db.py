@@ -156,8 +156,10 @@ _AUDIT_COLUMNS = {"unit_id": "TEXT"}
 _REQUEST_COLUMNS = {"months": "TEXT"}  # JSON list of YYYY-MM on a request the system raised for earlier bills
 # Automation (app/flows/automation.py): when a request was reminded, when a case went to the division above.
 # proposal_checked_at: the complaint's last change the proposal rules have seen (app/flows/proposals.py).
+# mobile_*: whether it came from the DISCOM's registered mobile for the connection (app/flows/sender_check.py).
 _AUTOMATION_COLUMNS = (("case_requests", {"reminded_at": "TEXT"}),
-                       ("complaints", {"escalated_at": "TEXT", "proposal_checked_at": "TEXT"}))
+                       ("complaints", {"escalated_at": "TEXT", "proposal_checked_at": "TEXT", "mobile_check": "TEXT",
+                                       "mobile_source": "TEXT", "mobile_checked_at": "TEXT"}))
 # Hand-off (docs/assist-contract.md section 4): who handed the complaint to its holder, with what note, and when.
 # answer_message_id is the consumer message that answered a request.
 _HANDOFF_COLUMNS = (("complaints", {"handed_by": "TEXT", "handoff_note": "TEXT", "handed_at": "TEXT"}),
@@ -340,6 +342,7 @@ _PERF_INDEXES = (
     "CREATE INDEX IF NOT EXISTS idx_audit_unit ON audit_log(unit_id, id)",
     "CREATE INDEX IF NOT EXISTS idx_chat_ts ON chat_messages(ts)",
     "CREATE INDEX IF NOT EXISTS idx_seen_ts ON whatsapp_seen(ts)",
+    "CREATE INDEX IF NOT EXISTS idx_complaints_mobile_due ON complaints(created_at) WHERE mobile_check IS NULL",
 )
 
 
@@ -357,9 +360,18 @@ def _upgrade(conn: sqlite3.Connection) -> None:
         for statement in _PERF_INDEXES:
             conn.execute(statement)
         # Here, not at the top: these modules import this one.
-        from app.store import extract_jobs, outbox, proposals, voice_cache, wa_queue
+        from app.store import (
+            account_connections,
+            extract_jobs,
+            otp_codes,
+            outbox,
+            proposals,
+            sender_checks,
+            voice_cache,
+            wa_queue,
+        )
 
-        for queue in (wa_queue, outbox, extract_jobs, proposals, voice_cache):
+        for queue in (wa_queue, outbox, extract_jobs, proposals, voice_cache, sender_checks, otp_codes, account_connections):
             queue.ensure(conn)
         if isinstance(conn, pg.Conn):
             for table in pg.ROWID_TABLES:

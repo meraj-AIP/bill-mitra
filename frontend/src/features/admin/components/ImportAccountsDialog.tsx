@@ -10,6 +10,7 @@ import { useImportAccounts, type AccountImportResult } from '../api/adminApi';
 import { ACCOUNT_CSV_COLUMNS, ACCOUNT_TEMPLATE_HREF } from '../model/csv';
 import { ImportedAccounts } from './ImportedAccounts';
 import { ImportErrors } from './ImportErrors';
+import { useConfirm } from '@/shared/feedback';
 
 function Summary({ result }: { result: AccountImportResult }) {
   const created = result.created.length;
@@ -65,6 +66,10 @@ function ChooseFile({ file, onFile }: { file: File | null; onFile: (file: File |
  */
 export function ImportAccountsDialog({ onClose }: { onClose: () => void }) {
   const upload = useImportAccounts();
+  const confirm = useConfirm();
+  const runImport = async () => {
+    if (file && await confirm({ title: `Import ${file.name}?`, confirmLabel: 'Import', points: ['An account is created for each valid row, with a one-time password shown once.', 'Rows with a problem are skipped and listed.'] })) upload.mutate(file);
+  };
   const [file, setFile] = useState<File | null>(null);
   const result = upload.data;
   const holdsPasswords = (result?.created.length ?? 0) > 0;
@@ -82,14 +87,14 @@ export function ImportAccountsDialog({ onClose }: { onClose: () => void }) {
       <DialogContent>
         <Stack sx={{ gap: 2 }}>
           {!holdsPasswords && <ChooseFile file={file} onFile={(f) => { setFile(f); upload.reset(); }} />}
-          <SendStatus state={upload} onTryAgain={file ? () => upload.mutate(file) : undefined} />
+          <SendStatus state={upload} />
           {result && <Results result={result} />}
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={() => close()} disabled={upload.isPending}>{closeLabel(holdsPasswords, Boolean(result))}</Button>
         {!holdsPasswords && (
-          <Button variant="contained" disabled={!file || upload.isPending} onClick={() => file && upload.mutate(file)}
+          <Button variant="contained" disabled={!file || upload.isPending} onClick={() => void runImport()}
             startIcon={upload.isPending ? <CircularProgress size={16} color="inherit" aria-hidden /> : null}>
             {upload.isPending ? 'Importing' : 'Import'}
           </Button>

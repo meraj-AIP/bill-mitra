@@ -114,6 +114,18 @@ export interface ComplaintAuditLine {
   status: string;
 }
 
+export type SenderStatus = 'verified' | 'other_connection' | 'registered' | 'not_registered' | 'not_checked' | 'no_mobile';
+
+/** Whether the complaint came from the mobile the DISCOM holds for the connection. Service numbers are masked. */
+export interface SenderCheck {
+  /** Null while the check has not run yet. */
+  status: SenderStatus | null;
+  /** discom: the DISCOM answered; dev: this database stood in; none: no lookup connected. */
+  source: 'discom' | 'dev' | 'none' | null;
+  checked_at: string | null;
+  connections: { discom: string; service_masked: string; section: string | null; this_one: boolean }[];
+}
+
 export interface ComplaintDetail extends ComplaintRow {
   bill: {
     bill_month: string | null;
@@ -143,6 +155,7 @@ export interface ComplaintDetail extends ComplaintRow {
   can_return?: boolean;
   /** Newest first. */
   requests?: ComplaintRequest[];
+  sender?: SenderCheck | null;
 }
 
 export interface TimelineEntry {

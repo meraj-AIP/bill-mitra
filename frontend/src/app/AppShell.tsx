@@ -1,6 +1,6 @@
 import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded';
 import { AppBar, Box, Button, Container, Link as MuiLink, Stack, Tab, Tabs, Typography } from '@mui/material';
-import { Link, Outlet, useLocation } from 'react-router-dom';
+import { Link, Outlet, ScrollRestoration, useLocation } from 'react-router-dom';
 
 import { AlertsBell } from '@/features/alerts';
 import { APPROVALS_PATH, ApprovalsTabLabel } from '@/features/approvals';
@@ -108,6 +108,8 @@ export function AppShell() {
       <Box component="main" id="main" tabIndex={-1} sx={{ flex: 1, outline: 'none' }}>
         <Outlet />
       </Box>
+      {/* Every visit opens at the top, list or detail; Back and Forward return to where that visit was. */}
+      <ScrollRestoration />
       <Footer hiddenOnPhone={pathname.startsWith('/assistant')} />
     </Box>
   );

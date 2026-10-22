@@ -82,15 +82,16 @@ function useRefresh() {
 /** Approving carries the action out, so it is never repeated on its own after a lost answer. */
 export function useApprove() {
   const onSuccess = useRefresh();
-  return useMutation({ mutationFn: (id: number) => sendJson<Proposal>(`${BASE}/${id}/approve`), onSuccess });
+  return useMutation({ meta: { action: 'The approval' }, mutationFn: (id: number) => sendJson<Proposal>(`${BASE}/${id}/approve`), onSuccess });
 }
 
 export function useApproveMany() {
   const onSuccess = useRefresh();
-  return useMutation({ mutationFn: (ids: number[]) => sendJson<BatchResult>(`${BASE}/approve`, { ids }), onSuccess });
+  return useMutation({ meta: { action: 'Approving the selection' }, mutationFn: (ids: number[]) => sendJson<BatchResult>(`${BASE}/approve`, { ids }), onSuccess });
 }
 
 export function useReject() {
   const onSuccess = useRefresh();
-  return useMutation({ mutationFn: (id: number) => sendJson<Proposal>(`${BASE}/${id}/reject`, {}), onSuccess });
+  return useMutation({ meta: { action: 'The rejection', success: 'Proposal rejected' }, mutationFn: ({ id, note }: { id: number; note: string }) => sendJson<Proposal>(`${BASE}/${id}/reject`, note ? { note } : {}),
+    onSuccess });
 }

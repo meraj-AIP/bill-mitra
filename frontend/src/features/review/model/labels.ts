@@ -56,16 +56,10 @@ export function actorName(actor: TimelineEntry['actor']): string {
 
 export const MIN_NOTE = 20;
 
-/** "3.1x usual", or nothing when there is no history to compare with. */
-export function ratioText(ratio: number | null): string {
-  if (ratio === null) return '';
-  return `${ratio.toFixed(1)}x usual`;
-}
-
 export function ratioOf(units: number | null, median: number | null): number | null {
   if (units === null || median === null || median <= 0) return null;
   return units / median;
 }
 
 /** Parts of the case page that AI assist can bring into view. */
-export const CASE_SECTION = { decision: 'case-decision', ask: 'case-ask' } as const;
+export const CASE_SECTION = { decision: 'case-decision', ask: 'case-ask', approval: 'case-approval', apply: 'case-apply' } as const;

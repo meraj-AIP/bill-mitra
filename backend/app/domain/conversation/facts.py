@@ -19,6 +19,9 @@ class Facts(BaseModel):
     discom: str
     units: int
     export_units: int | None
+    # Solar net metering: units drawn from the grid, and units exported beyond use and carried to the next bill.
+    import_units: int | None = None
+    carry_forward_units: int | None = None
     group: str
     net: float
     gross: float
@@ -73,7 +76,9 @@ def build_facts(bill: ExtractedBill, comp: Computation, result: AuditResult,
     rates = sorted({s.rate for g in version.groups for s in g.slabs})
     return Facts(
         month=bill.bill_month or month.strftime("%Y-%m"), month_number=month.month, year=month.year,
-        discom=bill.discom, units=comp.units, export_units=bill.export_units, group=comp.group,
+        discom=bill.discom, units=comp.units, export_units=bill.export_units,
+        import_units=bill.import_units() if bill.export_units is not None else None,
+        carry_forward_units=bill.carry_forward_units or None, group=comp.group,
         net=comp.net, gross=comp.gross, energy=comp.energy, fixed=comp.fixed, customer=comp.customer,
         duty=comp.duty, fsa=comp.fsa, true_up=true_up, bill_amount=round(printed_current, 2),
         surcharge=bill.item("surcharge") or None, arrears=bill.arrears, total_payable=round(total, 2),

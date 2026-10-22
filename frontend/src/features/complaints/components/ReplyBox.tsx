@@ -40,13 +40,13 @@ export function ReplyBox({ label, placeholder, state, onSend, extra, allowEmpty 
       await onSend(body.trim());
       setBody('');
     } catch {
-      // SendStatus shows the failure; the text stays in the box for Try again.
+      // Cancelled at the confirmation, or failed (the action's message says why): the text stays in the box.
     }
   };
 
   return (
     <Stack component="form" onSubmit={(e) => void submit(e)} sx={{ gap: 1.5 }}>
-      <SendStatus state={state} onTryAgain={() => void submit()} />
+      <SendStatus state={state} />
       <TextField label={label} placeholder={placeholder} multiline minRows={3} maxRows={10} fullWidth value={body}
         onChange={(e) => setBody(e.target.value)} error={over}
         onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void submit(e); }}

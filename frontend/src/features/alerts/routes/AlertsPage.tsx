@@ -1,6 +1,6 @@
 import DoneAllOutlinedIcon from '@mui/icons-material/DoneAllOutlined';
 import NotificationsNoneOutlinedIcon from '@mui/icons-material/NotificationsNoneOutlined';
-import { Alert, Button, CircularProgress, Container, List, Stack, ToggleButton, ToggleButtonGroup } from '@mui/material';
+import { Button, CircularProgress, Container, List, Stack, ToggleButton, ToggleButtonGroup } from '@mui/material';
 
 import { ListPanel } from '@/shared/components/ListPanel';
 import { PageHeader } from '@/shared/components/PageHeader';
@@ -41,7 +41,6 @@ export function AlertsPage() {
           <ToggleButton value="all">All</ToggleButton>
           <ToggleButton value="unread">{unread > 0 ? `Unread (${unread})` : 'Unread'}</ToggleButton>
         </ToggleButtonGroup>
-        {markAll.error && <Alert severity="error">{markAll.error.message}</Alert>}
         <ListPanel result={result} page={query.page} pageSize={query.pageSize} onPage={setPage} onPageSize={setPageSize} empty={empty}>
           {(rows, dimmed) => (
             <List disablePadding aria-label="Alerts" sx={{ opacity: dimmed ? 0.6 : 1 }}>

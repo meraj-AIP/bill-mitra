@@ -3,13 +3,12 @@ import { Alert, Container, Stack } from '@mui/material';
 
 import { ListPanel } from '@/shared/components/ListPanel';
 import { PageHeader } from '@/shared/components/PageHeader';
-import { SendStatus } from '@/shared/components/SendStatus';
 import { EmptyState } from '@/shared/components/States';
 
 import { useProposals, type BatchResult, type Proposal } from '../api/approvalsApi';
 import { ApprovalFilters } from '../components/ApprovalFilters';
 import { BatchBar } from '../components/BatchBar';
-import { ProposalCard } from '../components/ProposalCard';
+import { ProposalTable } from '../components/ProposalTable';
 import { useApprovalActions } from '../hooks/useApprovalActions';
 import { useApprovalParams } from '../hooks/useApprovalParams';
 
@@ -40,19 +39,14 @@ export function ApprovalsPage() {
         {waitingView && (
           <BatchBar onPage={pending.length} chosen={act.chosen.length} busy={act.batchBusy} onAll={act.selectAll} onApprove={act.approveChosen} />
         )}
-        {act.failed && <SendStatus state={act.failed} />}
-        {act.stale && <Alert severity="warning">{`Nothing was done for ${act.stale.ticket}: ${act.stale.note ?? 'the complaint changed.'}`}</Alert>}
         {act.batch && <BatchOutcome batch={act.batch} />}
         <ListPanel result={result} page={params.query.page} pageSize={params.query.pageSize} onPage={params.setPage} onPageSize={params.setPageSize}
           empty={<EmptyState icon={<TaskAltOutlinedIcon />} title={waitingView ? 'Nothing waiting' : 'Nothing here'}
             hint="When the rules can prepare a routine reply, request or decision, it appears here for you to approve." />}>
           {(rows, dimmed) => (
-            <Stack sx={{ gap: 1.5, p: { xs: 1.5, sm: 2 }, opacity: dimmed ? 0.6 : 1 }}>
-              {rows?.map((p) => (
-                <ProposalCard key={p.id} p={p} actions={{ busyId: act.busyId, selected: act.selected.has(p.id), onSelect: act.toggle,
-                  onApprove: act.approveOne, onReject: act.rejectOne }} />
-              ))}
-            </Stack>
+            <ProposalTable rows={rows} loadingRows={params.query.pageSize} dimmed={dimmed}
+              actions={{ busyId: act.busyId, isSelected: (id) => act.selected.has(id), onSelect: act.toggle,
+                onApprove: act.approveOne, onReject: act.rejectOne }} />
           )}
         </ListPanel>
       </Stack>

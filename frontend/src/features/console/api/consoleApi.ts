@@ -130,7 +130,7 @@ export function useApplyDetail(ticket: string) {
 
 export function useReply(ticket: string) {
   const apply = useApplyDetail(ticket);
-  return useMutation({
+  return useMutation({ meta: { action: 'The reply', success: 'Reply added to the conversation' },
     mutationFn: (body: { body: string; status?: ComplaintStatus; asks?: InfoKind }) => sendJson<ComplaintDetail>(`${path(ticket)}/reply`, body),
     onSuccess: apply,
   });
@@ -138,7 +138,7 @@ export function useReply(ticket: string) {
 
 export function useSetStatus(ticket: string) {
   const apply = useApplyDetail(ticket);
-  return useMutation({
+  return useMutation({ meta: { action: 'Changing the status', success: 'Status changed' },
     mutationFn: (status: ComplaintStatus) => sendJson<ComplaintDetail>(`${path(ticket)}/status`, { status }),
     onSuccess: apply,
   });

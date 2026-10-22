@@ -1,0 +1,245 @@
+"""Bill reading that survives real answers and real meters: odd number and date formats, one bad field, meters with a
+multiplying factor or that rolled over, solar export registers, and two reads that each fall short.
+
+Bills are the real fixtures in tests/real.py or labelled variants of them; nothing here calls a model.
+"""
+
+import asyncio
+
+import pytest
+from PIL import Image, ImageDraw
+
+from app.domain import capture, second_read
+from app.domain.bill_normalise import iso_date, normalise, number, to_bill
+from app.domain.pricing import price
+from app.domain.review import Policy, detect
+from app.services import vision
+from tests.real import MAR_2024, OCT_2025, SOLAR_SEP_2026, reading, variant
+
+
+@pytest.mark.parametrize(("raw", "expected"), [
+    ("Rs 1,234.50", 1234.5), ("37,186.00 CR", -37186.0), ("(-) 545.00", -545.0), ("(12.00)", -12.0),
+    ("-545", -545.0), ("− 20", -20.0), ("699 /-", 699.0), ("3101 KVAH", 3101.0), (" 40 KW", 40.0),
+    (12, 12.0), ("fifty", None), (True, None), (None, None), ("", None),
+])
+def test_numbers_in_the_forms_bills_print(raw, expected):
+    assert number(raw) == expected
+
+
+@pytest.mark.parametrize(("raw", "expected"), [
+    ("2026-09-07", "2026-09-07"), ("07/09/26", "2026-09-07"), ("7-9-2026", "2026-09-07"), ("05.08.26", "2026-08-05"),
+    ("31/02/26", None), ("Sept 7", None), (None, None),
+])
+def test_dates_in_the_forms_bills_print(raw, expected):
+    assert iso_date(raw) == expected
+
+
+def test_one_bad_field_never_loses_the_rest_of_the_bill():
+    raw = {"discom": "TSSPDCL", "service_number": "9999 0000 1111", "category": "2B NON-DOMESTIC/COMM",
+           "is_domestic": True, "bill_date": "07/09/26", "previous_reading_date": "not printed", "billing_days": 400,
+           "units": "3,101", "present_status": "1", "power_factor": 99, "phase": "three",
+           "line_items": [{"code": "energy", "label": "Energy Charges", "amount": "33,384.90"},
+                          {"code": "energy", "label": "Energy  Charges", "amount": 33384.9},
+                          {"code": "fixed", "label": "Fixed", "amount": "n/a"}],
+           "usage_history": [{"month": "2026-08", "units": "3,050"}, {"month": "2026-08", "units": 1},
+                             {"month": "2026-07", "units": 2990}],
+           "bill_amount": "Rs 37,731.00", "arrears": "545.00 CR", "quality": "GOOD", "confidence": 95}
+    bill = to_bill(raw)
+    assert (bill.discom, bill.service_number, bill.is_domestic) == ("TGSPDCL", "999900001111", False)
+    assert (bill.bill_date, bill.bill_month, bill.previous_reading_date, bill.billing_days) == (
+        "2026-09-07", "2026-09", None, None)
+    assert (bill.units, bill.present_status, bill.power_factor, bill.phase) == (3101, "01", 0.99, None)
+    assert [(i.code, i.amount) for i in bill.line_items] == [("energy", 33384.9)]  # read twice from overlapping crops
+    assert [(h.month, h.units) for h in bill.usage_history] == [("2026-07", 2990), ("2026-08", 3050)]
+    assert (bill.bill_amount, bill.arrears, bill.quality, bill.confidence) == (37731.0, -545.0, "good", 0.95)
+    assert {"previous_reading_date", "billing_days", "phase"} <= set(bill.unreadable_fields)
+
+
+def test_the_printed_category_decides_domestic():
+    assert normalise({"category": "1B(i) DOMESTIC", "is_domestic": False})["is_domestic"] is True
+    assert normalise({"category": "LT-II(A)", "is_domestic": True})["is_domestic"] is False
+    assert normalise({"category": "LT-I(B)", "is_domestic": False})["is_domestic"] is True
+    assert normalise({"category": None, "is_domestic": False})["is_domestic"] is False
+
+
+def test_a_meter_with_a_multiplying_factor_passes_the_readings_check():
+    ct = variant(OCT_2025, previous_reading=1000.0, present_reading=1023.0, units=138, multiplying_factor=6.0)
+    assert capture.failed_check(ct) is None
+    assert capture.failed_check(variant(ct, multiplying_factor=1.0)) == "Present minus previous reading equals units"
+
+
+def test_a_meter_that_rolled_over_is_not_a_reading_gone_back():
+    rolled = variant(OCT_2025, previous_reading=99950.0, present_reading=88.0, units=138)
+    assert capture.failed_check(rolled) is None
+    assert "rolled over" in next(c.detail for c in capture.report(rolled).checks if c.key == "readings")
+    spike = detect(rolled, price(rolled, rolled.net_units()), [], Policy(discom="TGSPDCL"))
+    assert spike.reason != "reading_went_back"
+    backwards = variant(OCT_2025, previous_reading=351.0, present_reading=213.0, units=138)
+    assert detect(backwards, price(backwards, 138), [], Policy(discom="TGSPDCL")).reason == "reading_went_back"
+
+
+def test_a_misread_solar_export_register_is_caught():
+    good = variant(SOLAR_SEP_2026, export_previous_reading=120.0, export_present_reading=129.0)
+    assert capture.failed_check(good) is None
+    misread = variant(good, export_present_reading=139.0, billed_units=None)
+    assert capture.failed_check(misread) == "Export meter readings equal the units exported"
+    # With the net units confirmed, a misread export register alone does not block, like the import readings.
+    assert capture.failed_check(variant(good, export_present_reading=139.0)) is None
+
+
+def _with_customer(bill, amount: float):
+    return variant(bill, line_items=[{**i.model_dump(), "amount": amount} if i.code == "customer" else i.model_dump()
+                                     for i in bill.line_items])
+
+
+def test_the_second_read_is_pointed_at_the_rows_that_look_wrong_by_name_only():
+    shifted = _with_customer(MAR_2024, 9.42)
+    assert second_read.suspect_rows(shifted) == ["Customer Charges"]
+    assert second_read.suspect_rows(MAR_2024) == []
+
+
+def test_two_reads_that_each_fall_short_are_settled_by_the_one_mix_that_adds_up():
+    first = _with_customer(MAR_2024, 9.42)  # customer charge misread
+    second = variant(MAR_2024, bill_amount=744.0, units=None)  # bill amount misread, units missed
+    settled = second_read.reconcile(first, second)
+    assert settled is not None and settled.item("customer") == MAR_2024.item("customer")
+    assert settled.bill_amount == MAR_2024.bill_amount and settled.units == MAR_2024.units
+
+
+def test_reads_are_not_settled_when_more_than_one_mix_adds_up_or_rows_do_not_line_up():
+    first = variant(OCT_2025, unreadable_fields=["units"])
+    assert second_read.reconcile(first, first) == first.model_copy(update={"unreadable_fields": ["units"]})
+    swapped = variant(OCT_2025, line_items=[i.model_dump() for i in reversed(OCT_2025.line_items)])
+    assert second_read.reconcile(_with_customer(OCT_2025, 9.0), swapped) is None
+    far = variant(OCT_2025, units=1, bill_amount=1.0, total_payable=1.0, previous_reading=1.0, present_reading=2.0,
+                  arrears=1.0)
+    assert second_read.reconcile(OCT_2025, far) is None  # six disagreements: the photo is the problem
+
+
+def test_a_flag_stays_only_when_both_reads_were_unsure():
+    first = variant(OCT_2025, unreadable_fields=["units", "bill_amount"])
+    second = variant(OCT_2025, unreadable_fields=["units"])
+    settled = second_read.reconcile(first, second)
+    assert settled is not None and settled.unreadable_fields == ["units"]
+    assert second_read.reconcile(first, OCT_2025).unreadable_fields == []  # type: ignore[union-attr]
+
+
+def _script(monkeypatch: pytest.MonkeyPatch, *bills) -> list[dict]:
+    calls: list[dict] = []
+
+    async def classify(_jpeg: bytes) -> vision.Classification:
+        return reading(None).classification
+
+    async def extract(_jpeg: bytes, _seen, failed_check=None, suspects=None, doubts=None):
+        calls.append({"failed": failed_check, "suspects": suspects, "doubts": doubts})
+        return bills[len(calls) - 1]
+
+    monkeypatch.setattr(vision, "classify", classify)
+    monkeypatch.setattr(vision, "extract", extract)
+    return calls
+
+
+def _read() -> vision.Reading:
+    from tests.test_vision import _jpeg
+
+    return asyncio.run(vision.read_document(_jpeg(600, 900), "image/jpeg"))
+
+
+def test_a_read_unsure_of_key_figures_gets_a_second_look_and_both_agreeing_settles_it(monkeypatch):
+    unsure = variant(OCT_2025, unreadable_fields=["units", "bill_amount"])
+    calls = _script(monkeypatch, unsure, OCT_2025)
+    result = _read()
+    assert calls[1] == {"failed": None, "suspects": None, "doubts": ["units", "bill_amount"]}
+    assert result.bill == OCT_2025 and capture.report(result.bill).trusted
+
+
+def test_a_failed_check_names_the_suspect_rows_and_reconciles_when_neither_read_stands(monkeypatch):
+    first = _with_customer(MAR_2024, 9.42)
+    second = variant(MAR_2024, bill_amount=744.0)
+    calls = _script(monkeypatch, first, second)
+    result = _read()
+    assert calls[1]["failed"] == "Charges add up to the bill amount" and calls[1]["suspects"] == ["Customer Charges"]
+    assert result.reconciled and result.bill is not None and capture.failed_check(result.bill) is None
+    assert result.bill.item("customer") == MAR_2024.item("customer") and result.bill.bill_amount == MAR_2024.bill_amount
+
+
+def test_when_nothing_settles_the_first_read_is_kept_and_not_trusted(monkeypatch):
+    first = _with_customer(MAR_2024, 9.42)
+    _script(monkeypatch, first, _with_customer(MAR_2024, 8.42))
+    result = _read()
+    assert result.bill == first and not result.reconciled and not capture.report(result.bill).trusted
+
+
+def test_sharpened_copy_is_a_valid_image_of_the_same_size():
+    from io import BytesIO
+
+    from PIL import Image
+
+    from tests.test_vision import _jpeg
+
+    original = _jpeg(300, 700)
+    assert Image.open(BytesIO(vision.sharpened(original))).size == Image.open(BytesIO(original)).size
+
+
+def test_the_explanation_gets_the_solar_figures_and_the_guard_allows_them():
+    from app.domain.conversation import guard
+    from app.flows.analysis import analyse
+
+    banked = variant(SOLAR_SEP_2026, carry_forward_units=40)
+    facts = analyse(banked, "web:test-solar-facts").facts
+    assert (facts.import_units, facts.export_units, facts.carry_forward_units) == (3101, 9, 40)
+    assert guard.check("You drew 3101 units, sent 9 back and 40 units are kept for next time.", facts).passed
+    plain = analyse(OCT_2025, "web:test-plain-facts").facts
+    assert plain.import_units is None and plain.carry_forward_units is None
+
+
+def _slip(lines: int = 40) -> Image.Image:
+    image = Image.new("RGB", (600, 1800), "white")
+    draw = ImageDraw.Draw(image)
+    for n in range(lines):  # rows of print: a label on the left, an amount on the right
+        y = 60 + n * 42
+        draw.rectangle((40, y, 300, y + 16), fill="black")
+        draw.rectangle((420, y, 560, y + 16), fill="black")
+    return image
+
+
+@pytest.mark.parametrize("tilt", [-9.0, -4.0, 6.0, 11.0])
+def test_a_tilted_photo_is_turned_straight_before_it_is_read(tilt: float):
+    turned = _slip().rotate(tilt, expand=True, fillcolor=(110, 90, 70))  # on a table
+    assert abs(vision.skew_angle(turned) + tilt) <= 1.0
+
+
+def test_a_straight_photo_is_left_alone():
+    assert vision.skew_angle(_slip()) == 0.0
+    assert vision.deskewed(_slip()).size == _slip().size
+
+
+def test_units_misread_together_with_a_reading_are_caught_by_the_energy_charge():
+    # The fully degraded October photo: 5 read as 3 in both the present reading and the units, so they still agree.
+    misread = variant(OCT_2025, present_reading=331.0, units=118)
+    assert capture.failed_check(misread) == "Units agree with the energy charge"
+    detail = next(c.detail for c in capture.report(misread).checks if c.key == "energy_units")
+    assert "fits 138 units" in detail and not capture.report(misread).trusted
+
+
+def test_an_energy_charge_no_unit_count_explains_is_a_pricing_question_not_a_misread():
+    priced_wrong = variant(OCT_2025, line_items=[{**i.model_dump(), "amount": i.amount + 1.7} if i.code == "energy"
+                                                 else i.model_dump() for i in OCT_2025.line_items],
+                           bill_amount=OCT_2025.bill_amount)
+    check = next(c for c in capture.report(priced_wrong).checks if c.key == "energy_units")
+    assert check.status == "skipped" and "cannot confirm" in check.detail
+
+
+def test_a_figure_the_first_read_could_not_see_is_never_supplied_by_the_reread(monkeypatch):
+    cut = variant(OCT_2025, bill_amount=None, total_payable=None, unreadable_fields=["bill_amount", "total_payable"])
+    invented = variant(OCT_2025, bill_amount=658.28, total_payable=658.28, arrears=0.0)
+    _script(monkeypatch, cut, invented)
+    result = _read()
+    assert result.bill is not None and result.bill.bill_amount is None and not capture.report(result.bill).trusted
+
+
+def test_reconcile_keeps_one_sided_figures_flagged():
+    cut = variant(OCT_2025, bill_amount=None)
+    settled = second_read.reconcile(cut, OCT_2025)
+    assert settled is not None and "bill_amount" in settled.unreadable_fields
+    assert not capture.report(settled).trusted

@@ -150,6 +150,17 @@ def newest_for_service(discom: str, service_number: str) -> ExtractedBill | None
     return ExtractedBill.model_validate_json(row["extraction"]) if row else None
 
 
+def connections_of(user_id: str, limit: int = 10) -> list[tuple[str, str, str | None]]:
+    """Development stand-in for the DISCOM's mobile lookup: (discom, service number, section) of this sender's own
+    uploaded bills, newest first."""
+    with tx() as conn:
+        rows = conn.execute("SELECT discom, service_number, MAX(json_extract(extraction, '$.section')) AS section, "
+                            "MAX(created_at) AS seen FROM bills WHERE user_id = ? AND service_number IS NOT NULL "
+                            "AND discom IS NOT NULL AND source != 'demo' GROUP BY discom, service_number "
+                            "ORDER BY seen DESC LIMIT ?", (user_id, limit)).fetchall()
+    return [(r["discom"], r["service_number"], r["section"]) for r in rows]
+
+
 def bills_for_service(user_id: str, service_number: str) -> list[ExtractedBill]:
     """This consumer's own earlier uploads for one connection. Another user's bills are never mixed in."""
     with tx() as conn:

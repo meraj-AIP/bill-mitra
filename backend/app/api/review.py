@@ -24,13 +24,14 @@ from app.flows.analysis import Analysis, analyse
 from app.flows.complaint import LABEL_EN
 from app.flows.evidence import EvidencePack, TimelineEntry
 from app.flows.report import bill_out, history_rows
-from app.store import accounts, repos, units
+from app.store import accounts, repos, sender_checks, units
 from app.store import case_evidence as evidence_store
 from app.store import complaints as complaint_store
 from app.store import policy as policy_store
 from app.store import review as store
 from app.store.accounts import Account
 from app.store.complaints import OPEN_STATUSES, Complaint, Placement
+from app.store.sender_checks import SenderCheck
 
 router = APIRouter(prefix="/api/review", tags=["bill review"])
 
@@ -125,6 +126,7 @@ class CaseDetail(CaseRow):
     assignable: list[Person]
     evidence_pack: EvidencePack
     timeline: list[TimelineEntry]
+    sender: SenderCheck | None = None  # whether it came from the DISCOM's registered mobile
 
 
 class CasePage(BaseModel):
@@ -217,7 +219,7 @@ def detail(account: Account, complaint: Complaint) -> CaseDetail:
         messages=thread.messages(complaint.ticket), requests=thread.requests(complaint.ticket), decisions=decisions, policy=policy_store.get(complaint.discom),
         can=can, assignable=_assignable(complaint) if can.reassign else [],
         evidence_pack=evidence.pack(complaint.ticket, found, spike),
-        timeline=evidence.timeline(complaint.ticket, row["created_at"]))
+        timeline=evidence.timeline(complaint.ticket, row["created_at"]), sender=sender_checks.for_ticket(complaint.ticket))
 
 
 @router.get("/cases", response_model=CasePage)

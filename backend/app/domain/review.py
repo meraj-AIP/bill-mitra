@@ -9,6 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.domain import capture
 from app.domain.bill import ExtractedBill
 from app.domain.prediction import MonthUsage
 from app.domain.pricing import price
@@ -44,6 +45,13 @@ class Spike(BaseModel):
     usual_amount: float | None
 
 
+def _rolled_over(bill: ExtractedBill) -> bool:
+    """A lower present reading that is the meter passing 9999... back to 0, with the units printed to match."""
+    assert bill.previous_reading is not None and bill.present_reading is not None
+    units, rolled = capture.register_units(bill.previous_reading, bill.present_reading, bill.multiplying_factor)
+    return rolled and bill.units is not None and abs(units - bill.units) <= 1
+
+
 def detect(bill: ExtractedBill, comp: Computation, history: list[MonthUsage], policy: Policy) -> Spike:
     """Flag a bill whose units jump well above the household's usual month, or whose meter went backwards."""
     recent = [h.units for h in history[-HISTORY_MONTHS:]]
@@ -52,7 +60,7 @@ def detect(bill: ExtractedBill, comp: Computation, history: list[MonthUsage], po
     ratio = round(comp.units / median, 2) if median else None
     reason: SpikeReason | None = None
     went_back = bill.present_reading is not None and bill.previous_reading is not None and \
-        bill.present_reading < bill.previous_reading
+        bill.present_reading < bill.previous_reading and not _rolled_over(bill)
     if went_back:
         reason = "reading_went_back"
     elif (median and usual is not None and len(recent) >= policy.min_history_months

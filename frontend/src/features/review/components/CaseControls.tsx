@@ -1,41 +1,62 @@
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
-import { Alert, Box, Button, CircularProgress, MenuItem, Stack, TextField, Typography } from '@mui/material';
+import { Button, CircularProgress, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import { useState } from 'react';
 
 import { useAssign, useUnmask } from '../api/reviewApi';
 import type { CaseDetail } from '../api/types';
+import { useConfirm } from '@/shared/feedback';
 
-/** Shows the full number only after a deliberate click; the server records each view, and it is never cached. */
-export function UnmaskControl({ c }: { c: CaseDetail }) {
+const LAYOUT = {
+  inline: { direction: 'row', text: 'body2', sx: { gap: 0.5, alignItems: 'center' }, button: 'Show', indent: 0 },
+  block: { direction: 'column', text: 'subtitle1', sx: { gap: 0.25, alignItems: 'flex-start' }, button: 'Show full number', indent: -0.75 },
+} as const;
+
+/** Shows the full number only after a deliberate click; the server records each view, and it is never cached.
+ * `inline` fits it into a line of text. */
+export function UnmaskControl({ c, inline = false }: { c: CaseDetail; inline?: boolean }) {
   const unmask = useUnmask(c.ticket);
   const shown = unmask.data?.service_number;
-  if (shown) {
-    return (
-      <Box>
-        <Typography variant="subtitle1" component="p" sx={{ fontFamily: 'monospace', letterSpacing: '0.04em' }}>{shown}</Typography>
-        <Typography variant="caption" sx={{ color: 'warning.dark' }}>This view was recorded in the audit log.</Typography>
-      </Box>
-    );
-  }
+  const l = LAYOUT[inline ? 'inline' : 'block'];
+  const confirm = useConfirm();
+  const reveal = async () => {
+    if (await confirm({ title: 'Show the full service number?', confirmLabel: 'Show number', tone: 'warning',
+      body: 'This is the consumer\u2019s personal data. Each view is recorded in the audit log with your name.' })) unmask.mutate();
+  };
+  const canShow = c.can.unmask && Boolean(c.service_masked) && !shown;
   return (
-    <Stack sx={{ alignItems: 'flex-start', gap: 0.25 }}>
-      <Typography variant="subtitle1" component="p" sx={{ fontFamily: 'monospace' }}>{c.service_masked ?? 'Not printed'}</Typography>
-      {c.can.unmask && c.service_masked && (
+    <Stack direction={l.direction} sx={l.sx}>
+      <Typography variant={l.text} component="span" sx={{ fontFamily: 'monospace', letterSpacing: shown ? '0.04em' : 0 }}>
+        {shown ?? c.service_masked ?? 'Not printed'}
+      </Typography>
+      {shown && <Typography variant="caption" sx={{ color: 'warning.dark' }}>This view was recorded in the audit log.</Typography>}
+      {canShow && (
         <Button size="small" startIcon={unmask.isPending ? <CircularProgress size={14} aria-hidden /> : <VisibilityOutlinedIcon />}
-          onClick={() => unmask.mutate()} disabled={unmask.isPending} sx={{ ml: -0.75, py: 0 }}>
-          Show full number
+          onClick={() => void reveal()} disabled={unmask.isPending} sx={{ ml: l.indent, py: 0 }}>
+          {l.button}
         </Button>
       )}
-      {unmask.error && <Typography variant="caption" sx={{ color: 'error.main' }}>{unmask.error.message}</Typography>}
+      <UnmaskError error={unmask.error} />
     </Stack>
   );
 }
+
+function UnmaskError({ error }: { error: Error | null }) {
+  return error ? <Typography variant="caption" sx={{ color: 'error.main' }}>{error.message}</Typography> : null;
+}
+
 
 export function ReassignControl({ c }: { c: CaseDetail }) {
   const assign = useAssign(c.ticket);
   const [to, setTo] = useState('');
   const others = c.assignable.filter((p) => p.id !== c.assignee?.id);
+  const confirm = useConfirm();
   if (!c.can.reassign) return null;
+  const move = async () => {
+    const name = others.find((p) => p.id === to)?.name ?? 'them';
+    if (!(await confirm({ title: `Move this case to ${name}?`, confirmLabel: 'Move case',
+      points: [`${name} is alerted and sees it in their queue.`, c.assignee ? `${c.assignee.name} no longer holds it.` : 'It leaves the division queue.'] }))) return;
+    assign.mutate(to, { onSuccess: () => setTo('') });
+  };
   return (
     <Stack sx={{ gap: 1, minWidth: { md: 280 } }}>
       <Stack direction="row" sx={{ gap: 1 }}>
@@ -44,12 +65,11 @@ export function ReassignControl({ c }: { c: CaseDetail }) {
           {others.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
         </TextField>
         <Button variant="outlined" disabled={!to || assign.isPending} sx={{ flexShrink: 0, alignSelf: 'flex-start', minHeight: 40 }}
-          onClick={() => assign.mutate(to, { onSuccess: () => setTo('') })}
+          onClick={() => void move()}
           startIcon={assign.isPending ? <CircularProgress size={14} color="inherit" aria-hidden /> : null}>
           Move
         </Button>
       </Stack>
-      {assign.error && <Alert severity="error">{assign.error.message}</Alert>}
     </Stack>
   );
 }

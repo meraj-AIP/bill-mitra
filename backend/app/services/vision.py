@@ -7,19 +7,18 @@ The first pass stops a selfie or a shop receipt from ever being "read" as a bill
 import base64
 import io
 import logging
-import re
 from dataclasses import dataclass
 from math import ceil
 from typing import Any, Literal
 
 import pypdfium2 as pdfium
-from PIL import Image, ImageOps
+from PIL import Image, ImageFilter, ImageOps
 from pillow_heif import register_heif_opener
 from pydantic import BaseModel, ValidationError
 
 from app.config import get_settings
 from app.core import retry
-from app.domain import capture
+from app.domain import bill_normalise, capture, second_read
 from app.domain.bill import ExtractedBill
 from app.services.openai_client import ProviderError, chat_json
 
@@ -82,6 +81,9 @@ present_status, previous_status: the 2 digit status ("Sts") printed right after 
   "Previous"/"Prv" rows, e.g. "01", exactly as printed; null if there is none
 units: the "Units:" value; on a solar net-metered bill the "Import:" value instead (units drawn from the grid), or null
 export_units: on a solar net-metered bill the "Export:" value (units sent to the grid), else null
+export_previous_reading, export_present_reading: on a solar net-metered bill, the previous and present readings of
+  the export register (rows marked "Exp", "Export" or "Exp KWH"), else null. Keep them apart from the import
+  readings above
 billed_units: the "Billed Units:" value when printed (import minus export on net-metered bills), or null
 load_kw: "Contracted Load" in kW, or null
 phase: 1 or 3 from "Ph:", or null
@@ -89,7 +91,8 @@ multiplying_factor: the "MF:" value, or null
 recorded_md: the "Recorded MD" value, or null
 power_factor: the "PF" value (0 to 1), or null
 security_deposit: the "SD AVAILABLE" or "SD Available" amount, or null
-carry_forward_units: the present "CF Units" value (from "Prev/Pres CF Units : a/b" take b), or null
+carry_forward_units: the present "CF Units" or banked units value (from "Prev/Pres CF Units : a/b" take b), or null.
+  On a solar bill that exported more than it imported, the extra is carried forward here and billed units are 0
 disconnection_date: "YYYY-MM-DD" from "Disc Date", or null
 last_paid_date: "YYYY-MM-DD" from "Last Paid Dt", or null
 line_items: every charge row between the readings and "Bill Amount", as {code, label, amount}, label as printed,
@@ -109,6 +112,10 @@ usage_history: list of {month: "YYYY-MM", units} from any past consumption table
 unreadable_fields: names of the keys above that ARE printed on the bill but you cannot read with certainty
 confidence: 0 to 1, your confidence that units and every amount are read correctly
 Rules:
+- Give every number as a plain JSON number: no commas, no "Rs", no units. An amount printed with "CR", a minus sign
+  or in brackets is a credit: give it as a negative number. Dates as YYYY-MM-DD.
+- When the bill prints a multiplying factor (MF) other than 1, the units are the reading difference times MF; still
+  read the units as printed, never multiply yourself.
 - Read numbers exactly as printed. Never calculate a value that is not printed (do not work out units from the
   readings, or a total from the charges). If it is not printed, use null.
 - Thermal print confuses 0/8, 1/7, 3/8, 5/6. If a digit is ambiguous, put that key in unreadable_fields and lower
@@ -128,14 +135,49 @@ class Classification(BaseModel):
 class Reading:
     classification: Classification
     bill: ExtractedBill | None  # None when the first pass stopped it
-    reread: str | None = None  # the failed check that triggered a second careful read, if any
+    reread: str | None = None  # why a second careful read was made: the failed check, or the figures it was unsure of
+    reconciled: bool = False  # the two reads were settled together by the checks
 
 
 MIN_SHORT_SIDE = 1000
+# Deskew: angles tried, in degrees, and how much straighter the best one must score before the photo is turned.
+SKEW_ANGLES = [a / 2 for a in range(-30, 31)]
+SKEW_GAIN = 1.15
+SKEW_MIN = 3.0  # degrees; a slighter tilt reads fine, and turning the image softens every digit a little
+SKEW_PROBE = 400  # px, the short side of the small copy the angle is measured on
+
+
+def _row_contrast(image: Image.Image) -> float:
+    """How sharply the text lines stand apart: the summed change from one row's average darkness to the next.
+    Straight print gives crisp edges between ink rows and white gaps; tilted print blurs every edge."""
+    rows = list(image.resize((1, image.height), Image.Resampling.BOX).get_flattened_data())
+    return sum((b - a) ** 2 for a, b in zip(rows, rows[1:], strict=False))
+
+
+def skew_angle(image: Image.Image) -> float:
+    """The rotation that makes the printed lines horizontal, or 0 when no angle is clearly better than none. Measured
+    on the middle of the page, so a table or hand around the bill counts for little."""
+    probe = ImageOps.grayscale(image)
+    scale = SKEW_PROBE / min(probe.size)
+    if scale < 1:
+        probe = probe.resize((round(probe.width * scale), round(probe.height * scale)), Image.Resampling.BILINEAR)
+    w, h = probe.size
+    probe = ImageOps.autocontrast(probe.crop((w // 6, h // 6, w - w // 6, h - h // 6)), cutoff=2)
+    probe = probe.point(lambda v: 0 if v < 140 else 255)
+    scores = {a: _row_contrast(probe.rotate(a, resample=Image.Resampling.BILINEAR, fillcolor=255)) for a in SKEW_ANGLES}
+    best = max(scores, key=lambda a: scores[a])
+    return best if scores[0.0] == 0 or scores[best] >= scores[0.0] * SKEW_GAIN else 0.0
+
+
+def deskewed(image: Image.Image) -> Image.Image:
+    angle = skew_angle(image)
+    if abs(angle) < SKEW_MIN:
+        return image
+    return image.rotate(angle, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=(255, 255, 255))
 
 
 def _bounded(image: Image.Image) -> bytes:
-    image = image.convert("RGB")
+    image = deskewed(image.convert("RGB"))
     # WhatsApp shrinks a long thermal slip to about 330 px wide; enlarging it gives the reader room for each digit.
     short = min(image.size)
     if short < MIN_SHORT_SIDE:
@@ -191,24 +233,9 @@ def _content(images: list[bytes], detail: str, prompt: str) -> list[dict[str, An
     return content
 
 
-_MONTH = re.compile(r"^\d{4}-\d{2}$")
-_CODES = {"energy", "fixed", "customer", "duty", "fsa", "true_up", "surcharge", "adjustment", "other"}
-
-
 def _clean(raw: dict[str, Any]) -> dict[str, Any]:
-    """Drop the parts of a model answer that are malformed, so one bad cell does not lose the whole bill."""
-    raw["source"] = "vision"
-    if not _MONTH.match(str(raw.get("bill_month") or "")):
-        raw["bill_month"] = None
-    raw["arrears"] = raw.get("arrears") or 0
-    raw["line_items"] = [
-        {**i, "code": i.get("code") if i.get("code") in _CODES else "other", "label": str(i.get("label") or "Charge")}
-        for i in raw.get("line_items") or [] if isinstance(i, dict) and isinstance(i.get("amount"), int | float)]
-    raw["usage_history"] = [
-        h for h in raw.get("usage_history") or []
-        if isinstance(h, dict) and _MONTH.match(str(h.get("month"))) and isinstance(h.get("units"), int | float)]
-    raw["unreadable_fields"] = [str(f) for f in raw.get("unreadable_fields") or []][:30]
-    return raw
+    """The model's answer in one form (app/domain/bill_normalise.py), so one bad cell does not lose the whole bill."""
+    return bill_normalise.normalise(raw)
 
 
 async def classify(jpeg: bytes) -> Classification:
@@ -222,28 +249,46 @@ async def classify(jpeg: bytes) -> Classification:
         raise ProviderError("invalid classification") from exc
 
 
+TRANSCRIBE = (" This time, add one more key FIRST in the JSON: transcript, a list of every printed line from top to"
+              " bottom exactly as it appears, each label together with the number on its own line or nearest to it."
+              " Then fill the other keys from your transcript. Report only what is printed; if you cannot be certain"
+              " of a value, list its key in unreadable_fields.")
 RECHECK = (" A rules check on your previous reading of this bill failed: {check}. So at least one number was"
-           " misread, often because a value was matched to the label of the row above or below it. This time, add"
-           " one more key FIRST in the JSON: transcript, a list of every printed line from top to bottom exactly as"
-           " it appears, each label together with the number on its own line or nearest to it. Then fill the other"
-           " keys from your transcript. Report only what is printed; if you cannot be certain of a value, list its"
-           " key in unreadable_fields.")
+           " misread, often because a value was matched to the label of the row above or below it." + TRANSCRIBE)
+DOUBT = (" In your previous reading of this bill you could not be certain of: {keys}. The image is sharpened this"
+         " time. Read those values again digit by digit." + TRANSCRIBE)
+SUSPECTS = " Look hardest at these rows: {rows}."
+# The second read gets a sharpened copy: thermal print fades unevenly, and a WhatsApp photo loses edge contrast.
+SHARPEN = ImageFilter.UnsharpMask(radius=2, percent=160, threshold=2)
 
 
-async def extract(jpeg: bytes, seen: Classification, failed_check: str | None = None) -> ExtractedBill:
+def sharpened(jpeg: bytes) -> bytes:
+    image = Image.open(io.BytesIO(jpeg)).convert("L")
+    return _jpeg(ImageOps.autocontrast(image, cutoff=1).filter(SHARPEN).convert("RGB"))
+
+
+async def extract(jpeg: bytes, seen: Classification, failed_check: str | None = None,
+                  suspects: list[str] | None = None, doubts: list[str] | None = None) -> ExtractedBill:
+    """One careful read. On a second read, `failed_check` names the check that failed and `suspects` the rows to look
+    at, or `doubts` the figures the first read was unsure of. Never the expected numbers, so the model cannot bend a
+    value to fit the sum."""
     model = get_settings().openai_vision_model
-    parts = crops(jpeg)
+    second = bool(failed_check or doubts)
+    parts = crops(sharpened(jpeg) if second else jpeg)
     hint = f"A first look says this is: {seen.document_type}, {seen.discom}."
     if len(parts) > 1:
         hint += f" The page is sent as {len(parts)} overlapping crops, top to bottom."
     if failed_check:
-        # Name the check, never the expected numbers, so the model cannot bend a value to fit the sum.
         hint += RECHECK.format(check=failed_check.lower())
+    elif doubts:
+        hint += DOUBT.format(keys=", ".join(doubts))
+    if suspects:
+        hint += SUSPECTS.format(rows=", ".join(suspects))
     raw = await chat_json(model, EXTRACT, _content(parts, "high", hint + " Read it."), temperature=0,
-                          max_tokens=3000 if failed_check else 1600, policy=READ)
+                          max_tokens=3000 if second else 1600, policy=READ)
     raw.pop("transcript", None)
     try:
-        return ExtractedBill.model_validate(_clean(raw))
+        return bill_normalise.to_bill(raw)
     except ValidationError as exc:
         log.warning("extraction failed validation: %s", exc.error_count())
         raise ProviderError("invalid extraction") from exc
@@ -265,6 +310,27 @@ async def _first_document(images: list[bytes]) -> tuple[bytes, Classification]:
     return images[0], seen
 
 
+async def _second_read(jpeg: bytes, seen: Classification, first: ExtractedBill, failed: str | None) -> Reading:
+    """A first read that failed a check, or was unsure of a key figure, gets one targeted second read. The second
+    stands alone if it passes; otherwise the two reads are reconciled; otherwise the better one is kept untrusted."""
+    doubts = second_read.doubtful(first)
+    second = await extract(jpeg, seen, failed, suspects=second_read.suspect_rows(first) if failed else None,
+                           doubts=None if failed else doubts)
+    why = failed or f"unsure of {', '.join(doubts)}"
+    # After a failed check the second read may stand alone. After doubt it stands only where both reads agree, so a
+    # figure that is cut off or blurred away is never supplied by the reread.
+    stands = capture.failed_check(second) is None and not second_read.doubtful(second)
+    if stands and (failed or second_read.agrees_on(first, second, doubts)):
+        return Reading(seen, second.model_copy(update={"unreadable_fields": [
+            f for f in second.unreadable_fields if f not in doubts]}) if not failed else second, reread=why)
+    settled = second_read.reconcile(first, second)
+    if settled is not None:
+        return Reading(seen, settled, reread=why, reconciled=True)
+    # Neither stands: keep the one with no failed check, so the consumer is told what we could and could not read.
+    kept = second if failed and capture.failed_check(second) is None else first
+    return Reading(seen, kept, reread=why)
+
+
 async def read_document(data: bytes, mime: str) -> Reading:
     try:
         images = pages(data, mime)
@@ -276,9 +342,9 @@ async def read_document(data: bytes, mime: str) -> Reading:
     if seen.document_type not in ("electricity_bill", "meter") or seen.quality == "unreadable":
         return Reading(seen, None)
     bill = await extract(jpeg, seen)
-    failed = capture.failed_check(bill)
-    if failed is None:
+    if bill.document_type == "meter":
         return Reading(seen, bill)
-    second = await extract(jpeg, seen, failed)
-    # The second read only replaces the first when it stands on its own: every check passes.
-    return Reading(seen, second if capture.failed_check(second) is None else bill, reread=failed)
+    failed = capture.failed_check(bill)
+    if failed is None and not second_read.doubtful(bill):
+        return Reading(seen, bill)
+    return await _second_read(jpeg, seen, bill, failed)

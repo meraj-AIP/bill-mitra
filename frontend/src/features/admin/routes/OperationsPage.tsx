@@ -7,11 +7,12 @@ import { PageHeader } from '@/shared/components/PageHeader';
 import { SendStatus } from '@/shared/components/SendStatus';
 import { EmptyState } from '@/shared/components/States';
 
-import { PARKED_KINDS, useDismissParked, useParkedJobs, useRetryParked } from '../api/operationsApi';
+import { PARKED_KINDS, useDismissParked, useParkedJobs, useRetryParked, type ParkedJob } from '../api/operationsApi';
 import { ParkedTable } from '../components/ParkedTable';
 import { QueueCounts } from '../components/QueueCounts';
 import { useOperationsParams } from '../hooks/useAdminParams';
 import { PARKED_KIND_LABEL } from '../model/labels';
+import { useConfirm } from '@/shared/feedback';
 
 const REFRESH_MS = 30_000;
 
@@ -38,6 +39,16 @@ export function OperationsPage() {
   const retry = useRetryParked();
   const dismiss = useDismissParked();
   const running = retry.isPending ? retry : dismiss.isPending ? dismiss : null;
+  const confirm = useConfirm();
+  const doRetry = async (job: ParkedJob) => {
+    if (await confirm({ title: 'Put this back in its queue?', confirmLabel: 'Retry', body: `${PARKED_KIND_LABEL[job.kind]}${job.ticket ? `, ${job.ticket}` : ''}.`,
+      points: ['It is tried once more straight away. If it fails again it is parked again.'] })) retry.mutate(job);
+  };
+  const doDismiss = async (job: ParkedJob) => {
+    if (await confirm({ title: 'Dismiss this for good?', confirmLabel: 'Dismiss', tone: 'danger',
+      body: `${PARKED_KIND_LABEL[job.kind]}${job.ticket ? `, ${job.ticket}` : ''}.`,
+      points: ['It is never tried again, and the number and message it held are deleted.', 'This cannot be undone.'] })) dismiss.mutate(job);
+  };
   const failed = retry.isError ? retry : dismiss.isError ? dismiss : null;
 
   return (
@@ -50,14 +61,14 @@ export function OperationsPage() {
         <Filters kind={params.query.kind} sort={params.query.sort} onKind={params.setKind} onSort={params.setSort} />
         {running && <SendStatus state={running} />}
         {failed && (
-          <SendStatus state={failed} onTryAgain={failed.variables ? () => failed.mutate(failed.variables) : undefined} />
+          <SendStatus state={failed} />
         )}
         <ListPanel result={result} page={params.query.page} pageSize={params.query.pageSize} onPage={params.setPage} onPageSize={params.setPageSize}
           empty={<EmptyState icon={<TaskAltOutlinedIcon />} title="Nothing parked"
             hint={params.query.kind ? 'No parked jobs of this kind. Pick another, or All kinds.' : 'Every job either finished or is still being retried.'} />}>
           {(rows, dimmed) => (
             <ParkedTable rows={rows} loadingRows={params.query.pageSize} dimmed={dimmed}
-              action={{ busyId: running?.variables?.id ?? null, onRetry: (job) => retry.mutate(job), onDismiss: (job) => dismiss.mutate(job) }} />
+              action={{ busyId: running?.variables?.id ?? null, onRetry: (job) => void doRetry(job), onDismiss: (job) => void doDismiss(job) }} />
           )}
         </ListPanel>
       </Stack>

@@ -11,8 +11,8 @@ def test_real_bills_pass_every_check_and_capture_every_field(bill):
     rep = capture.report(bill)
     assert rep.trusted and rep.problem is None
     assert rep.captured == rep.expected - 1  # section is dropped from the fixtures
-    assert {c.key: c.status for c in rep.checks} == {"readings": "pass", "charges_sum": "pass", "total": "pass",
-                                                      "days": "pass"}
+    assert {c.key: c.status for c in rep.checks} == {"readings": "pass", "energy_units": "pass", "charges_sum": "pass",
+                                                      "total": "pass", "days": "pass"}
 
 
 def test_service_number_never_leaves_unmasked():

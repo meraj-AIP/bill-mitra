@@ -45,10 +45,10 @@ function useRefresh() {
 
 export function useMarkRead() {
   const onSuccess = useRefresh();
-  return useMutation({ ...IDEMPOTENT, mutationFn: (id: number) => sendJson<void>(`/api/alerts/${id}/read`), onSuccess });
+  return useMutation({ meta: { action: 'Marking it read' }, ...IDEMPOTENT, mutationFn: (id: number) => sendJson<void>(`/api/alerts/${id}/read`), onSuccess });
 }
 
 export function useMarkAllRead() {
   const onSuccess = useRefresh();
-  return useMutation({ ...IDEMPOTENT, mutationFn: () => sendJson<void>('/api/alerts/read-all'), onSuccess });
+  return useMutation({ meta: { action: 'Marking all read', success: 'All alerts marked read' }, ...IDEMPOTENT, mutationFn: () => sendJson<void>('/api/alerts/read-all'), onSuccess });
 }

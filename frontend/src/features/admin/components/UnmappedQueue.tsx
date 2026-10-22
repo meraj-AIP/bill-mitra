@@ -1,7 +1,5 @@
 import RuleFolderOutlinedIcon from '@mui/icons-material/RuleFolderOutlined';
-import {
-  Alert, Box, Button, CircularProgress, Paper, Skeleton, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography,
-} from '@mui/material';
+import { Box, Button, CircularProgress, Paper, Skeleton, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material';
 import { useState } from 'react';
 
 import type { UnitRef } from '@/shared/api/types';
@@ -10,11 +8,18 @@ import { UnitPicker } from '@/shared/components/UnitPicker';
 import { dateTime, formatCount } from '@/shared/lib/format';
 
 import { useMapUnmapped, useUnmapped, type Unmapped } from '../api/unitsApi';
+import { useConfirm } from '@/shared/feedback';
 
 function MapRow({ item }: { item: Unmapped }) {
   const map = useMapUnmapped();
   const [section, setSection] = useState<UnitRef | null>(null);
-  const mapTo = (sectionId: string) => map.mutate({ name: item.name, discom: item.discom, section_id: sectionId });
+  const confirm = useConfirm();
+  const mapTo = async (sectionId: string, sectionName: string) => {
+    if (await confirm({ title: `Map \u201c${item.name}\u201d to ${sectionName}?`, confirmLabel: 'Map name',
+      points: ['Bills printing this name are routed to that section from now on.', 'Open cases that carry it move there now.'] })) {
+      map.mutate({ name: item.name, discom: item.discom, section_id: sectionId });
+    }
+  };
   const suggestions = item.suggestions ?? [];
   return (
     <TableRow>
@@ -28,7 +33,7 @@ function MapRow({ item }: { item: Unmapped }) {
         {suggestions.length > 0 && (
           <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap', mb: 1 }}>
             {suggestions.map((s) => (
-              <Button key={s.section_id} size="small" variant="outlined" disabled={map.isPending} onClick={() => mapTo(s.section_id)}
+              <Button key={s.section_id} size="small" variant="outlined" disabled={map.isPending} onClick={() => void mapTo(s.section_id, s.name)}
                 title={`${Math.round(s.score * 100)}% name match`}>
                 Map to {s.name}
               </Button>
@@ -40,12 +45,11 @@ function MapRow({ item }: { item: Unmapped }) {
             <UnitPicker label={`Section in ${item.discom}`} kind="section" size="small" value={section} onChange={setSection} />
           </Box>
           <Button variant="contained" size="small" sx={{ mt: 0.5 }} disabled={!section || map.isPending}
-            onClick={() => section && mapTo(section.unit_id)}
+            onClick={() => section && void mapTo(section.unit_id, section.name)}
             startIcon={map.isPending ? <CircularProgress size={14} color="inherit" aria-hidden /> : null}>
             Map
           </Button>
         </Stack>
-        {map.error && <Alert severity="error" sx={{ mt: 1 }}>{map.error.message}</Alert>}
       </TableCell>
     </TableRow>
   );

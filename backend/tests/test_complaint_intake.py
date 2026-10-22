@@ -293,3 +293,21 @@ def test_consumer_list_filters_by_neutral_status(sign_in):
         assert client.get("/api/complaints", params={"status": "Open"}).status_code == 422
     assert waiting["total"] == 1 and waiting["items"][0]["type"] == "wrong_reading"
     assert received["total"] == 1 and received["items"][0]["status_label"] == "Received"
+
+
+def test_a_complaint_that_links_a_bill_carries_what_the_check_found():
+    """The inbox and the detail page read the bill check from the complaint; without it a correct bill showed as
+    needing a look."""
+    from app.flows import intake
+    from tests.real import OCT_2025
+    from tests.test_complaints import OVERCHARGED
+
+    for bill, expected in ((OCT_2025, "bill_correct"), (OVERCHARGED, "overcharge")):
+        user = f"web:{secrets.token_hex(8)}"
+        bill_id = repos.save_bill(user, bill, None, "verified", 0.0)
+        ticket = asyncio.run(intake.submit(intake.Raise(user_id=user, type="high_bill", discom="TGSPDCL",
+                                                        description="Please check my bill.", language="en",
+                                                        channel="web", source="consumer_web", bill_id=bill_id)))
+        row = store.row(ticket)
+        assert row is not None and row["triage"] == expected
+        assert (row["amount"] > 0) == (expected == "overcharge")

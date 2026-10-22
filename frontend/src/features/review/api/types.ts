@@ -1,4 +1,4 @@
-import type { ComplaintMessage, RequestAnswer } from '@/features/complaints';
+import type { ComplaintMessage, RequestAnswer, SenderCheck } from '@/features/complaints';
 import type { AuditLine, Bill } from '@/features/dashboard';
 import type { Discom, Page } from '@/shared/api/types';
 
@@ -106,6 +106,7 @@ export interface CaseDetail extends CaseRow {
   evidence_pack: EvidencePack;
   /** Oldest first. */
   timeline: TimelineEntry[];
+  sender?: SenderCheck | null;
 }
 
 export type HistorySource = 'printed' | 'uploaded' | 'discom' | 'this_bill';

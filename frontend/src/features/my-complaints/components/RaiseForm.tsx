@@ -9,6 +9,7 @@ import { useRaiseComplaint } from '../api/myComplaintsApi';
 import { toRequest, type Draft } from '../model/draft';
 import { ConnectionFields } from './ConnectionFields';
 import { TypePicker } from './TypePicker';
+import { useConfirm } from '@/shared/feedback';
 
 function Step({ n, title, hint, children }: { n: number; title: string; hint?: string; children: ReactNode }) {
   return (
@@ -45,15 +46,19 @@ export function RaiseForm({ initialBill }: { initialBill: string | null }) {
   const set = <K extends keyof Draft>(key: K) => (value: Draft[K]) => setDraft((d) => ({ ...d, [key]: value }));
   const noType = tried && !draft.type;
 
-  const submit = (event?: FormEvent) => {
+  const confirm = useConfirm();
+  const submit = async (event?: FormEvent) => {
     event?.preventDefault();
     setTried(true);
     const body = toRequest(draft);
-    if (body) raise.mutate(body, { onSuccess: (c) => navigate(`/complaints/${encodeURIComponent(c.ticket)}`) });
+    if (!body || !(await confirm({ title: 'Send this complaint?', confirmLabel: 'Send complaint',
+      body: draft.type ? `${draft.type.label}, ${body.discom}.` : undefined,
+      points: ['You get a ticket number straight away.', 'We reply here and tell you each time it moves.'] }))) return;
+    raise.mutate(body, { onSuccess: (c) => navigate(`/complaints/${encodeURIComponent(c.ticket)}`) });
   };
 
   return (
-    <Stack component="form" onSubmit={submit} noValidate sx={{ gap: 4 }}>
+    <Stack component="form" onSubmit={(e) => void submit(e)} noValidate sx={{ gap: 4 }}>
       <Step n={1} title="What is the problem?" hint="Pick the one closest to yours.">
         <TypePicker value={draft.type?.code ?? ''} onChange={set('type')} error={noType} />
         {noType && <Typography variant="caption" sx={{ color: 'error.main', mt: 0.75, display: 'block' }}>Please pick a problem.</Typography>}
@@ -66,7 +71,7 @@ export function RaiseForm({ initialBill }: { initialBill: string | null }) {
         <DescriptionField label="Describe the problem" value={draft.description} onChange={set('description')} showEmpty={tried}
           placeholder="For example: my bill doubled this month but my usage is the same." />
       </Step>
-      <SendStatus state={raise} onTryAgain={() => submit()} />
+      <SendStatus state={raise} />
       <SendButton pending={raise.isPending} />
     </Stack>
   );

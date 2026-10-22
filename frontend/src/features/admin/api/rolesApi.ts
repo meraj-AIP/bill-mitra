@@ -51,12 +51,12 @@ function useRefreshRoles() {
 
 export function useCreateRole() {
   const onSuccess = useRefreshRoles();
-  return useMutation({ mutationFn: (body: RoleDraft) => sendJson<Role>('/api/admin/roles', body), onSuccess });
+  return useMutation({ meta: { quiet: true, success: 'Role created' }, mutationFn: (body: RoleDraft) => sendJson<Role>('/api/admin/roles', body), onSuccess });
 }
 
 export function useUpdateRole() {
   const onSuccess = useRefreshRoles();
-  return useMutation({
+  return useMutation({ meta: { quiet: true, success: 'Role saved' },
     ...IDEMPOTENT,
     mutationFn: ({ slug, changes }: { slug: string; changes: Partial<RoleDraft> }) =>
       sendJson<Role>(`/api/admin/roles/${encodeURIComponent(slug)}`, changes, 'PATCH'),
@@ -66,7 +66,7 @@ export function useUpdateRole() {
 
 export function useDeleteRole() {
   const onSuccess = useRefreshRoles();
-  return useMutation({
+  return useMutation({ meta: { quiet: true, success: 'Role deleted' },
     mutationFn: (slug: string) => sendJson<void>(`/api/admin/roles/${encodeURIComponent(slug)}`, undefined, 'DELETE'),
     onSuccess,
   });
@@ -75,7 +75,7 @@ export function useDeleteRole() {
 /** Puts a built-in role back to the name, description and permissions it ships with. */
 export function useResetRole() {
   const onSuccess = useRefreshRoles();
-  return useMutation({
+  return useMutation({ meta: { quiet: true, success: 'Role reset to its defaults' },
     ...IDEMPOTENT,
     mutationFn: (slug: string) => sendJson<Role>(`/api/admin/roles/${encodeURIComponent(slug)}/reset`, undefined, 'POST'),
     onSuccess,

@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from app.domain import meter_status
 from app.domain.bill import ExtractedBill
+from app.domain.pricing import price
 from app.domain.tariff.engine import money
 
 FieldStatus = Literal["captured", "missing", "unreadable"]
@@ -18,7 +19,9 @@ CheckStatus = Literal["pass", "fail", "skipped"]
 MONEY_TOLERANCE = 1.0  # bills round the payable amount to the rupee through a Loss/Gain line
 MIN_CONFIDENCE = 0.6
 # A failed check here means a number on the bill was misread, so the reading cannot be trusted.
-BLOCKING = ("readings", "net_units", "charges_sum", "total")
+BLOCKING = ("readings", "export_readings", "net_units", "energy_units", "charges_sum", "total")
+# How far from the units read to look for the count the printed energy charge was worked out on.
+ENERGY_SEARCH = 300
 KEY_FIELDS = ("units", "energy", "bill_amount")
 
 FIELDS = (
@@ -78,15 +81,39 @@ def _field(bill: ExtractedBill, key: str, label: str) -> FieldCapture:
     return FieldCapture(key=key, label=label, status="missing" if value is None else "captured", value=value)
 
 
+def register_units(previous: float, present: float, mf: float | None) -> tuple[int, bool]:
+    """Units a register shows between two readings, times the multiplying factor; True when the meter rolled over
+    (passed 9999... back to 0). A meter has as many digits as its previous reading, or one more."""
+    factor = mf if mf and mf > 0 else 1.0
+    diff = present - previous
+    if diff >= 0:
+        return round(diff * factor), False
+    digits = len(str(int(previous)))
+    return round((present + 10 ** digits - previous) * factor), True
+
+
+def _register_check(key: str, label: str, previous: float | None, present: float | None, units: int | None,
+                    mf: float | None) -> Check:
+    if previous is None or present is None or units is None:
+        return Check(key=key, label=label, status="skipped", detail="A reading or the units is not on the bill")
+    expected, rolled = register_units(previous, present, mf)
+    factor = mf if mf and mf > 0 else 1.0
+    ok = abs(expected - units) <= max(1, round(factor))
+    shown = f"({present:g} - {previous:g})" + (f" x MF {factor:g}" if factor != 1 else "")
+    note = ", the meter rolled over" if rolled else ""
+    return Check(key=key, label=label, status="pass" if ok else "fail",
+                 detail=f"{shown} = {expected}{note}, bill says {units}")
+
+
 def _readings(bill: ExtractedBill) -> Check:
-    label = "Present minus previous reading equals units"
-    if None in (bill.present_reading, bill.previous_reading, bill.units):
-        return Check(key="readings", label=label, status="skipped", detail="A reading or the units is not on the bill")
-    assert bill.present_reading is not None and bill.previous_reading is not None
-    diff = round(bill.present_reading - bill.previous_reading)
-    ok = abs(diff - (bill.units or 0)) <= 1
-    return Check(key="readings", label=label, status="pass" if ok else "fail",
-                 detail=f"{bill.present_reading:g} - {bill.previous_reading:g} = {diff}, bill says {bill.units}")
+    return _register_check("readings", "Present minus previous reading equals units", bill.previous_reading,
+                           bill.present_reading, bill.units, bill.multiplying_factor)
+
+
+def _export_readings(bill: ExtractedBill) -> Check:
+    return _register_check("export_readings", "Export meter readings equal the units exported",
+                           bill.export_previous_reading, bill.export_present_reading, bill.export_units,
+                           bill.multiplying_factor)
 
 
 def _net_units(bill: ExtractedBill) -> Check:
@@ -98,6 +125,29 @@ def _net_units(bill: ExtractedBill) -> Check:
     ok = net == bill.billed_units  # whole units on both sides, so any gap is a misread digit
     return Check(key="net_units", label=label, status="pass" if ok else "fail",
                  detail=f"{bill.units} - {bill.export_units} = {net}, bill says {bill.billed_units}")
+
+
+def _energy_units(bill: ExtractedBill) -> Check:
+    """The energy charge encodes the units through the slabs. A misread digit can make the readings and the units
+    agree with each other and still be wrong; the printed energy charge then fits a different unit count exactly.
+    A charge that fits no nearby count is a pricing difference for the audit to report, not a misread."""
+    label = "Units agree with the energy charge"
+    energy = bill.item("energy")
+    if energy is None or bill.units is None or bill.export_units is not None or bill.billed_units is not None:
+        return Check(key="energy_units", label=label, status="skipped", detail="No energy charge, or a solar bill")
+    try:
+        if abs(price(bill, bill.units).energy - energy) <= MONEY_TOLERANCE:
+            return Check(key="energy_units", label=label, status="pass",
+                         detail=f"{bill.units} units give the printed energy charge of Rs {energy:.2f}")
+        fits = next((u for u in range(max(bill.units - ENERGY_SEARCH, 0), bill.units + ENERGY_SEARCH + 1)
+                     if abs(price(bill, u).energy - energy) <= 0.5), None)
+    except (ValueError, KeyError, LookupError):
+        return Check(key="energy_units", label=label, status="skipped", detail="No tariff for this bill to compare")
+    if fits is None:
+        return Check(key="energy_units", label=label, status="skipped",
+                     detail="The energy charge does not follow the tariff for any nearby units, so it cannot confirm them")
+    return Check(key="energy_units", label=label, status="fail",
+                 detail=f"The printed energy charge fits {fits} units, the bill was read as {bill.units}")
 
 
 def _reading_status(bill: ExtractedBill) -> Check:
@@ -151,7 +201,7 @@ def _blocking(checks: list[Check]) -> list[Check]:
     """Failed checks that mean a number was misread. On a net-metered bill the exact import, export and billed
     figures already confirm the units, so a misread meter reading alone no longer blocks it."""
     status = {c.key: c.status for c in checks}
-    skip = {"readings"} if status.get("net_units") == "pass" else set()
+    skip = {"readings", "export_readings"} if status.get("net_units") == "pass" else set()
     return [c for c in checks if c.key in BLOCKING and c.key not in skip and c.status == "fail"]
 
 
@@ -171,7 +221,8 @@ def _problem(bill: ExtractedBill, checks: list[Check]) -> str | None:
 
 def failed_check(bill: ExtractedBill) -> str | None:
     """Label of the first blocking consistency check that fails, or None."""
-    failed = _blocking([_readings(bill), _net_units(bill), _charges_sum(bill), _total(bill)])
+    failed = _blocking([_readings(bill), _export_readings(bill), _net_units(bill), _energy_units(bill),
+                        _charges_sum(bill), _total(bill)])
     return failed[0].label if failed else None
 
 
@@ -180,7 +231,9 @@ def report(bill: ExtractedBill) -> CaptureReport:
     status = bill.present_status is not None
     extra = (*(SOLAR_FIELDS if solar else ()), *(STATUS_FIELDS if status else ()))
     fields = [_field(bill, key, label) for key, label in (*FIELDS, *extra)]
-    checks = [_readings(bill), *([_net_units(bill)] if solar else []), _charges_sum(bill), _total(bill), _days(bill),
+    exported = bill.export_previous_reading is not None or bill.export_present_reading is not None
+    checks = [_readings(bill), *([_net_units(bill)] if solar else []), *([_export_readings(bill)] if exported else []),
+              _energy_units(bill), _charges_sum(bill), _total(bill), _days(bill),
               *([_reading_status(bill)] if status else [])]
     problem = _problem(bill, checks)
     return CaptureReport(captured=sum(f.status == "captured" for f in fields), expected=len(fields), fields=fields,

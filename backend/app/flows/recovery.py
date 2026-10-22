@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pydantic import BaseModel
 
 from app.channels.whatsapp import router
-from app.flows import extract
+from app.flows import extract, sender_check
 from app.services import delivery
 from app.store import accounts, extract_jobs, outbox, wa_queue
 
@@ -52,9 +52,11 @@ async def run_extracts(now: datetime) -> int:
     return await extract.run_due(now)
 
 
-# The sweep first, so what it releases is picked up in the same run.
+# The sweep first, so what it releases is picked up in the same run. The sender check is not a queue, but it runs
+# this often so staff see the flag within a minute of the complaint.
 JOBS: tuple[tuple[str, Callable[[datetime], Awaitable[int]]], ...] = (
-    ("sweep_stuck", sweep_stuck), ("inbox", retry_inbox), ("outbox", send_outbox), ("extract", run_extracts))
+    ("sweep_stuck", sweep_stuck), ("inbox", retry_inbox), ("outbox", send_outbox), ("extract", run_extracts),
+    ("sender_check", sender_check.run_due))
 
 
 def health(now: datetime | None = None) -> QueueHealth:

@@ -49,7 +49,7 @@ export function NoteForm({ people, initialPerson = '', noteLabel, submitLabel, s
       <TextField size="small" label={noteLabel} value={note} required multiline minRows={2} maxRows={6} fullWidth
         onChange={(e) => setNote(e.target.value)} error={short || note.length > HANDOFF_NOTE.max}
         helperText={short ? `Write at least ${HANDOFF_NOTE.min} characters so the next person knows why.` : `${note.length} of ${HANDOFF_NOTE.max} characters`} />
-      <SendStatus state={state} onTryAgain={() => submit()} />
+      <SendStatus state={state} />
       <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap' }}>
         <Button type="submit" variant="contained" disabled={pending}
           startIcon={pending ? <CircularProgress size={14} color="inherit" aria-hidden /> : null}>

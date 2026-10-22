@@ -1,11 +1,9 @@
-import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
-import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Container, Grid, Paper, Stack, Typography } from '@mui/material';
+import { Box, Button, Container, Stack, useMediaQuery, useTheme } from '@mui/material';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import { DetailSkeleton, pagePhotos } from '@/features/complaints';
 import { isStatus } from '@/shared/api/http';
-import { BillImage } from '@/shared/components/BillImage';
 import { PhotoGallery, uniquePhotos } from '@/shared/components/PhotoGallery';
 import { EmptyState, ErrorState } from '@/shared/components/States';
 
@@ -15,52 +13,18 @@ import { ApplyPanel } from '../components/ApplyPanel';
 import { ApprovalsPanel } from '../components/ApprovalsPanel';
 import { attachedBillPhoto } from '../components/AttachedBills';
 import { CaseAssist } from '../components/CaseAssist';
+import { CaseFile } from '../components/CaseFile';
 import { CaseHeader } from '../components/CaseHeader';
 import { ConversationPanel } from '../components/ConversationPanel';
-import { DecisionHistory } from '../components/DecisionHistory';
 import { DecisionPanel } from '../components/DecisionPanel';
 import { EvidencePackPanel } from '../components/EvidencePackPanel';
-import { FlagPanel } from '../components/FlagPanel';
-import { ReadingsPanel } from '../components/ReadingsPanel';
 import { SuggestedDecision } from '../components/SuggestedDecision';
-import { TimelinePanel } from '../components/TimelinePanel';
 import { emptyDraft, fromDraft, OPEN_FOR_DECISION, type DecisionDraft } from '../model/decision';
 import { CASE_SECTION } from '../model/labels';
-
-const WAITING: Partial<Record<CaseDetail['state'], string>> = {
-  awaiting_approval: 'A decision is waiting for a billing approver. Nothing more to do here until they approve or reject it.',
-  decided: 'Decided. Any revision now waits to be entered in the DISCOM billing system.',
-  applied: 'Closed. The revision is in the official bill and the consumer has been told.',
-};
 
 // Printing this page prints the evidence pack alone; on screen it sits folded away in the workspace.
 const SCREEN_ONLY = { '@media print': { display: 'none' } };
 const PRINT_ONLY = { display: 'none', '@media print': { display: 'block' } };
-
-/** The full pack is there when needed, without pushing the bill and the decision down the page. */
-function EvidenceFold({ c }: { c: CaseDetail }) {
-  return (
-    <Accordion variant="outlined" disableGutters slotProps={{ transition: { unmountOnExit: true } }}>
-      <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />}>
-        <Typography variant="subtitle1" component="span">Evidence pack</Typography>
-      </AccordionSummary>
-      <AccordionDetails sx={{ p: 0 }}>
-        <EvidencePackPanel c={c} />
-      </AccordionDetails>
-    </Accordion>
-  );
-}
-
-function Bill({ c }: { c: CaseDetail }) {
-  if (!c.media_url) {
-    return (
-      <Paper variant="outlined" sx={{ p: 2 }}>
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>No bill photo is stored for this case.</Typography>
-      </Paper>
-    );
-  }
-  return <BillImage src={c.media_url} isPdf={c.mime_type === 'application/pdf'} heading="Bill as uploaded" name={`Bill for ${c.ticket}`} />;
-}
 
 /** "Use this" remounts the decision form with the suggestion filled in, replacing anything typed so far. */
 function DecisionArea({ c }: { c: CaseDetail }) {
@@ -77,39 +41,36 @@ function DecisionArea({ c }: { c: CaseDetail }) {
   );
 }
 
+const ANCHOR = { scrollMarginTop: 80, '&:focus': { outline: 'none' }, '&:empty': { display: 'none' } };
+const COLUMNS = { md: 'minmax(0, 1fr) 380px', lg: 'minmax(0, 1fr) 420px' };
+
+/** Left, wide: what this person does now (decide, approve or apply), the AI read, then the case file. Right: the
+ * conversation with the consumer, where asking for more happens. The same shape as the complaint page. Below md it
+ * stacks: the action, the AI read, the conversation, then the case file. */
 function Workspace({ c }: { c: CaseDetail }) {
   const deciding = c.can.decide && OPEN_FOR_DECISION.has(c.state);
-  const note = WAITING[c.state];
+  // One mount of each part, placed by width, so a half-written decision or request survives a resize.
+  const wide = useMediaQuery(useTheme().breakpoints.up('md'));
+  const work = (
+    <>
+      {deciding && (
+        <Stack id={CASE_SECTION.decision} tabIndex={-1} sx={{ gap: 2, ...ANCHOR }}>
+          <DecisionArea c={c} />
+        </Stack>
+      )}
+      <Box id={CASE_SECTION.approval} tabIndex={-1} sx={ANCHOR}><ApprovalsPanel c={c} /></Box>
+      <Box id={CASE_SECTION.apply} tabIndex={-1} sx={ANCHOR}><ApplyPanel c={c} /></Box>
+      <CaseAssist c={c} />
+    </>
+  );
+  const rail = <Box component="aside" aria-label="Conversation with the consumer" sx={{ minWidth: 0 }}><ConversationPanel c={c} /></Box>;
+  const file = <CaseFile c={c} />;
+  if (!wide) return <Stack sx={{ gap: 2 }}>{work}{rail}{file}</Stack>;
   return (
-    <Grid container spacing={3} sx={{ alignItems: 'flex-start' }}>
-      <Grid size={{ xs: 12, md: 5 }}>
-        <Stack sx={{ gap: 2 }}>
-          <Bill c={c} />
-          <ReadingsPanel c={c} />
-          <TimelinePanel c={c} />
-          <EvidenceFold c={c} />
-        </Stack>
-      </Grid>
-      <Grid size={{ xs: 12, md: 7 }}>
-        <Stack sx={{ gap: 2 }}>
-          <CaseAssist c={c} />
-          <FlagPanel c={c} />
-          {c.state === 'rejected' && c.can.decide && (
-            <Alert severity="error">The last decision was rejected. Read the approver&apos;s note in the history below, then decide again.</Alert>
-          )}
-          <ApprovalsPanel c={c} />
-          <ApplyPanel c={c} />
-          {deciding && (
-            <Stack id={CASE_SECTION.decision} tabIndex={-1} sx={{ gap: 2, scrollMarginTop: 80, '&:focus': { outline: 'none' } }}>
-              <DecisionArea c={c} />
-            </Stack>
-          )}
-          {!deciding && note && <Alert severity="info" variant="outlined">{note}</Alert>}
-          <ConversationPanel c={c} />
-          <DecisionHistory c={c} />
-        </Stack>
-      </Grid>
-    </Grid>
+    <Box sx={{ display: 'grid', gap: 2, alignItems: 'start', gridTemplateColumns: COLUMNS }}>
+      <Stack sx={{ gap: 2, minWidth: 0 }}>{work}{file}</Stack>
+      {rail}
+    </Box>
   );
 }
 

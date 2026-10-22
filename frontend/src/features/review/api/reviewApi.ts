@@ -55,12 +55,12 @@ function useApply(ticket: string) {
 
 export function useAssign(ticket: string) {
   const onSuccess = useApply(ticket);
-  return useMutation({ mutationFn: (accountId: string) => sendJson<CaseDetail>(`${casePath(ticket)}/assign`, { account_id: accountId }), onSuccess });
+  return useMutation({ meta: { action: 'Moving the case', success: 'Case moved' }, mutationFn: (accountId: string) => sendJson<CaseDetail>(`${casePath(ticket)}/assign`, { account_id: accountId }), onSuccess });
 }
 
 export function useAskConsumer(ticket: string) {
   const onSuccess = useApply(ticket);
-  return useMutation({
+  return useMutation({ meta: { action: 'The request', success: 'Request sent to the consumer' },
     mutationFn: (body: { kind: RequestKind; note?: string }) => sendJson<CaseDetail>(`${casePath(ticket)}/request`, body),
     onSuccess,
   });
@@ -92,14 +92,21 @@ export function usePreview(ticket: string, reading: number | null) {
 
 export function useDecide(ticket: string) {
   const onSuccess = useApply(ticket);
-  return useMutation({ mutationFn: (body: NewDecision) => sendJson<CaseDetail>(`${casePath(ticket)}/decisions`, body), onSuccess });
+  return useMutation({ meta: { action: 'Recording the decision', success: 'Decision recorded' }, mutationFn: (body: NewDecision) => sendJson<CaseDetail>(`${casePath(ticket)}/decisions`, body), onSuccess });
 }
 
 type DecisionAction = 'approve' | 'reject' | 'withdraw' | 'applied';
 
+const DECISION_SAID: Record<DecisionAction, { action: string; success: string }> = {
+  approve: { action: 'The approval', success: 'Decision approved' },
+  reject: { action: 'Sending it back', success: 'Decision sent back to the AE' },
+  withdraw: { action: 'Withdrawing', success: 'Decision withdrawn' },
+  applied: { action: 'Marking it applied', success: 'Marked applied in billing' },
+};
+
 export function useDecisionAction(ticket: string, action: DecisionAction) {
   const onSuccess = useApply(ticket);
-  return useMutation({
+  return useMutation({ meta: DECISION_SAID[action],
     mutationFn: ({ id, body }: { id: number; body?: Record<string, string> }) => sendJson<CaseDetail>(`${decisionPath(id)}/${action}`, body),
     onSuccess,
   });
@@ -107,7 +114,7 @@ export function useDecisionAction(ticket: string, action: DecisionAction) {
 
 /** Each unmask is audited on the server, so it is a deliberate click and never cached. */
 export function useUnmask(ticket: string) {
-  return useMutation({ mutationFn: () => sendJson<{ service_number: string }>(`${casePath(ticket)}/unmask`) });
+  return useMutation({ meta: { action: 'Showing the number' }, mutationFn: () => sendJson<{ service_number: string }>(`${casePath(ticket)}/unmask`) });
 }
 
 export function revisionsCsvUrl(range: { from: string; to: string }): string {
@@ -144,7 +151,7 @@ export function useCaseAssist(ticket: string) {
 /** Refresh: a new brief written now, which then becomes the shared one. */
 export function useRefreshCaseAssist(ticket: string) {
   const client = useQueryClient();
-  return useMutation({
+  return useMutation({ meta: { action: 'AI assist' },
     mutationFn: () => sendJson<CaseAssist>(`${casePath(ticket)}/assist`),
     onSuccess: () => void client.invalidateQueries({ queryKey: ['review', 'case', ticket, 'assist'] }),
   });

@@ -39,12 +39,12 @@ function useRefreshUnits() {
 
 export function useCreateUnit() {
   const onSuccess = useRefreshUnits();
-  return useMutation({ mutationFn: (body: NewUnit) => sendJson<Unit>('/api/admin/units', body), onSuccess });
+  return useMutation({ meta: { quiet: true, success: 'Unit created' }, mutationFn: (body: NewUnit) => sendJson<Unit>('/api/admin/units', body), onSuccess });
 }
 
 export function useUpdateUnit() {
   const onSuccess = useRefreshUnits();
-  return useMutation({
+  return useMutation({ meta: { quiet: true, success: 'Unit saved' },
     ...IDEMPOTENT,
     mutationFn: ({ id, changes }: { id: string; changes: UnitChanges }) =>
       sendJson<Unit>(`/api/admin/units/${encodeURIComponent(id)}`, changes, 'PATCH'),
@@ -54,7 +54,7 @@ export function useUpdateUnit() {
 
 export function useImportUnits() {
   const onSuccess = useRefreshUnits();
-  return useMutation({
+  return useMutation({ meta: { action: 'The import', success: 'Import finished' },
     mutationFn: (file: File) => {
       const form = new FormData();
       form.append('file', file, file.name);
@@ -73,7 +73,7 @@ export function useUnmapped() {
 
 export function useMapUnmapped() {
   const onSuccess = useRefreshUnits();
-  return useMutation({
+  return useMutation({ meta: { action: 'Mapping the name', success: 'Name mapped to the section' },
     ...IDEMPOTENT,
     mutationFn: (body: { name: string; discom: Discom; section_id: string }) => sendJson<void>('/api/admin/units/unmapped/map', body),
     onSuccess,

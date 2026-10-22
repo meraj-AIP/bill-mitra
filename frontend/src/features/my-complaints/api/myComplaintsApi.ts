@@ -40,7 +40,7 @@ function useStore() {
 
 export function useRaiseComplaint() {
   const store = useStore();
-  return useMutation({
+  return useMutation({ meta: { action: 'Your complaint', success: 'Complaint sent' },
     mutationFn: (body: NewMyComplaint) => sendJson<MyComplaintDetail>(`/api/complaints?${LANG}`, body),
     onSuccess: store,
   });
@@ -48,7 +48,7 @@ export function useRaiseComplaint() {
 
 export function useReplyToComplaint(ticket: string) {
   const store = useStore();
-  return useMutation({
+  return useMutation({ meta: { action: 'Your message', success: 'Message sent' },
     mutationFn: (body: string) => sendJson<MyComplaintDetail>(`${path(ticket)}/reply?${LANG}`, { body }),
     onSuccess: store,
   });
@@ -60,7 +60,7 @@ export function useReplyToComplaint(ticket: string) {
  */
 export function useSendPhoto(ticket: string, onProgress: (fraction: number) => void) {
   const store = useStore();
-  return useMutation({
+  return useMutation({ meta: { action: 'The photo', success: 'Photo sent' },
     mutationFn: async ({ file, body }: { file: File; body: string }) => {
       const form = new FormData();
       const image = await shrinkImage(file);

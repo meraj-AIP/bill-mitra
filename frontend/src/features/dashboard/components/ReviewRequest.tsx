@@ -10,6 +10,7 @@ import type { Language } from '@/shared/lib/languages';
 import { isStatus } from '@/shared/api/http';
 
 import { useReviewRequest } from '../api/billsApi';
+import { ActionError } from '@/shared/feedback';
 
 const NOTE_LIMIT = 500;
 const ACTION = 'Report a problem with this bill';
@@ -36,7 +37,7 @@ function ReportDialog({ billId, language, onClose }: { billId: string; language:
           placeholder="For example: we were away for two weeks this month."
           helperText={`${note.length} of ${NOTE_LIMIT} characters`} />
         {already && <Alert severity="info" sx={{ mt: 2 }}>This bill is already reported. Where it stands is shown on this page.</Alert>}
-        {report.error && !already && <Alert severity="error" sx={{ mt: 2 }}>{report.error.message}</Alert>}
+        {!already && <ActionError error={report.error} action="The report" sx={{ mt: 2 }} />}
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onClose}>{already ? 'Close' : 'Cancel'}</Button>

@@ -35,8 +35,12 @@ interface Page<T> { items: T[]; total: number; page: number; page_size: number }
 
 | Method and path | Body | Returns |
 | --- | --- | --- |
-| `POST /api/auth/login` | `{ login, password }` (login is an email for staff, a 10 digit mobile for consumers) | `Account`, sets the cookie. 401 `Login or password is wrong.` |
-| `POST /api/auth/register` | `{ name, mobile, password, consent: true }` mobile `^[6-9]\d{9}$`, password 8+ characters, consent to the privacy notice | `Account` (consumer), signed in. 409 if the mobile is taken, 422 on bad input |
+| `POST /api/auth/login` | `{ login, password }` (staff, by work email) | `Account`, sets the cookie. 401 `Login or password is wrong.` |
+| `GET /api/auth/otp/channels` | none | `{ channels: ("sms" or "whatsapp")[], on_screen, whatsapp_number }`. `on_screen` is development only: no channel is connected and the code is shown on the page |
+| `POST /api/auth/otp/start` | `{ mobile, purpose: "signup" or "login", channel, discom? }`. Sign up needs `discom`: the mobile must be registered with it for at least one connection | `{ channel, expires_in, resend_in, connections, dev_code }`. 404 not registered with that DISCOM, 429 too many codes or locked, 503 channel or DISCOM lookup not available, 502 not sent |
+| `POST /api/auth/otp/signup` | `{ mobile, code, name, discom, consent: true }` | `Account` (consumer), signed in, with the DISCOM's connections for the mobile kept masked. A mobile that already has an account is signed in to it. 400 wrong or expired code, 429 locked after 5 wrong codes (30 minutes) |
+| `POST /api/auth/otp/login` | `{ mobile, code }` | `Account`, signed in. 400 wrong code, 404 no account for the mobile, 403 switched off |
+| `GET /api/auth/connections` (signed in) | none | The connections found for the consumer's mobile at sign up: `{ discom, service_masked, section }[]` |
 | `POST /api/auth/logout` | none | 204, clears the cookie |
 | `GET /api/auth/me` | none | `Account` or 401 |
 | `POST /api/auth/password` (signed in) | `{ current_password, new_password }` | 204, ends the account's other sessions. 400 if current is wrong |

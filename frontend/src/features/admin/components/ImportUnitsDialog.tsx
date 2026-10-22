@@ -8,6 +8,7 @@ import { formatCount } from '@/shared/lib/format';
 
 import { CSV_COLUMNS, CSV_TEMPLATE, useImportUnits, type ImportResult } from '../api/unitsApi';
 import { ImportErrors } from './ImportErrors';
+import { useConfirm } from '@/shared/feedback';
 
 const TEMPLATE_HREF = `data:text/csv;charset=utf-8,${encodeURIComponent(`${CSV_TEMPLATE}\n`)}`;
 
@@ -27,6 +28,10 @@ function Result({ result }: { result: ImportResult }) {
 /** A CSV upload adds or updates many units at once; rows link by code, so parents can come earlier in the same file. */
 export function ImportUnitsDialog({ onClose }: { onClose: () => void }) {
   const upload = useImportUnits();
+  const confirm = useConfirm();
+  const runImport = async () => {
+    if (file && await confirm({ title: `Import ${file.name}?`, confirmLabel: 'Import', points: ['A unit is created for each valid row, under the parent it names.', 'Rows with a problem are skipped and listed.'] })) upload.mutate(file);
+  };
   const [file, setFile] = useState<File | null>(null);
   const inputId = useId();
   return (
@@ -51,13 +56,13 @@ export function ImportUnitsDialog({ onClose }: { onClose: () => void }) {
             </Button>
           </Stack>
           {file && <Typography variant="body2">Selected: <b>{file.name}</b></Typography>}
-          <SendStatus state={upload} onTryAgain={file ? () => upload.mutate(file) : undefined} />
+          <SendStatus state={upload} />
           {upload.data && <Result result={upload.data} />}
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onClose}>{upload.data ? 'Done' : 'Cancel'}</Button>
-        <Button variant="contained" disabled={!file || upload.isPending} onClick={() => file && upload.mutate(file)}
+        <Button variant="contained" disabled={!file || upload.isPending} onClick={() => void runImport()}
           startIcon={upload.isPending ? <CircularProgress size={16} color="inherit" aria-hidden /> : null}>
           {upload.isPending ? 'Importing' : 'Import'}
         </Button>
