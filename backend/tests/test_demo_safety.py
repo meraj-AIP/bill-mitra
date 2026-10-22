@@ -154,16 +154,53 @@ def test_a_broken_iphone_photo_stays_as_it_came_for_the_reader_to_refuse():
 # A provider that hangs
 
 
-def test_one_hanging_attempt_cannot_outlast_the_retry_budget(monkeypatch):
-    monkeypatch.setattr(retry, "MIN_ATTEMPT_S", 0.01)
-
+def test_one_hanging_attempt_cannot_outlast_the_retry_budget():
     async def hangs() -> None:
         await asyncio.sleep(30)
 
     started = time.monotonic()
     with pytest.raises(TimeoutError):
-        asyncio.run(retry.call(hangs, "test", retry.Policy(attempts=2, base_s=0.01, max_s=0.01, budget_s=0.05)))
+        asyncio.run(retry.call(hangs, "test", retry.Policy(attempts=2, base_s=0.01, max_s=0.01, budget_s=0.05,
+                                                           min_attempt_s=0.01)))
     assert time.monotonic() - started < 2
+
+
+def test_an_attempt_near_the_end_of_the_budget_still_gets_its_floor(monkeypatch):
+    # The floor, not what is left of the budget, decides how long a late attempt may run, so a WhatsApp send is not
+    # cut off after Meta has taken it (the outbox would then send it again).
+    given: list[float] = []
+    real_wait_for = asyncio.wait_for
+
+    async def wait_for(awaitable, timeout):  # noqa: ANN001
+        given.append(timeout)
+        return await real_wait_for(awaitable, timeout)
+
+    calls = iter([httpx.ConnectError("down"), "ok"])
+
+    async def flaky() -> str:
+        result = next(calls)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    ticks = iter([0.0, 0.0, 19.0, 19.0, 19.0])
+    monkeypatch.setattr(retry, "clock", lambda: next(ticks, 19.0))
+    monkeypatch.setattr(retry.asyncio, "wait_for", wait_for)
+
+    async def no_wait(_s: float) -> None:
+        return None
+
+    monkeypatch.setattr(retry, "sleep", no_wait)
+    policy = retry.Policy(attempts=3, base_s=0.1, max_s=0.1, budget_s=20.0, min_attempt_s=10.0)
+    assert asyncio.run(retry.call(flaky, "test", policy)) == "ok"
+    assert given == [20.0, 10.0]
+
+
+def test_whatsapp_policies_give_each_attempt_a_real_floor():
+    from app.channels.whatsapp import client
+
+    assert client.SEND.min_attempt_s >= 10 and client.MEDIA.min_attempt_s >= 10
+    assert client.ONCE.budget_s >= 10
 
 
 def test_a_slow_read_hands_the_upload_to_a_job_instead_of_hanging(reader, sign_in, monkeypatch):

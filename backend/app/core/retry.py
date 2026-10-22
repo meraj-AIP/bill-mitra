@@ -40,6 +40,9 @@ class Policy:
     base_s: float
     max_s: float  # cap on one jittered wait; a Retry-After hint is bounded by the budget instead
     budget_s: float
+    # The shortest time one attempt is given, even near the end of the budget. A send cut off after the other side
+    # took it is sent again by the outbox, so sends get a floor long enough for a normal reply.
+    min_attempt_s: float = MIN_ATTEMPT_S
 
 
 def status_of(exc: BaseException) -> int | None:
@@ -80,7 +83,7 @@ async def call(op: Callable[[], Awaitable[T]], name: str, policy: Policy,
     started = clock()
     for attempt in range(1, policy.attempts + 1):
         # The client timeout bounds each request, not the budget: one hanging attempt must not outlast it.
-        left = max(policy.budget_s - (clock() - started), MIN_ATTEMPT_S)
+        left = max(policy.budget_s - (clock() - started), policy.min_attempt_s)
         try:
             return await asyncio.wait_for(op(), timeout=left)
         except Exception as exc:

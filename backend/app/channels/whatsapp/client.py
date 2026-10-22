@@ -26,9 +26,10 @@ def _headers() -> dict[str, str]:
 
 FFMPEG_TIMEOUT_S = 30
 # Inline attempts. A send still failing after this waits in the outbox (store/outbox.py) for a later try.
-SEND = retry.Policy(attempts=3, base_s=1.0, max_s=8.0, budget_s=20.0)
-MEDIA = retry.Policy(attempts=3, base_s=1.0, max_s=8.0, budget_s=20.0)
-ONCE = retry.Policy(attempts=1, base_s=0.0, max_s=0.0, budget_s=0.0)
+SEND = retry.Policy(attempts=3, base_s=1.0, max_s=8.0, budget_s=20.0, min_attempt_s=10.0)
+MEDIA = retry.Policy(attempts=3, base_s=1.0, max_s=8.0, budget_s=20.0, min_attempt_s=10.0)
+# Read receipts are best effort: one try, but long enough for Meta to answer.
+ONCE = retry.Policy(attempts=1, base_s=0.0, max_s=0.0, budget_s=10.0)
 
 
 async def _get(url: str) -> httpx.Response:
