@@ -12,9 +12,8 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from app.domain.bill import ExtractedBill
+from app.domain.bill import ExtractedBill, real_month
 
-_MONTH = re.compile(r"^\d{4}-\d{2}$")
 _CODES = {"energy", "fixed", "customer", "duty", "fsa", "true_up", "surcharge", "adjustment", "other"}
 INTEGERS = ("units", "export_units", "billed_units", "billing_days", "carry_forward_units", "phase")
 DECIMALS = ("meter_reading", "previous_reading", "present_reading", "export_previous_reading", "export_present_reading",
@@ -117,7 +116,7 @@ def _lines(raw: Any) -> list[dict[str, Any]]:
 def _history(raw: Any) -> list[dict[str, Any]]:
     months: dict[str, int] = {}
     for point in raw if isinstance(raw, list) else []:
-        if not isinstance(point, dict) or not _MONTH.match(str(point.get("month"))):
+        if not isinstance(point, dict) or not real_month(str(point.get("month"))):
             continue
         units = _integer(point.get("units"))
         if units is not None and 0 <= units <= 100_000:
@@ -132,11 +131,14 @@ def _flag(raw: dict[str, Any], key: str) -> None:
 
 
 def _clean_each(raw: dict[str, Any], keys: tuple[str, ...], clean: Any) -> None:
-    """Each key put in one form. A value printed but unusable becomes null and is flagged unreadable."""
+    """Each key put in one form. A value printed but unusable becomes null and is flagged unreadable. An object or a
+    list where one value belongs is not a misread cell but a broken answer, so it fails the whole reply."""
     for key in keys:
         if raw.get(key) is None:
             raw[key] = None
             continue
+        if isinstance(raw[key], dict | list):
+            raise ValueError(f"{key} is not a single value")
         value = clean(raw[key])
         if value is None:
             _flag(raw, key)
@@ -172,14 +174,15 @@ def _ranges(raw: dict[str, Any]) -> None:
 def normalise(raw: dict[str, Any]) -> dict[str, Any]:
     raw = dict(raw)
     raw["source"] = "vision"
-    raw["unreadable_fields"] = [str(f) for f in raw.get("unreadable_fields") or [] if f][:30]
+    said = raw.get("unreadable_fields")
+    raw["unreadable_fields"] = [str(f) for f in said if f][:30] if isinstance(said, list) else []
     _scalars(raw)
     _ranges(raw)
     raw["arrears"] = raw.get("arrears") or 0
     raw["discom"] = DISCOM_ALIASES.get(re.sub(r"\W", "", str(raw.get("discom") or "")).upper(), "UNKNOWN")
     _clean_each(raw, ("service_number",), _service)
     raw["is_domestic"] = _domestic(raw.get("category"), raw.get("is_domestic"))
-    if not _MONTH.match(str(raw.get("bill_month") or "")):
+    if not real_month(str(raw.get("bill_month") or "")):
         raw["bill_month"] = raw["bill_date"][:7] if raw.get("bill_date") else None
     raw["line_items"] = _lines(raw.get("line_items"))
     raw["usage_history"] = _history(raw.get("usage_history"))

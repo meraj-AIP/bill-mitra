@@ -4,7 +4,7 @@ from calendar import monthrange
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 ChargeCode = Literal[
     "energy", "fixed", "customer", "duty", "fsa", "true_up", "surcharge", "adjustment", "other"
@@ -12,6 +12,34 @@ ChargeCode = Literal[
 Source = Literal["vision", "sms", "manual"]
 Quality = Literal["good", "poor", "unreadable"]
 Discom = Literal["TGSPDCL", "TGNPDCL", "OTHER", "UNKNOWN"]
+
+
+def real_date(value: str | None) -> bool:
+    """A YYYY-MM-DD the calendar has. A blurred slip can read 30/02, which the pattern allows."""
+    if value is None or len(value) != 10:
+        return False
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
+def real_month(value: str | None) -> bool:
+    """A YYYY-MM the calendar has. The pattern alone lets a misread month 13 through to date()."""
+    return value is not None and len(value) == 7 and real_date(f"{value}-01")
+
+
+def _month_or_none(value: str | None) -> str | None:
+    if value is not None and not real_month(value):
+        raise ValueError("not a calendar month")
+    return value
+
+
+def _date_or_none(value: str | None) -> str | None:
+    if value is not None and not real_date(value):
+        raise ValueError("not a calendar date")
+    return value
 
 
 class LineItem(BaseModel):
@@ -25,6 +53,8 @@ class UsagePoint(BaseModel):
 
     month: str = Field(pattern=r"^\d{4}-\d{2}$")
     units: int = Field(ge=0, le=100_000)
+
+    _real_month = field_validator("month")(_month_or_none)
 
 
 DocumentType = Literal["bill", "meter", "other"]
@@ -78,6 +108,9 @@ class ExtractedBill(BaseModel):
     unreadable_fields: list[str] = Field(default_factory=list)
     confidence: float = Field(default=0.9, ge=0, le=1)
     source: Source = "vision"
+
+    _real_month = field_validator("bill_month")(_month_or_none)
+    _real_dates = field_validator("previous_reading_date", "disconnection_date", "last_paid_date")(_date_or_none)
 
     def month_date(self) -> date:
         if self.bill_month:

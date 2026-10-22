@@ -292,6 +292,9 @@ async def extract(jpeg: bytes, seen: Classification, failed_check: str | None = 
     except ValidationError as exc:
         log.warning("extraction failed validation: %s", exc.error_count())
         raise ProviderError("invalid extraction") from exc
+    except (TypeError, ValueError) as exc:  # a shape _clean did not expect: the same as an invalid answer
+        log.warning("extraction had an unexpected shape: %s", type(exc).__name__)
+        raise ProviderError("invalid extraction") from exc
 
 
 UNOPENABLE = Classification(document_type="other", quality="unreadable",

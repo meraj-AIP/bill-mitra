@@ -66,7 +66,8 @@ async def transcribe(audio: bytes, mime: str) -> tuple[str, str | None] | None:
             languages = Counter(t.get("language") for t in tokens if t.get("language"))
             language = languages.most_common(1)[0][0] if languages else None
             return (text, language) if text else None
-        except (httpx.HTTPError, *retry.TRANSPORT, KeyError, ValueError) as exc:
+        # TypeError and AttributeError: a reply in a shape we did not expect, such as a list for an object.
+        except (httpx.HTTPError, *retry.TRANSPORT, KeyError, ValueError, TypeError, AttributeError) as exc:
             log.warning("soniox stt failed: %s", type(exc).__name__)
             return None
         finally:

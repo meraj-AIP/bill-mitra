@@ -3,6 +3,7 @@
 Same reader, gate and engine as the chat, so the two surfaces never disagree about a photo.
 """
 
+import asyncio
 import logging
 import time
 from dataclasses import asdict
@@ -114,7 +115,11 @@ async def check_upload(user_id: str, data: bytes, mime: str, media_id: str,
     """The report, or the extract job that will read the bill again when the reader is down for now."""
     started = time.perf_counter()
     try:
-        reading = await read(data, mime)
+        reading = await asyncio.wait_for(read(data, mime), get_settings().upload_read_deadline_s)
+    except TimeoutError:
+        # The page must not hang on a slow provider: the extract job finishes the read and the page polls it.
+        log.warning("dashboard read queued: took too long")
+        return extract_jobs.create(user_id, "dashboard", media_id, mime, language, None, "read took too long")
     except ProviderError as exc:
         log.warning("dashboard read queued: %s", exc)
         return extract_jobs.create(user_id, "dashboard", media_id, mime, language, None, str(exc))
