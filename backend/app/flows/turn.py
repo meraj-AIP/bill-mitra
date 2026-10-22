@@ -1,5 +1,6 @@
 """One inbound message and everything needed to answer it."""
 
+import logging
 from dataclasses import dataclass
 from typing import Literal
 
@@ -9,6 +10,8 @@ from app.domain.conversation.composer import plain
 from app.domain.conversation.lang import text
 from app.services import tts
 from app.store.repos import UserState
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -45,9 +48,14 @@ class Turn:
         """Send a voice note. Returns False when voice is not available, so the caller sends text."""
         script = plain(spoken)
         async with self.tracer.step("Speak in the consumer's language", "ai") as step:
-            ids = await tts.speak(script, self.lang)
+            try:
+                ids = await tts.speak(script, self.lang)
+            except Exception as exc:  # voice is optional: any failure here sends the text, never ends the turn
+                log.warning("voice note failed: %s", type(exc).__name__)
+                ids = None
             if not ids:
-                step.skip("Voice unavailable: Sarvam key not set or language without a voice. Sent as text.")
+                step.skip("Voice unavailable: Sarvam key not set, Sarvam failed, or language without a voice. "
+                          "Sent as text.")
                 return False
             step.note(f"Sarvam Bulbul voice, {len(script)} characters, {len(ids)} clip(s)")
         await self.tracer.message(AudioOut(media_ids=ids, transcript=script, language=self.lang))

@@ -63,7 +63,14 @@ async def _synthesise(client: httpx.AsyncClient, text: str, code: str) -> bytes:
         return response.raise_for_status()
 
     response = await retry.call(once, "sarvam tts", VOICE)
-    return base64.b64decode(response.json()["audios"][0])
+    audios = response.json().get("audios")
+    if not isinstance(audios, list) or not audios or not isinstance(audios[0], str):
+        raise ValueError("no audio in the reply")
+    # validate=True: a garbled reply must fail here, not be saved and cached as an empty voice note.
+    audio = base64.b64decode(audios[0], validate=True)
+    if not audio:
+        raise ValueError("empty audio")
+    return audio
 
 
 async def speak(text: str, language: str) -> list[str] | None:
@@ -86,7 +93,7 @@ async def speak(text: str, language: str) -> list[str] | None:
             for part in chunks(text):
                 audio = await _synthesise(client, part, code)
                 ids.append(media.save(audio, _audio_mime(audio)))
-    except (httpx.HTTPError, *retry.TRANSPORT, KeyError, IndexError, ValueError) as exc:
+    except (httpx.HTTPError, *retry.TRANSPORT, KeyError, IndexError, ValueError, TypeError, AttributeError) as exc:
         log.warning("sarvam tts failed: %s", type(exc).__name__)
         return None
     voice_cache.remember_voice(key, ids)

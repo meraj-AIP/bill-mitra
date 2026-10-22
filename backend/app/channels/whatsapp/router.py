@@ -19,6 +19,7 @@ from app.config import get_settings
 from app.core import retry, service
 from app.core.messages import Inbound, TextOut
 from app.core.trace import Event
+from app.core.uploads import displayable
 from app.domain.conversation.lang import text
 from app.services import delivery, notify
 from app.store import media, repos, wa_queue
@@ -123,6 +124,7 @@ async def _turn(incoming: IncomingWhatsApp) -> None:
             log.warning("whatsapp media could not be downloaded")
             await _say(incoming, "media_failed")
             return
+        data, mime = await displayable(data, mime)
         media_id = media.save(data, mime)
     inbound = Inbound(channel="whatsapp", user_id=user_key(incoming.wa_id), kind=incoming.kind,  # type: ignore[arg-type]
                       text=incoming.text, reply_id=incoming.reply_id, media_id=media_id, mime_type=mime,

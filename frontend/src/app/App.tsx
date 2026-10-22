@@ -15,6 +15,7 @@ import { theme } from '@/theme';
 
 import { AppShell } from './AppShell';
 import { APPROVALS, ASSISTANT, COMPLAINTS, CONSOLE, CONSUMER, HEALTH, navFor, OPERATIONS, REVIEW, STAFF } from './nav';
+import { RouteError } from './RouteError';
 
 const AssistantPage = lazy(() => import('@/features/assistant').then((m) => ({ default: m.AssistantPage })));
 const ConsolePage = lazy(() => import('@/features/console').then((m) => ({ default: m.ConsolePage })));
@@ -76,7 +77,7 @@ function AdminHome() {
   return <Navigate to={first ?? landingFor(account)} replace />;
 }
 
-const router = createBrowserRouter([
+const router = createBrowserRouter([{ errorElement: <RouteError />, children: [
   { path: 'privacy', element: <PrivacyPage /> },
   {
     element: <PublicOnly />,
@@ -89,7 +90,8 @@ const router = createBrowserRouter([
     element: <RequirePermission />,
     children: [{
       element: <AppShell />,
-      children: [
+      // Inside the shell, so a page that fails keeps the menu and the person can move on.
+      children: [{ errorElement: <RouteError />, children: [
         {
           element: <RequirePermission any={CONSUMER} />,
           children: [
@@ -119,10 +121,10 @@ const router = createBrowserRouter([
         gated(OPERATIONS, [lazyRoute('admin/operations', <OperationsPage />)]),
         lazyRoute('how-it-works', <HowItWorksPage />),
         { path: '*', element: <NotFound /> },
-      ],
+      ] }],
     }],
   },
-]);
+] }]);
 
 export function App() {
   return (

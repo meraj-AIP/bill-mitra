@@ -1,7 +1,6 @@
 """Storage: SQLite in data_dir by default, Postgres when DATABASE_URL is set (app/store/pg.py). The repository
 functions are the only SQL in the app and are written once, in SQLite's dialect, for both."""
 
-import fcntl
 import json
 import sqlite3
 import threading
@@ -14,6 +13,7 @@ import psycopg
 from psycopg_pool import ConnectionPool
 
 from app.config import get_settings
+from app.core import filelock
 from app.domain import rbac
 from app.store import pg
 
@@ -401,7 +401,7 @@ def startup_lock() -> Iterator[None]:
                 _starting = False
         return
     with open(get_settings().data_dir / "migrate.lock", "w") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
+        filelock.lock(handle)
         _starting = True
         try:
             if _conn is not None:
@@ -411,7 +411,7 @@ def startup_lock() -> Iterator[None]:
             _starting = False
             if _conn is not None:
                 _conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
-            fcntl.flock(handle, fcntl.LOCK_UN)
+            filelock.unlock(handle)
 
 
 def _build(conn: Any) -> None:

@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     frontend_dist: Path = BACKEND_DIR.parent / "frontend" / "dist"
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
     request_timeout_s: float = 45.0
+    # A dashboard upload waits this long for its read, then hands it to an extract job. Below the proxy's 60 seconds.
+    upload_read_deadline_s: float = 50.0
     max_upload_mb: int = 12
 
     # First admin, created at startup only when no admin exists yet. Change the password after first login.

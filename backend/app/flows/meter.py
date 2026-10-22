@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from app.domain.bill import ExtractedBill
+from app.domain.bill import ExtractedBill, real_date
 from app.domain.conversation.facts import rs
 from app.domain.tariff.engine import compute, has_tariff
 from app.flows.analysis import gruha_jyothi_eligible
@@ -17,7 +17,8 @@ async def handle(turn: Turn, reading_doc: ExtractedBill, today: date | None = No
         return
     bill = last[0]
     today = today or date.today()
-    since = date.fromisoformat(bill.bill_date) if bill.bill_date else bill.month_date()
+    # bill_date is kept as printed, so it is parsed only when it is a real calendar date.
+    since = date.fromisoformat(bill.bill_date) if real_date(bill.bill_date) else bill.month_date()
     days = max((today - since).days, 1)
     used = max(round(reading_doc.meter_reading - bill.present_reading), 0)
     async with turn.tracer.step("Project the month end", "rules") as step:

@@ -29,6 +29,7 @@ TRANSPORT: tuple[type[BaseException], ...] = (
     httpcore.TimeoutException, httpcore.NetworkError, httpcore.RemoteProtocolError,
     TimeoutError, ConnectionError)
 
+MIN_ATTEMPT_S = 1.0
 sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
 clock: Callable[[], float] = time.monotonic
 
@@ -78,8 +79,10 @@ async def call(op: Callable[[], Awaitable[T]], name: str, policy: Policy,
     is raised as is, so callers keep their own handling."""
     started = clock()
     for attempt in range(1, policy.attempts + 1):
+        # The client timeout bounds each request, not the budget: one hanging attempt must not outlast it.
+        left = max(policy.budget_s - (clock() - started), MIN_ATTEMPT_S)
         try:
-            return await op()
+            return await asyncio.wait_for(op(), timeout=left)
         except Exception as exc:
             if attempt == policy.attempts or not retry_on(exc):
                 raise

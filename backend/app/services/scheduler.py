@@ -6,7 +6,6 @@ A failing job is logged by name and exception type only (never its data) and the
 
 import asyncio
 import contextlib
-import fcntl
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -16,6 +15,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from app.config import get_settings
+from app.core import filelock
 from app.flows import recovery
 from app.flows.automation import JOBS
 
@@ -85,7 +85,7 @@ def _claim() -> bool:
         return True
     handle = open(get_settings().data_dir / "automation.lock", "w")  # noqa: SIM115 (kept open on purpose)
     try:
-        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        filelock.lock(handle, blocking=False)
     except OSError:
         handle.close()
         return False
