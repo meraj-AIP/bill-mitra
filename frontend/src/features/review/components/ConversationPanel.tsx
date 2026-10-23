@@ -11,7 +11,8 @@ import { useConfirm } from '@/shared/feedback';
 
 const NOTE_LIMIT = 500;
 
-function AskConsumer({ c }: { c: CaseDetail }) {
+/** Asking for more is the other way to move a case, so it sits beside the decision. */
+export function AskConsumer({ c }: { c: CaseDetail }) {
   const ask = useAskConsumer(c.ticket);
   const [kind, setKind] = useState<RequestKind>('earlier_bills');
   const [note, setNote] = useState('');
@@ -28,8 +29,7 @@ function AskConsumer({ c }: { c: CaseDetail }) {
   };
   return (
     <Stack component="form" onSubmit={(e) => void submit(e)} id={CASE_SECTION.ask} tabIndex={-1}
-      sx={{ gap: 1.5, pt: 2, mt: 2, borderTop: 1, borderColor: 'divider', scrollMarginTop: 80, '&:focus': { outline: 'none' } }}>
-      <Typography variant="subtitle1" component="h3">Ask the consumer</Typography>
+      sx={{ gap: 1.5, scrollMarginTop: 80, '&:focus': { outline: 'none' } }}>
       <RadioGroup row value={kind} onChange={(e) => setKind(e.target.value as RequestKind)} aria-label="What to ask for">
         {(Object.keys(REQUEST_KIND) as RequestKind[]).map((k) => (
           <FormControlLabel key={k} value={k} control={<Radio size="small" />} label={REQUEST_KIND[k].label} />
@@ -39,17 +39,16 @@ function AskConsumer({ c }: { c: CaseDetail }) {
       <TextField size="small" multiline minRows={2} label={kind === 'note' ? 'What do you need to know?' : 'Add a line (optional)'}
         value={note} onChange={(e) => setNote(e.target.value)} error={note.length > NOTE_LIMIT}
         helperText={`${note.length} of ${NOTE_LIMIT} characters`} />
-      <Box>
-        <Button type="submit" variant="outlined" disabled={ask.isPending || needsNote}
-          startIcon={ask.isPending ? <CircularProgress size={14} color="inherit" aria-hidden /> : null}>
-          Send request
-        </Button>
-      </Box>
+      <Button type="submit" variant="contained" size="large" fullWidth disabled={ask.isPending || needsNote}
+        startIcon={ask.isPending ? <CircularProgress size={14} color="inherit" aria-hidden /> : null}>
+        Send request
+      </Button>
     </Stack>
   );
 }
 
-/** The case thread. It scrolls in its own box, so new messages never move the page. */
+/** The case thread and what is still asked of the consumer. It scrolls in its own box, so new messages never move
+ * the page. Asking for more lives in the action panel. */
 export function ConversationPanel({ c }: { c: CaseDetail }) {
   const box = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -60,10 +59,9 @@ export function ConversationPanel({ c }: { c: CaseDetail }) {
     <Panel title="Conversation" caption={open ? `${open} ${open === 1 ? 'request is' : 'requests are'} waiting on the consumer.` : 'Messages with the consumer on this case. Select a photo to see it full size.'}>
       {c.requests.length > 0 && <Box sx={{ mb: 2 }}><RequestList requests={c.requests} /></Box>}
       <Box ref={box} tabIndex={0} aria-label="Conversation messages"
-        sx={{ maxHeight: { xs: 420, md: 480 }, overflowY: 'auto', overscrollBehavior: 'contain', pr: 0.5, borderRadius: 1 }}>
+        sx={{ maxHeight: 420, overflowY: 'auto', overscrollBehavior: 'contain', pr: 0.5, borderRadius: 1 }}>
         <MessageThread messages={c.messages} viewer="staff" />
       </Box>
-      {c.can.request_info && <AskConsumer c={c} />}
     </Panel>
   );
 }

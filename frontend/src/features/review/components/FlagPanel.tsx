@@ -27,7 +27,7 @@ function HistoryBars({ c }: { c: CaseDetail }) {
     <Box role="img" aria-label={`Units per month for ${history.length} months, this bill highlighted`}>
       <BarChart height={240}
         xAxis={[{ scaleType: 'band', data: history.map((h) => monthLabel(h.month)), tickLabelStyle: { fontSize: 11 } }]}
-        yAxis={[{ width: 48, label: 'Units' }]}
+        yAxis={[{ width: 60, label: 'Units' }]}
         series={SOURCES.filter((s) => history.some((h) => h.source === s)).map((source) => ({
           id: source, label: SOURCE_LABEL[source], stack: 'units', color: colour[source],
           data: history.map((h) => (h.source === source ? h.units : null)),

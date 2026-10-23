@@ -1,5 +1,6 @@
+import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
-import { Button, CircularProgress, MenuItem, Stack, TextField, Typography } from '@mui/material';
+import { Button, CircularProgress, Menu, MenuItem, Stack, Typography } from '@mui/material';
 import { useState } from 'react';
 
 import { useAssign, useUnmask } from '../api/reviewApi';
@@ -45,31 +46,31 @@ function UnmaskError({ error }: { error: Error | null }) {
 }
 
 
+/** Moving the case is occasional, so it is a small menu by the title rather than a form. */
 export function ReassignControl({ c }: { c: CaseDetail }) {
   const assign = useAssign(c.ticket);
-  const [to, setTo] = useState('');
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const others = c.assignable.filter((p) => p.id !== c.assignee?.id);
   const confirm = useConfirm();
   if (!c.can.reassign) return null;
-  const move = async () => {
-    const name = others.find((p) => p.id === to)?.name ?? 'them';
+  const move = async (id: string) => {
+    setAnchor(null);
+    const name = others.find((p) => p.id === id)?.name ?? 'them';
     if (!(await confirm({ title: `Move this case to ${name}?`, confirmLabel: 'Move case',
       points: [`${name} is alerted and sees it in their queue.`, c.assignee ? `${c.assignee.name} no longer holds it.` : 'It leaves the division queue.'] }))) return;
-    assign.mutate(to, { onSuccess: () => setTo('') });
+    assign.mutate(id);
   };
   return (
-    <Stack sx={{ gap: 1, minWidth: { md: 280 } }}>
-      <Stack direction="row" sx={{ gap: 1 }}>
-        <TextField select size="small" label="Reassign to" value={to} onChange={(e) => setTo(e.target.value)} fullWidth
-          disabled={others.length === 0} helperText={others.length === 0 ? 'Nobody else in scope can take this case.' : undefined}>
-          {others.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
-        </TextField>
-        <Button variant="outlined" disabled={!to || assign.isPending} sx={{ flexShrink: 0, alignSelf: 'flex-start', minHeight: 40 }}
-          onClick={() => void move()}
-          startIcon={assign.isPending ? <CircularProgress size={14} color="inherit" aria-hidden /> : null}>
-          Move
-        </Button>
-      </Stack>
-    </Stack>
+    <>
+      <Button variant="outlined" size="small" onClick={(e) => setAnchor(e.currentTarget)} disabled={others.length === 0 || assign.isPending}
+        title={others.length === 0 ? 'Nobody else in scope can take this case.' : undefined} aria-haspopup="menu" aria-expanded={Boolean(anchor)}
+        startIcon={assign.isPending ? <CircularProgress size={14} color="inherit" aria-hidden /> : <SwapHorizRoundedIcon />} sx={{ flexShrink: 0 }}>
+        Move case
+      </Button>
+      <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
+        {others.map((p) => <MenuItem key={p.id} onClick={() => void move(p.id)}>{p.name}</MenuItem>)}
+      </Menu>
+    </>
   );
 }

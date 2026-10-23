@@ -1,5 +1,5 @@
 import GavelOutlinedIcon from '@mui/icons-material/GavelOutlined';
-import { Alert, Box, Button, CircularProgress, MenuItem, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, MenuItem, Stack, TextField } from '@mui/material';
 import { useState, type FormEvent } from 'react';
 
 import { SendStatus } from '@/shared/components/SendStatus';
@@ -13,7 +13,6 @@ import { MIN_NOTE, REASON } from '../model/labels';
 import { DecisionSummary } from './DecisionSummary';
 import { AmountFields, KindChoice } from './DecisionFields';
 import { EvidencePicker } from './EvidencePicker';
-import { Panel } from './Panel';
 import { useConfirm, type ConfirmOptions } from '@/shared/feedback';
 
 const NOTE_LIMIT = 1000;
@@ -22,9 +21,9 @@ function NoteField({ value, onChange, error }: { value: string; onChange: (v: st
   const length = value.trim().length;
   const short = length < MIN_NOTE;
   return (
-    <TextField label="Note for the record" multiline minRows={3} value={value} onChange={(e) => onChange(e.target.value)}
+    <TextField label="Note for the record" multiline minRows={2} size="small" value={value} onChange={(e) => onChange(e.target.value)}
       error={Boolean(error) || value.length > NOTE_LIMIT}
-      placeholder="What you checked and why this is the right outcome. The approver and the audit log read this."
+      placeholder="What you checked and why. The approver and the audit log read this."
       helperText={<Box component="span" aria-live="polite" sx={{ fontVariantNumeric: 'tabular-nums', color: short ? 'text.secondary' : 'success.dark' }}>
         {short ? `${length} of at least ${MIN_NOTE} characters` : `${length} characters`}
       </Box>} />
@@ -36,7 +35,7 @@ function ReasonField({ kind, value, onChange, error }: { kind: DecisionKind; val
   const options = (Object.keys(REASON) as ReasonCode[]).filter((r) => (kind === 'correct') === (r === 'bill_correct') || r === 'other');
   return (
     <TextField select label="Reason" value={value} onChange={(e) => onChange(e.target.value as ReasonCode)}
-      error={Boolean(error)} helperText={error ?? 'Shown to the consumer in their language.'} sx={{ maxWidth: 420 }}>
+      error={Boolean(error)} helperText={error ?? 'Shown to the consumer in their language.'} size="small" fullWidth>
       {options.map((r) => <MenuItem key={r} value={r}>{REASON[r]}</MenuItem>)}
     </TextField>
   );
@@ -44,15 +43,10 @@ function ReasonField({ kind, value, onChange, error }: { kind: DecisionKind; val
 
 function SubmitRow({ pending, disabled, needsApproval }: { pending: boolean; disabled: boolean; needsApproval: boolean }) {
   return (
-    <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1.5, alignItems: { sm: 'center' } }}>
-      <Typography variant="caption" sx={{ color: 'text.secondary', flex: 1 }}>
-        Rules the server also enforces: a reason, a note of {MIN_NOTE} or more characters and at least one piece of evidence.
-      </Typography>
-      <Button type="submit" variant="contained" size="large" disabled={pending || disabled}
-        startIcon={pending ? <CircularProgress size={16} color="inherit" aria-hidden /> : <GavelOutlinedIcon />}>
-        {needsApproval ? 'Send for approval' : 'Record decision'}
-      </Button>
-    </Stack>
+    <Button type="submit" variant="contained" size="large" fullWidth disabled={pending || disabled}
+      startIcon={pending ? <CircularProgress size={16} color="inherit" aria-hidden /> : <GavelOutlinedIcon />}>
+      {needsApproval ? 'Send for approval' : 'Record decision'}
+    </Button>
   );
 }
 
@@ -67,7 +61,6 @@ function Blocking({ items }: { items: string[] }) {
   return <Alert severity="warning" role="alert">Before you record this: {items.join(' ')}</Alert>;
 }
 
-/** Recording a decision. Every figure comes from the engine preview or the AE's own typed amount. */
 /** What recording the decision does, in the words the AE will be held to. */
 function decisionConfirm(kind: DecisionKind, o: Outcome): ConfirmOptions {
   if (kind === 'correct') {
@@ -81,6 +74,8 @@ function decisionConfirm(kind: DecisionKind, o: Outcome): ConfirmOptions {
       : ['The consumer is told the revised amount.', 'The revision then waits to be entered in the DISCOM billing system.'] };
 }
 
+/** Recording a decision. Every figure comes from the engine preview or the AE's own typed amount. The server checks
+ * the same rules: a reason, a note of MIN_NOTE characters and at least one piece of evidence. */
 export function DecisionPanel({ c, initial }: { c: CaseDetail; initial: DecisionDraft }) {
   const decide = useDecide(c.ticket);
   const confirm = useConfirm();
@@ -111,19 +106,17 @@ export function DecisionPanel({ c, initial }: { c: CaseDetail; initial: Decision
   };
 
   return (
-    <Panel title="Decision" tone="primary" caption="Look at the bill, the history and anything the consumer sent, then record what happens to this bill.">
-      <Stack component="form" noValidate onSubmit={(e) => void submit(e)} sx={{ gap: 2.5 }}>
-        <KindChoice value={draft.kind} onChange={setKind} />
-        <AmountFields c={c} draft={draft} onDraft={patch} preview={{ data: fresh, isFetching: preview.isFetching, error: preview.error }}
-          problems={{ reading: readingProblem, reduction: show('reduction') }} />
-        <ReasonField kind={draft.kind} value={draft.reason} onChange={(reason) => patch({ reason })} error={show('reason')} />
-        <NoteField value={draft.note} onChange={(note) => patch({ note })} error={show('note')} />
-        <EvidencePicker options={withCited(evidenceOptions(c), initial.evidence)} value={draft.evidence} onChange={(evidence) => patch({ evidence })} error={show('evidence')} />
-        <DecisionSummary kind={draft.kind} outcome={outcome} c={c} />
-        <Blocking items={blocking} />
-        <SendStatus state={decide} />
-        <SubmitRow pending={decide.isPending} disabled={waiting && preview.isFetching} needsApproval={outcome.needsApproval} />
-      </Stack>
-    </Panel>
+    <Stack component="form" noValidate onSubmit={(e) => void submit(e)} sx={{ gap: 2 }}>
+      <KindChoice value={draft.kind} onChange={setKind} />
+      <AmountFields c={c} draft={draft} onDraft={patch} preview={{ data: fresh, isFetching: preview.isFetching, error: preview.error }}
+        problems={{ reading: readingProblem, reduction: show('reduction') }} />
+      <ReasonField kind={draft.kind} value={draft.reason} onChange={(reason) => patch({ reason })} error={show('reason')} />
+      <NoteField value={draft.note} onChange={(note) => patch({ note })} error={show('note')} />
+      <EvidencePicker options={withCited(evidenceOptions(c), initial.evidence)} value={draft.evidence} onChange={(evidence) => patch({ evidence })} error={show('evidence')} />
+      <DecisionSummary kind={draft.kind} outcome={outcome} c={c} />
+      <Blocking items={blocking} />
+      <SendStatus state={decide} />
+      <SubmitRow pending={decide.isPending} disabled={waiting && preview.isFetching} needsApproval={outcome.needsApproval} />
+    </Stack>
   );
 }

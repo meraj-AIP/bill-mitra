@@ -4,13 +4,14 @@ import { useState } from 'react';
 import { BillImage } from '@/shared/components/BillImage';
 
 import type { CaseDetail } from '../api/types';
+import { ConversationPanel } from './ConversationPanel';
 import { DecisionHistory } from './DecisionHistory';
 import { EvidencePackPanel } from './EvidencePackPanel';
 import { FlagPanel } from './FlagPanel';
 import { ReadingsPanel } from './ReadingsPanel';
 import { TimelinePanel } from './TimelinePanel';
 
-type Section = 'flag' | 'bill' | 'decisions' | 'timeline' | 'pack';
+type Section = 'flag' | 'bill' | 'conversation' | 'decisions' | 'timeline' | 'pack';
 
 function BillAndCharges({ c }: { c: CaseDetail }) {
   return (
@@ -27,18 +28,21 @@ function BillAndCharges({ c }: { c: CaseDetail }) {
   );
 }
 
-/** The record behind the decision, one section at a time: why it was flagged first, then the bill with its readings
- * and charges, the decisions, the timeline and the evidence pack. */
+/** The evidence behind the decision, one section at a time, in the order it is read: why it was flagged, the bill
+ * with its readings and charges, what the consumer said, then the decisions, the timeline and the evidence pack. */
 export function CaseFile({ c }: { c: CaseDetail }) {
   const [section, setSection] = useState<Section>('flag');
   const decisions = c.decisions.length;
+  const messages = c.messages.length;
+  const open = c.requests.some((r) => r.status === 'open');
   return (
     <Stack sx={{ gap: 1.5, minWidth: 0 }}>
       <Paper variant="outlined" sx={{ px: 1 }}>
         <Tabs value={section} onChange={(_, v: Section) => setSection(v)} variant="scrollable" scrollButtons={false} aria-label="Case file"
           sx={{ minHeight: 44, '& .MuiTab-root': { minHeight: 44, px: 1.5 } }}>
-          <Tab value="flag" label="Why it was flagged" />
+          <Tab value="flag" label="Why flagged" />
           <Tab value="bill" label="Bill and charges" />
+          <Tab value="conversation" label={`Conversation${messages ? ` (${messages})` : ''}${open ? ', waiting' : ''}`} />
           <Tab value="decisions" label={decisions ? `Decisions (${decisions})` : 'Decisions'} />
           <Tab value="timeline" label="Timeline" />
           <Tab value="pack" label="Evidence pack" />
@@ -47,6 +51,7 @@ export function CaseFile({ c }: { c: CaseDetail }) {
       <Box role="tabpanel" aria-label={section}>
         {section === 'flag' && <FlagPanel c={c} />}
         {section === 'bill' && <BillAndCharges c={c} />}
+        {section === 'conversation' && <ConversationPanel c={c} />}
         {section === 'decisions' && <DecisionHistory c={c} />}
         {section === 'timeline' && <TimelinePanel c={c} />}
         {section === 'pack' && <EvidencePackPanel c={c} />}

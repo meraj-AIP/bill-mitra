@@ -1,4 +1,4 @@
-import { Box, Stack, Typography } from '@mui/material';
+import { Box, Typography } from '@mui/material';
 
 import { rupees } from '@/shared/lib/format';
 
@@ -25,21 +25,13 @@ function approvalLine(kind: DecisionKind, o: Outcome, c: CaseDetail): string {
   return 'No approval needed under the policy. The consumer is told once you submit.';
 }
 
-/** What will happen, in one place, before the AE commits. */
+/** What will happen, in one place, right above the button. */
 export function DecisionSummary({ kind, outcome, c }: { kind: DecisionKind; outcome: Outcome; c: CaseDetail }) {
-  const known = outcome.reduction !== null && outcome.reduction > 0;
   return (
-    <Box aria-live="polite" sx={{ p: 2, borderRadius: 2, bgcolor: outcome.needsApproval ? 'warning.light' : 'grey.50', border: 1,
+    <Box aria-live="polite" sx={{ px: 1.5, py: 1.25, borderRadius: 1.5, bgcolor: outcome.needsApproval ? 'warning.light' : 'grey.50', border: 1,
       borderColor: outcome.needsApproval ? 'warning.light' : 'divider' }}>
-      <Typography variant="overline" component="p" sx={{ color: 'text.secondary' }}>Summary</Typography>
-      <Typography variant="h3" component="p" sx={{ fontVariantNumeric: 'tabular-nums' }}>{headline(kind, outcome)}</Typography>
-      {kind !== 'correct' && known && (
-        <Stack direction="row" sx={{ gap: 3, mt: 1, flexWrap: 'wrap' }}>
-          <Typography variant="body2">Reduction <b>{rupees(outcome.reduction ?? 0)}</b></Typography>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>The original bill is never edited; this becomes the next revision.</Typography>
-        </Stack>
-      )}
-      <Typography variant="body2" sx={{ mt: 1, fontWeight: 600, color: outcome.needsApproval ? 'warning.dark' : 'success.dark' }}>
+      <Typography variant="subtitle2" component="p" sx={{ fontVariantNumeric: 'tabular-nums' }}>{headline(kind, outcome)}</Typography>
+      <Typography variant="caption" component="p" sx={{ mt: 0.25, fontWeight: 600, color: outcome.needsApproval ? 'warning.dark' : 'success.dark' }}>
         {approvalLine(kind, outcome, c)}
       </Typography>
     </Box>

@@ -1,4 +1,4 @@
-import { Box, ButtonBase, InputAdornment, LinearProgress, Stack, TextField, Typography } from '@mui/material';
+import { InputAdornment, LinearProgress, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 
 import { formatCount } from '@/shared/lib/format';
 
@@ -8,25 +8,17 @@ import { DECISION_KIND } from '../model/labels';
 
 const KINDS: DecisionKind[] = ['correct', 'corrected_reading', 'custom'];
 
-/** Three large choices rather than a select: the choice decides everything below it. */
+/** Three choices side by side; the one picked says what it does underneath, because it decides every field below. */
 export function KindChoice({ value, onChange }: { value: DecisionKind; onChange: (kind: DecisionKind) => void }) {
   return (
-    <Box role="group" aria-label="Decision" sx={{ display: 'grid', gap: 1, gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, minmax(0, 1fr))' } }}>
-      {KINDS.map((k) => {
-        const on = value === k;
-        return (
-          <ButtonBase key={k} aria-pressed={on} onClick={() => onChange(k)}
-            sx={{ display: 'block', textAlign: 'left', p: 1.5, borderRadius: 1.5, border: 1.5, transition: 'border-color 200ms, background-color 200ms',
-              borderColor: on ? 'primary.main' : 'divider', bgcolor: on ? 'info.light' : 'background.paper',
-              '&:hover': { borderColor: 'primary.light' }, '&.Mui-focusVisible': { outline: 2, outlineColor: 'primary.main', outlineOffset: 2 } }}>
-            <Typography variant="subtitle2" component="span" sx={{ display: 'block', color: on ? 'primary.main' : 'text.primary' }}>
-              {DECISION_KIND[k].label}
-            </Typography>
-            <Typography variant="caption" component="span" sx={{ display: 'block', color: 'text.secondary', mt: 0.25 }}>{DECISION_KIND[k].hint}</Typography>
-          </ButtonBase>
-        );
-      })}
-    </Box>
+    <Stack sx={{ gap: 0.75 }}>
+      <ToggleButtonGroup exclusive fullWidth size="small" value={value} aria-label="Decision"
+        onChange={(_, k: DecisionKind | null) => k && onChange(k)}
+        sx={{ '& .MuiToggleButton-root': { textTransform: 'none', fontWeight: 600, py: 0.75, lineHeight: 1.3 } }}>
+        {KINDS.map((k) => <ToggleButton key={k} value={k} color="primary">{DECISION_KIND[k].label}</ToggleButton>)}
+      </ToggleButtonGroup>
+      <Typography variant="caption" sx={{ color: 'text.secondary' }}>{DECISION_KIND[value].hint}</Typography>
+    </Stack>
   );
 }
 
@@ -48,8 +40,8 @@ function ReadingField({ c, draft, onDraft, preview, problems }: AmountFieldsProp
     <Stack sx={{ gap: 1 }}>
       <TextField label="Corrected present reading" type="number" value={draft.reading} onChange={(e) => onDraft({ reading: e.target.value })}
         error={Boolean(problems.reading ?? preview.error)} helperText={helper}
-        slotProps={{ htmlInput: { min: previous ?? 0, step: 1, inputMode: 'numeric' } }} sx={{ maxWidth: 320 }} />
-      {preview.isFetching && <LinearProgress aria-label="The engine is repricing the bill" sx={{ maxWidth: 320 }} />}
+        slotProps={{ htmlInput: { min: previous ?? 0, step: 1, inputMode: 'numeric' } }} fullWidth size="small" />
+      {preview.isFetching && <LinearProgress aria-label="The engine is repricing the bill" />}
       {preview.data && !preview.isFetching && (
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
           The engine reprices the month at {formatCount(preview.data.corrected_units)} units, with the tariff, load, period and Gruha Jyothi of this bill. Surcharge, interest and rounding stay as printed.
@@ -64,7 +56,7 @@ function ReductionField({ draft, onDraft, problems }: AmountFieldsProps) {
     <TextField label="Amount to take off" type="number" value={draft.reduction} onChange={(e) => onDraft({ reduction: e.target.value })}
       error={Boolean(problems.reduction)} helperText={problems.reduction ?? 'In rupees, from the printed amount.'}
       slotProps={{ input: { startAdornment: <InputAdornment position="start">Rs</InputAdornment> }, htmlInput: { min: 0, step: 1 } }}
-      sx={{ maxWidth: 320 }} />
+      fullWidth size="small" />
   );
 }
 
