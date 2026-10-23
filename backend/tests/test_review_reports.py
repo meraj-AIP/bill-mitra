@@ -59,7 +59,7 @@ def _staff(sign_in, role: str, *scopes: str) -> tuple[TestClient, str]:
 
 
 def _report(client: TestClient, bill, user_id: str) -> tuple[str, dict]:
-    bill_id = repos.save_bill(user_id, bill, media.save(b"synthetic-photo", "image/jpeg"), "verified", 0.0)
+    bill_id = repos.save_bill(user_id, bill, media.save(f"synthetic-photo-{secrets.token_hex(8)}".encode(), "image/jpeg"), "verified", 0.0)
     response = client.post(f"/api/bills/{bill_id}/review-request", params={"language": "en"}, json={})
     assert response.status_code == 200, response.text
     return bill_id, response.json()
@@ -95,7 +95,7 @@ class Chat:
 
     def photo(self, reader: Callable, bill) -> list[dict]:
         reader(reading(bill))
-        return self.say(kind="image", media_id=media.save(b"synthetic-photo", "image/jpeg"), mime_type="image/jpeg")
+        return self.say(kind="image", media_id=media.save(f"synthetic-photo-{secrets.token_hex(8)}".encode(), "image/jpeg"), mime_type="image/jpeg")
 
     def ticket(self) -> str:
         found = re.findall(r"BM-\d{6}-[A-Z0-9]{5}", " ".join(m.get("body") or "" for m in self.sent))

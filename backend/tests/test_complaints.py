@@ -57,7 +57,7 @@ def chat(user: str, channel: str, **fields: object) -> None:
         return None
 
     if fields.get("kind") == "image":
-        fields = {"media_id": media.save(b"synthetic-photo", "image/jpeg"), "mime_type": "image/jpeg", **fields}
+        fields = {"media_id": media.save(f"synthetic-photo-{secrets.token_hex(8)}".encode(), "image/jpeg"), "mime_type": "image/jpeg", **fields}
     reply_to = WA_NUMBER if channel == "whatsapp" else None
     inbound = Inbound(channel=channel, user_id=user, reply_to=reply_to, **fields)  # type: ignore[arg-type]
     asyncio.run(service.handle(inbound, emit, language="en"))

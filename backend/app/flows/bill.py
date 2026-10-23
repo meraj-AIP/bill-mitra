@@ -103,6 +103,12 @@ async def handle_document(turn: Turn, data: bytes, mime: str, media_id: str | No
     async with turn.tracer.step("Receive the message", "channel") as step:
         kind = "PDF" if mime == "application/pdf" else "photo"
         step.note(f"{kind}, {len(data) // 1024} KB, via {turn.inbound.channel}")
+    earlier = repos.checked_reading(turn.state.user_id, media_id) if media_id else None
+    if earlier is not None:
+        async with turn.tracer.step("Read the bill", "rules") as step:
+            step.note("The same file as a bill already checked: its reading is reused, nothing is read again")
+        await handle_bill(turn, earlier, media_id)
+        return "checked"
     started = time.perf_counter()
     try:
         reading = await read(turn, data, mime)
@@ -210,12 +216,11 @@ async def handle_bill(turn: Turn, bill: ExtractedBill, media_id: str | None, sou
         p = a.prediction
         step.note(f"{p.units_low} to {p.units_high} units, about Rs {rs(p.amount)} ({p.method})")
     spoken = await _explanation(turn, a, bill.discom)
-    if not await turn.speak(spoken):
-        suffix = f"\n{turn.t('voice_unavailable')}" if turn.lang == "ur" else ""
+    voice = await turn.speak(spoken)
+    # The web shows a voice note's words under it; WhatsApp cannot, so there the words always go as text too.
+    if voice != "sent" or turn.inbound.channel == "whatsapp":
+        suffix = f"\n{turn.t('voice_unavailable')}" if turn.lang == "ur" and voice == "none" else ""
         await turn.say(spoken + suffix)
-    elif turn.inbound.channel == "whatsapp":
-        # The web shows a voice note's words under it; WhatsApp cannot, so the same words follow as text.
-        await turn.say(spoken)
     options = ([("report_bill", "btn_report"), ("why", "btn_why"), ("next", "btn_next")]
                if a.audit.status == "mismatch" else [("why", "btn_why"), ("next", "btn_next"), ("save", "btn_save")])
     await turn.buttons(composer.summary_card(a.facts, turn.lang), options)

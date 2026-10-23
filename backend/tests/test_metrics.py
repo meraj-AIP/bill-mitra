@@ -44,7 +44,7 @@ def _photo_in_chat(channel: str = "web") -> None:
         return None
 
     inbound = Inbound(channel=channel, user_id=f"test-{secrets.token_hex(4)}", kind="image",  # type: ignore[arg-type]
-                      media_id=media.save(b"synthetic-photo", "image/jpeg"), mime_type="image/jpeg")
+                      media_id=media.save(f"synthetic-photo-{secrets.token_hex(8)}".encode(), "image/jpeg"), mime_type="image/jpeg")
     asyncio.run(service.handle(inbound, emit, language="en"))
 
 

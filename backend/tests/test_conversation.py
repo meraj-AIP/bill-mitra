@@ -22,7 +22,7 @@ def run(user: str, language: str = "en", **fields: object) -> list[Event]:
         events.append(event)
 
     if fields.get("kind") == "image":
-        fields = {"media_id": media.save(b"synthetic-photo", "image/jpeg"), "mime_type": "image/jpeg", **fields}
+        fields = {"media_id": media.save(f"synthetic-photo-{secrets.token_hex(8)}".encode(), "image/jpeg"), "mime_type": "image/jpeg", **fields}
     inbound = Inbound(channel="web", user_id=user, **fields)  # type: ignore[arg-type]
     asyncio.run(service.handle(inbound, emit, language=language))
     return events

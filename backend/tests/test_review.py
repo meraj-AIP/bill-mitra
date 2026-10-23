@@ -60,7 +60,7 @@ def south_policy() -> Iterator[None]:
 
 
 def _case(client: TestClient, bill, user_id: str, language: str = "en") -> tuple[str, str]:
-    bill_id = repos.save_bill(user_id, bill, media.save(b"synthetic-photo", "image/jpeg"), "mismatch", 0.0)
+    bill_id = repos.save_bill(user_id, bill, media.save(f"synthetic-photo-{secrets.token_hex(8)}".encode(), "image/jpeg"), "mismatch", 0.0)
     response = client.post(f"/api/bills/{bill_id}/review-request", params={"language": language}, json={})
     assert response.status_code == 200, response.text
     return bill_id, response.json()["ticket"]
@@ -297,7 +297,7 @@ def test_flagged_bill_in_chat_offers_the_report_button(reader, area, sign_in):
         asyncio.run(service.handle(inbound, keep, language="en"))
 
     reader(reading(printed(SPIKED, area.section_a.name)))
-    say(kind="image", media_id=media.save(b"synthetic-photo", "image/jpeg"), mime_type="image/jpeg")
+    say(kind="image", media_id=media.save(f"synthetic-photo-{secrets.token_hex(8)}".encode(), "image/jpeg"), mime_type="image/jpeg")
     offers = [m for m in sent if m["type"] == "buttons" and m["buttons"][0]["id"] == "report_bill"]
     assert len(offers) == 1 and "480 units" in offers[0]["body"] and len(offers[0]["buttons"]) == 1
     assert len(offers[0]["buttons"][0]["title"]) <= 20

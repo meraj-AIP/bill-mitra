@@ -92,6 +92,15 @@ def save_bill(user_id: str, bill: ExtractedBill, media_id: str | None, audit_sta
     return bill_id
 
 
+def checked_reading(user_id: str, media_id: str) -> ExtractedBill | None:
+    """The reading of this exact file when this person sent it before and it passed the checks. Files are named by
+    their content, so the same photo sent again finds it, and nothing is read twice."""
+    with tx() as conn:
+        row = conn.execute("SELECT extraction FROM bills WHERE user_id = ? AND media_id = ? AND source = 'upload' "
+                           "ORDER BY created_at DESC LIMIT 1", (user_id, media_id)).fetchone()
+    return ExtractedBill.model_validate_json(row[0]) if row else None
+
+
 def get_bill(bill_id: str) -> tuple[ExtractedBill, str | None] | None:
     with tx() as conn:
         row = conn.execute("SELECT extraction, media_id FROM bills WHERE id = ?", (bill_id,)).fetchone()

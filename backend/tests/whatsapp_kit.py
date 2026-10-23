@@ -80,7 +80,7 @@ class Graph:
             self.auth_headers.append(request.headers.get("authorization", ""))
             self.downloads.append("lookaside")
             # A JPEG signature, so the upload type check lets the synthetic photo through.
-            return httpx.Response(200, content=b"\xff\xd8\xff synthetic-photo-bytes")
+            return httpx.Response(200, content=b"\xff\xd8\xff synthetic-photo-" + secrets.token_bytes(8))
         if host == "api.soniox.com" and request.url.path == "/v1/tts-models":
             return httpx.Response(200, json={"models": [{"id": "tts-rt-v2", "languages": [{"code": "te"}, {"code": "en"}],
                                                          "voices": [{"id": "Arjun", "description": "Indian accent"}]}]})

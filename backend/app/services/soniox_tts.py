@@ -17,8 +17,19 @@ from app.core import retry
 
 log = logging.getLogger(__name__)
 LIST_TTL_S = 24 * 3600
-# Voice is optional: after this the words go as text, so it gives up quickly.
-VOICE = retry.Policy(attempts=2, base_s=1.0, max_s=4.0, budget_s=12.0)
+# The lists are small and quick, so they give up quickly.
+LISTS = retry.Policy(attempts=2, base_s=1.0, max_s=4.0, budget_s=12.0)
+# Soniox speaks about as fast as the clip plays, so one part takes a few seconds and a long one ten or more. Each try
+# gets that time in full; the turn decides how long it waits (app/flows/turn.py), and a background job has no hurry.
+VOICE = retry.Policy(attempts=3, base_s=1.0, max_s=4.0, budget_s=60.0, min_attempt_s=30.0)
+
+
+class NoAudio(ValueError):
+    """A 200 without audio in it, which is how Soniox answers a request over its limit on requests at once."""
+
+
+def _worth_retrying(exc: BaseException) -> bool:
+    return retry.transient(exc) or isinstance(exc, NoAudio)
 
 
 @dataclass(frozen=True)
@@ -58,7 +69,7 @@ async def _get(client: httpx.AsyncClient, path: str, params: dict[str, str] | No
     async def once() -> httpx.Response:
         return (await client.get(path, params=params)).raise_for_status()
 
-    return (await retry.call(once, "soniox tts list", VOICE)).json()
+    return (await retry.call(once, "soniox tts list", LISTS)).json()
 
 
 async def catalogue(client: httpx.AsyncClient) -> Catalogue | None:
@@ -92,14 +103,14 @@ async def synthesise(client: httpx.AsyncClient, text: str, language: str, voice:
     s = get_settings()
     body = {"model": s.soniox_tts_model, "language": language, "voice": voice, "audio_format": "mp3", "text": text}
 
-    async def once() -> httpx.Response:
-        return (await client.post(s.soniox_tts_url, json=body)).raise_for_status()
+    async def once() -> bytes:
+        response = (await client.post(s.soniox_tts_url, json=body)).raise_for_status()
+        # The body is the audio itself. An error that starts after streaming can only show as a short or empty body.
+        if not response.headers.get("content-type", "").startswith("audio/") or len(response.content) < 64:
+            raise NoAudio("no audio in the reply")
+        return response.content
 
-    response = await retry.call(once, "soniox tts", VOICE)
-    # The body is the audio itself. An error that starts after streaming can only show as a short or empty body.
-    if not response.headers.get("content-type", "").startswith("audio/") or len(response.content) < 64:
-        raise ValueError("no audio in the reply")
-    return response.content
+    return await retry.call(once, "soniox tts", VOICE, _worth_retrying)
 
 
 def client() -> httpx.AsyncClient:

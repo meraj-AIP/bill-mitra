@@ -10,9 +10,9 @@ from datetime import UTC, datetime
 from pydantic import BaseModel
 
 from app.channels.whatsapp import router
-from app.flows import extract, sender_check
+from app.flows import extract, sender_check, voice
 from app.services import delivery
-from app.store import accounts, extract_jobs, outbox, wa_queue
+from app.store import accounts, extract_jobs, outbox, voice_jobs, wa_queue
 
 
 class QueueCounts(BaseModel):
@@ -31,7 +31,8 @@ async def sweep_stuck(now: datetime) -> int:
     """Claims and sends whose worker died are put back, each audited with no actor."""
     requeued = ([f"inbox:{i}" for i in wa_queue.requeue_expired()] +
                 [f"outbox:{i}" for i in outbox.requeue_stuck(now)] +
-                [f"extract:{i}" for i in extract_jobs.requeue_stuck(now)])
+                [f"extract:{i}" for i in extract_jobs.requeue_stuck(now)] +
+                [f"voice:{i}" for i in voice_jobs.requeue_stuck(now)])
     for target in requeued:
         accounts.audit(None, "queue.requeue", target, "lease expired, back in the queue")
     return len(requeued)
@@ -56,7 +57,7 @@ async def run_extracts(now: datetime) -> int:
 # this often so staff see the flag within a minute of the complaint.
 JOBS: tuple[tuple[str, Callable[[datetime], Awaitable[int]]], ...] = (
     ("sweep_stuck", sweep_stuck), ("inbox", retry_inbox), ("outbox", send_outbox), ("extract", run_extracts),
-    ("sender_check", sender_check.run_due))
+    ("voice", voice.run_due), ("sender_check", sender_check.run_due))
 
 
 def health(now: datetime | None = None) -> QueueHealth:

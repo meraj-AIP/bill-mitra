@@ -9,6 +9,7 @@ variants; logins and numbers are obviously synthetic.
 import asyncio
 import json
 import re
+import secrets
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -52,7 +53,9 @@ class Device:
         return [json.loads(line) for line in response.text.splitlines() if line]
 
     def photo(self, language: str = "en") -> list[dict]:
-        uploaded = self.client.post("/api/web/upload", files=PHOTO).json()
+        # Each photo is a new file, as real photos are: the same file sent again reuses its earlier reading.
+        name, data, mime = PHOTO["file"]
+        uploaded = self.client.post("/api/web/upload", files={"file": (name, data + secrets.token_bytes(8), mime)}).json()
         return self.say(language, kind="image", media_id=uploaded["media_id"], mime_type=uploaded["mime_type"])
 
     def new_in_chat(self) -> list[dict]:

@@ -369,11 +369,12 @@ def _upgrade(conn: sqlite3.Connection) -> None:
             proposals,
             sender_checks,
             voice_cache,
+            voice_jobs,
             wa_queue,
         )
 
         for queue in (wa_queue, outbox, extract_jobs, proposals, voice_cache, sender_checks, otp_codes, account_connections,
-                      pending_reads):
+                      pending_reads, voice_jobs):
             queue.ensure(conn)
         if isinstance(conn, pg.Conn):
             for table in pg.ROWID_TABLES:

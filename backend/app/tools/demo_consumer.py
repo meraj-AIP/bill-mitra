@@ -20,7 +20,7 @@ from app.store.db import tx
 # Owner keys that belong to a consumer, not to staff: the seed's demo households, anonymous web chats, WhatsApp numbers.
 CONSUMER_PREFIXES = ("demo:", "web:", "wa:")
 GONE_WITH_THE_OWNER = ("users", "consents", "chat_messages", "chat_drafts", "usc_codes", "extract_jobs",
-                       "explain_cache", "pending_reads")
+                       "explain_cache", "pending_reads", "voice_jobs")
 GONE_WITH_THE_ACCOUNT = ("sessions", "account_connections", "alerts", "alert_reads", "account_scopes")
 
 

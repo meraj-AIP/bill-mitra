@@ -194,7 +194,7 @@ def test_chat_offers_to_report_the_earlier_month_and_files_it(reader, sign_in, a
 
     def photo(bill: ExtractedBill) -> None:
         reader(reading(bill))
-        say(kind="image", media_id=media.save(b"synthetic-photo", "image/jpeg"), mime_type="image/jpeg")
+        say(kind="image", media_id=media.save(f"synthetic-photo-{secrets.token_hex(8)}".encode(), "image/jpeg"), mime_type="image/jpeg")
 
     photo(synthetic(*MARCH, section=area.section_a.name))
     assert not [m for m in sent if m["type"] == "buttons" and m["buttons"][0]["id"] == "report_misread"]
