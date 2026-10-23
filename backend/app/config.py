@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     soniox_api_key: str = ""
     soniox_base_url: str = "https://api.soniox.com"
     soniox_model: str = "stt-async-v5"
+    # Soniox voice notes, tried before Sarvam. An empty voice means pick one: an Indian accent first.
+    soniox_tts_url: str = "https://tts-rt.soniox.com/tts"
+    soniox_tts_model: str = "tts-rt-v2"
+    soniox_tts_voice: str = ""
+    soniox_tts_accent: str = "indian"
 
     whatsapp_token: str = ""
     whatsapp_phone_number_id: str = ""
@@ -141,7 +146,7 @@ class Settings(BaseSettings):
 
     @property
     def tts_live(self) -> bool:
-        return bool(self.sarvam_api_key)
+        return bool(self.soniox_api_key or self.sarvam_api_key)
 
     @property
     def stt_live(self) -> bool:

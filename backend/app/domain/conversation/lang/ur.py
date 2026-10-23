@@ -1,4 +1,4 @@
-"""Urdu strings. Right-to-left; the web channel sets dir=rtl. No Telugu-state voice yet, text only."""
+"""Urdu strings. Right-to-left; the web channel sets dir=rtl. Voice notes come from Soniox; Sarvam has no Urdu voice."""
 
 CODE = "ur"
 MONTHS = ["جنوری", "فروری", "مارچ", "اپریل", "مئی", "جون", "جولائی", "اگست",

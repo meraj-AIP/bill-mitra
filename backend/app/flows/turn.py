@@ -54,9 +54,9 @@ class Turn:
                 log.warning("voice note failed: %s", type(exc).__name__)
                 ids = None
             if not ids:
-                step.skip("Voice unavailable: Sarvam key not set, Sarvam failed, or language without a voice. "
-                          "Sent as text.")
+                step.skip("Voice unavailable: no voice provider set up, Soniox and Sarvam both failed, or no voice "
+                          "for this language. Sent as text.")
                 return False
-            step.note(f"Sarvam Bulbul voice, {len(script)} characters, {len(ids)} clip(s)")
+            step.note(f"Voice note, Soniox first then Sarvam, {len(script)} characters, {len(ids)} clip(s)")
         await self.tracer.message(AudioOut(media_ids=ids, transcript=script, language=self.lang))
         return True
