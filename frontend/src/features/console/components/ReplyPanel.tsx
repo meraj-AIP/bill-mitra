@@ -29,9 +29,9 @@ function Destination({ complaint }: { complaint: ComplaintDetail }) {
         {whatsapp
           ? 'Goes to the consumer on WhatsApp (as the approved template after 24 hours).'
           : complaint.source === 'consumer_web'
-            ? 'Shows on the consumer\'s complaint page in the app.'
+            ? 'Shows on the consumer\'s complaint page and in their chat in the app.'
             : complaint.source === 'consumer_chat'
-              ? 'From the web chat preview: saved here only, the consumer does not receive it.'
+              ? 'Goes into the consumer\'s web chat, as it would on WhatsApp.'
               : 'No way to reach this consumer yet: saved on the complaint only.'}
       </Typography>
     </Stack>

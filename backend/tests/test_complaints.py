@@ -17,6 +17,7 @@ from app.config import get_settings
 from app.core import service
 from app.core.messages import Inbound
 from app.core.trace import Event
+from app.main import app as main_app
 from app.services import notify
 from app.store import accounts, media
 from app.store import complaints as store
@@ -98,7 +99,7 @@ def test_chat_complaint_stores_channel_and_opens_the_thread(reader):
     assert first["author_kind"] == "consumer" and first["delivery"] == "stored" and "Energy charge" in first["body"]
 
 
-def test_officer_reply_to_a_web_chat_complaint_is_stored(reader, people):
+def test_officer_reply_to_a_web_chat_complaint_with_no_account_is_kept_on_the_complaint(reader, people):
     ticket = chat_complaint(reader, "web")
     officer = signed_in(people["south"])
     detail = officer.get(f"/api/console/complaints/{ticket}").json()
@@ -182,3 +183,22 @@ def test_reply_to_never_appears_in_any_response(reader, people):
                  admin.post(f"/api/console/complaints/{ticket}/status", json={"status": "In progress"})]
     for response in responses:
         assert response.status_code == 200 and WA_NUMBER not in response.text and "reply_to" not in response.text
+
+
+def test_a_web_chat_complaint_hears_the_reply_and_the_closing_in_the_chat(reader, people, sign_in):
+    # The web chat preview stands in for WhatsApp, so staff updates must reach the chat the person is looking at.
+    consumer = TestClient(main_app)
+    account = sign_in(consumer, "consumer")
+    reader(reading(OVERCHARGED))
+    chat(account.user_id, "web", kind="image")
+    chat(account.user_id, "web", kind="button_reply", reply_id="complain")
+    chat(account.user_id, "web", kind="button_reply", reply_id="complaint_send")
+    ticket = store.page(1, 50, owner=account.user_id).items[0]["ticket"]
+    officer = signed_in(people["south"])
+    replied = officer.post(f"/api/console/complaints/{ticket}/reply",
+                           json={"body": "We have corrected the energy charge.", "status": "Resolved"}).json()
+    assert replied["messages"][1]["delivery"] == "sent" and replied["status"] == "Resolved"
+    history = consumer.get("/api/web/history?limit=10").json()["items"]
+    said = [str(item["body"]) for item in history if item["sender"] == "bot"]
+    assert any("We have corrected the energy charge." in line for line in said)
+    assert any(ticket in line and notify.status_label("en", "Resolved") in line for line in said)

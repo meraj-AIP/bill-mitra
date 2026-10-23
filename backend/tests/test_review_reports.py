@@ -124,7 +124,7 @@ def test_web_report_builds_the_pack_and_asks_only_for_months_not_on_file(sign_in
     detail = staff.get(f"/api/review/cases/{summary['ticket']}").json()
     assert detail["state"] == "info_requested" and detail["requests"][0]["status"] == "open"
     told = detail["messages"][-1]
-    assert told["author_kind"] == "system" and told["delivery"] == "stored"
+    assert told["author_kind"] == "system" and told["delivery"] == "sent"  # it lands in their web chat
     assert told["body"] == ("To check your October 2025 bill we need your bills for September 2025. "
                             "Please send a photo of each one here.")
     sources = {s["key"]: s for s in detail["evidence_pack"]["sources"]}

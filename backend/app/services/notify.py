@@ -14,8 +14,8 @@ from app.config import get_settings
 from app.core.messages import TextOut
 from app.domain.conversation.lang import text
 from app.services import delivery
+from app.store import chat, outbox
 from app.store import complaints as complaint_store
-from app.store import outbox
 from app.store.complaints import Complaint, Delivery, Status
 
 log = logging.getLogger(__name__)
@@ -84,9 +84,19 @@ def _outcome(row: outbox.Row) -> Outcome:
     return Outcome(delivery.DELIVERY[row.state], row.note, row.wamid, row.id)
 
 
+def _to_web_chat(complaint: Complaint, message: str) -> Outcome:
+    """A complaint raised in the web app has no phone to send to. The update lands in the person's web chat, as it
+    would on WhatsApp, so the chat preview behaves like the real channel. A complaint with no account behind it
+    (logged by staff for a caller with no mobile) can only be kept on the complaint."""
+    if not complaint.user_id.startswith("acct:"):
+        return Outcome("stored")
+    chat.record_out(complaint.user_id, TextOut(body=message[:4096], language=complaint.language or "te").model_dump())
+    return Outcome("sent")
+
+
 async def _deliver(complaint: Complaint, message: str, template_status: str | None, kind: str) -> Outcome:
     if reply_channel(complaint) != "whatsapp":
-        return Outcome("stored")
+        return _to_web_chat(complaint, message)
     if not get_settings().whatsapp_enabled:
         return Outcome("failed", NOT_CONNECTED)
     if not complaint.reply_to:
