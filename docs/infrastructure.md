@@ -151,7 +151,7 @@ Everything in `asia-south1` (Mumbai) so data stays in India, with backups copied
                  v                         v
       Cloud Run "turns" worker  ---->  Cloud SQL Postgres (regional HA, private IP)
       (one turn at a time per sender,      + read replica for console counts
-       calls OpenAI, Sarvam, Soniox,   Memorystore Redis (rate limits, shared caches, AI brief lock)
+       calls OpenAI, Soniox,           Memorystore Redis (rate limits, shared caches, AI brief lock)
        sends replies via Meta)         Cloud Storage bucket for media (lifecycle rules, signed URLs)
                  |
        Cloud Scheduler -> Cloud Run job "automation" (reminders, overdue, digest, retention), exactly one runner
@@ -168,7 +168,7 @@ Why each piece:
 | Memorystore Redis | State shared by all instances: login rate limits, the 60 s console cache, the AI brief "one call per ticket" lock |
 | Cloud Storage for media | 8 GB a day does not belong on a VM disk. Lifecycle: Nearline after 30 days, delete at retention; complaint evidence in a separate prefix kept longer |
 | Cloud Scheduler + one Cloud Run job | The automation jobs run once, not once per instance |
-| Secret Manager | WhatsApp, OpenAI, Sarvam and Soniox keys out of `.env` files |
+| Secret Manager | WhatsApp, OpenAI and Soniox keys out of `.env` files |
 | Cloud NAT with a static IP | Outbound calls to DISCOM billing APIs come from one address they can allow list |
 
 Sizing to start with:

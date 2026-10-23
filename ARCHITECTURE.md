@@ -44,7 +44,7 @@ flowchart LR
     subgraph SV["Services: providers"]
         VI["vision.py (OpenAI vision)"]
         LL["llm.py (OpenAI text)"]
-        TT["tts.py (Sarvam)"]
+        TT["tts.py, soniox_tts.py (Soniox voice)"]
         ST["stt.py (Soniox)"]
         CH2["charts.py (PNG)"]
         SM["sms_parser.py, notify.py"]
@@ -107,7 +107,7 @@ sequenceDiagram
     participant E as Rule engine
     participant L as Language model
     participant G as Number guard
-    participant T as TTS (Sarvam)
+    participant T as TTS (Soniox)
     participant DB as Store
     C->>CH: Photo of the bill
     CH->>DB: Save media, content addressed
@@ -266,7 +266,7 @@ Notes also cover arrears, net metering and Gruha Jyothi applied or lost.
 | Word the explanation | `services/llm.py`, model `gpt-4.1-mini` | Gets only the `Facts` object. Output goes through the number guard. No key, error or failed guard: the template from `composer.py` |
 | Classify a question | `services/llm.py` | Called only when keyword rules return `off_topic`. The answer must be one of the fixed `INTENTS`, else ignored. No key: fixed off-topic reply |
 | Suggest an officer's reply | `flows/complaint.py` (`suggest_reply`), `services/llm.py` | The draft is built from the bill check by `domain/complaint_reply.py`. The model may only reword it, and the guard holds the new text to the draft's own figures. Failed guard or no key: the checked draft. Bulk sends always use the checked draft. Bill review decisions never use a model |
-| Telugu voice | `services/tts.py`, Sarvam `bulbul:v3`, speaker `kavya` | Cached on disk by sha256 of model, speaker, pace, language and text, so a cached note plays even without a key. Chunks of up to 1200 characters. No key or Urdu (no voice): text only |
+| Voice notes | `services/tts.py`, `services/soniox_tts.py`, Soniox `tts-rt-v2` | The voice is `SONIOX_TTS_VOICE`, else the first shared voice with an Indian accent (Arjun today). Languages and voices are read from Soniox once a day, so Telugu, English, Hindi, Urdu and any language Soniox adds get a voice. Cached by sha256 of model, voice, language and text. Chunks of up to 1200 characters. No key, failure or unlisted language: text only |
 | Listen to a voice note | `services/stt.py`, Soniox `stt-async-v5` | Language hints te, hi, en, ur; the detected language switches the reply. No key or failure: ask the consumer to type. Uploaded file and transcription are deleted at Soniox after use |
 
 **Vision prompt fields.** document_type (bill, meter, other), is_electricity_bill, quality and quality_issue, meter_reading, discom, service_number, section, category, is_domestic, bill_month, bill_date, due_date, previous and present readings, units, export_units, load_kw, line_items (code, label, amount, with codes energy, fixed, customer, duty, fsa, true_up, surcharge, adjustment, other), bill_amount, arrears, total_payable, gruha_jyothi_household, subsidy_amount, confidence. The prompt says to read numbers as printed and never to return name, address or phone. PDFs of up to 3 pages are rendered with pypdfium2 and the page that is a bill is read. HEIC photos are accepted. Photos are EXIF-rotated. A page taller than twice its width (a thermal spot-billing slip) is read as up to 4 overlapping crops, because the API shrinks images to about 768 px on the short side. Rate limits and server errors are retried with back-off in `openai_client.py`.
@@ -468,9 +468,9 @@ Settings come from the environment or `.env` (repo root or `backend/`), read onl
 |---|---|
 | `OPENAI_API_KEY` | Bill reading is off and the consumer types the units; explanations use templates, intents use keyword rules only. Nothing is faked |
 | `OPENAI_BASE_URL`, `OPENAI_VISION_MODEL`, `OPENAI_TEXT_MODEL` | Defaults: OpenAI, `gpt-4.1`, `gpt-4.1-mini`. We run on Azure OpenAI through the base URL |
-| `SARVAM_API_KEY` | No new voice notes; cached ones still play; replies go as text |
-| `SARVAM_MODEL`, `SARVAM_SPEAKER`, `SARVAM_PACE` | Defaults `bulbul:v3`, `kavya`, 0.95 |
-| `SONIOX_API_KEY` | Voice notes are not transcribed; the consumer is asked to type |
+| `SONIOX_API_KEY` | No new voice notes (cached ones still play, replies go as text), and voice messages are not transcribed (the consumer is asked to type) |
+| `SONIOX_BASE_URL`, `SONIOX_TTS_URL` | A Soniox project is tied to one region and its key works only there. India: `https://api.in.soniox.com`, `https://tts-rt.in.soniox.com/tts` |
+| `SONIOX_TTS_MODEL`, `SONIOX_TTS_VOICE`, `SONIOX_TTS_ACCENT` | Defaults `tts-rt-v2`, automatic, `indian` |
 | `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN` | WhatsApp webhook returns 503; health says "ready, not connected" |
 | `WHATSAPP_APP_SECRET` | Signature check skipped (set it before going live) |
 | `WHATSAPP_GRAPH_URL` | Default Graph API v21.0 |

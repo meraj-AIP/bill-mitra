@@ -74,7 +74,7 @@ All of this was done in our working sessions in the days before the jury session
 | The web app comes first | We have no Meta Business account or WhatsApp number yet. The jury still needs to see it working, and officers need a place to answer complaints anyway. |
 | The web chat shows only WhatsApp message types | Text, images, voice notes, up to 3 reply buttons, lists. If it works in the web chat, it works on WhatsApp. Web-only tools sit outside the phone frame. |
 | WhatsApp adapter is built now, switched on later | It turns on once the WHATSAPP_* settings are filled in. No code change needed. |
-| Sarvam for text to speech | Good Telugu voice. Owner's choice. |
+| Soniox for text to speech | Indian-accent voice in every language the app speaks, Urdu included. Owner's choice on 23 Oct 2026; it replaced Sarvam. |
 | Soniox for speech to text | Owner already has a Soniox key and we use it on other work. |
 | OpenAI for reading the bill photo and for wording | Strong at reading photos. Wording is checked by the rules (see below). |
 | Rules calculate, AI explains | Every rupee comes from a fixed tariff engine. The AI only writes the words. A check rejects any reply with a number the engine did not produce, and we fall back to a safe template. |
@@ -107,7 +107,7 @@ In his words, cleaned up and kept short:
 - "Let's make it world-class."
 - "Cover all the edge cases and every functionality. Take that extra mile."
 - "API keys at a later stage."
-- "Let's go with Sarvam."
+- "Remove Sarvam and use only Soniox." (23 Oct 2026; Sarvam was the first choice)
 - "Use our MUI design, like how we did the task application recently. Keep things simple, minimalistic."
 - "The end goal will be to integrate with WhatsApp. That is what we are going to pitch. We should not divert from the initial plan."
 - "Put a prd.md and architecture.md in the project, so that we have the complete context."
@@ -145,8 +145,6 @@ What is not built or not live:
 | Customer charges (Rs 40 to 160 by band) | From the TGERC schedule and matched by both real bills. FY 2024-25 still marked "verify". |
 | FSA (fuel surcharge) | Set to 0 by default. Needs the real monthly figure. |
 | True-up charge from Nov 2026 | Built in as Rs 0.30 then Rs 0.50 per unit. Confirm the rates. |
-| Sarvam speaker "kavya" and the language field name | Not confirmed against live API. A fallback field exists. |
-| Soniox model name "stt-async-v5" | Not confirmed against live API. |
 | Azure OpenAI gpt-4.1 (vision) and gpt-4.1-mini (text) | In use. Review data residency before the pilot. |
 | Deck slide 9 | Still has the "[__] engineers" placeholder. Fill before 25 Oct. |
 | Adoption target in the deck | Ambitious. Be ready to defend it or soften it. |

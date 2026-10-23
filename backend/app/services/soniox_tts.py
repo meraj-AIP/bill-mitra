@@ -1,4 +1,4 @@
-"""Soniox voice notes (https://soniox.com/docs/tts), the first choice; Sarvam stands behind it in app/services/tts.py.
+"""Soniox voice notes (https://soniox.com/docs/tts). app/services/tts.py caches what this makes.
 
 The languages and voices come from Soniox's own lists, read once and kept for a day, so a language or voice they add
 needs no release here. The voice is the configured one, else the first shared voice with the configured accent
@@ -17,7 +17,7 @@ from app.core import retry
 
 log = logging.getLogger(__name__)
 LIST_TTL_S = 24 * 3600
-# Voice is optional, and Sarvam is still to try, so this gives up quickly.
+# Voice is optional: after this the words go as text, so it gives up quickly.
 VOICE = retry.Policy(attempts=2, base_s=1.0, max_s=4.0, budget_s=12.0)
 
 

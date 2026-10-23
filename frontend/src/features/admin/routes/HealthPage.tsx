@@ -11,7 +11,7 @@ import { useSystemHealth, type SystemHealth } from '../api/healthApi';
 const PROVIDERS: Array<[keyof SystemHealth['modes'], string, string]> = [
   ['vision', 'Bill reading', 'OpenAI vision'],
   ['language_model', 'Explanations', 'OpenAI text, checked by the number guard'],
-  ['voice', 'Telugu voice notes', 'Sarvam'],
+  ['voice', 'Voice notes', 'Soniox, Indian-accent voice'],
   ['listening', 'Voice questions', 'Soniox'],
   ['whatsapp', 'WhatsApp', 'Meta Cloud API'],
 ];

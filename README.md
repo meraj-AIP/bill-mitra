@@ -69,7 +69,6 @@ Without a key that part is switched off and the app says so. Nothing is ever fak
 | Setting | With the key | Without it |
 | --- | --- | --- |
 | `OPENAI_API_KEY` | Reads any bill photo with `gpt-4.1`, writes explanations with `gpt-4.1-mini` | Bill reading is off: the consumer types the units instead. Explanations come from the checked templates |
-| `SARVAM_API_KEY` | Telugu voice notes with Sarvam `bulbul:v3` | Text only, no voice |
 | `SONIOX_API_KEY` | Voice questions transcribed with Soniox `stt-async-v5` | Typed questions only |
 | `WHATSAPP_*` (four settings) | Real WhatsApp number through the Cloud API | Web chat only |
 | `BILLING_RECORDS_URL`, `BILLING_RECORDS_TOKEN` | DISCOM billing history joins the review evidence pack | The pack says the DISCOM records are not connected. Nothing is fetched |
@@ -123,7 +122,7 @@ backend/
       rbac.py       permission catalogue and built-in roles
       review.py     spike rules, decision pricing, final amounts
     flows/          bill, meter, question, complaint, report and bill review (cases, case_bills, evidence) flows
-    services/       OpenAI, Sarvam and Soniox clients, complaint reply delivery, DISCOM billing records
+    services/       OpenAI and Soniox clients, complaint reply delivery, DISCOM billing records
     store/          storage (SQLite, or Postgres with DATABASE_URL): bills, accounts, complaints, cases
   tests/
 frontend/src/

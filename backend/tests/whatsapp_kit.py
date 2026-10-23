@@ -1,7 +1,6 @@
 """A fake WhatsApp Cloud API for tests. Only HTTP itself is faked (the httpx transport), so client.py builds and sends
 the real Graph requests, and the fake rejects anything over a published Cloud API limit. Numbers are synthetic."""
 
-import base64
 import hashlib
 import hmac
 import json
@@ -40,7 +39,7 @@ class Graph:
     media_down: int = 0  # how many media requests answer 503 before Meta is back
     send_down: int = 0  # how many message sends answer 503 before Meta is back
     tts_calls: int = 0
-    tts_audio: bytes = b"ID3fake-mp3"
+    tts_audio: bytes = b"ID3fake-mp3" + bytes(80)  # long enough to count as audio
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         host, path = request.url.host, request.url.path
@@ -81,9 +80,12 @@ class Graph:
             self.auth_headers.append(request.headers.get("authorization", ""))
             self.downloads.append("lookaside")
             return httpx.Response(200, content=b"synthetic-photo-bytes")
-        if host == "api.sarvam.ai":
+        if host == "api.soniox.com" and request.url.path == "/v1/tts-models":
+            return httpx.Response(200, json={"models": [{"id": "tts-rt-v2", "languages": [{"code": "te"}, {"code": "en"}],
+                                                         "voices": [{"id": "Arjun", "description": "Indian accent"}]}]})
+        if host == "tts-rt.soniox.com":
             self.tts_calls += 1
-            return httpx.Response(200, json={"audios": [base64.b64encode(self.tts_audio).decode()]})
+            return httpx.Response(200, headers={"content-type": "audio/mpeg"}, content=self.tts_audio)
         return httpx.Response(599, json={"unexpected_host": host})
 
     def messages(self) -> list[dict]:

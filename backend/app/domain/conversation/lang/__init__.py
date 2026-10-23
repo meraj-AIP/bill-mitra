@@ -7,7 +7,6 @@ from app.domain.conversation.lang import en, hi, te, ur
 
 Language = Literal["te", "en", "hi", "ur"]
 PACKS: dict[str, ModuleType] = {"te": te, "en": en, "hi": hi, "ur": ur}
-VOICE_CODES: dict[str, str | None] = {"te": "te-IN", "en": "en-IN", "hi": "hi-IN", "ur": None}
 RTL = {"ur"}
 
 

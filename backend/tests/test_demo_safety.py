@@ -20,7 +20,7 @@ from app.core.messages import Inbound
 from app.core.trace import Event
 from app.domain.bill import ExtractedBill, UsagePoint, real_date, real_month
 from app.main import app
-from app.services import stt, tts, vision
+from app.services import soniox_tts, stt, tts, vision
 from app.services.openai_client import ProviderError
 from app.store import media
 from app.store.db import tx
@@ -100,11 +100,11 @@ def _fake_provider(monkeypatch: pytest.MonkeyPatch, module: object, body: object
     monkeypatch.setattr(module.httpx, "AsyncClient", client)  # type: ignore[attr-defined]
 
 
-@pytest.mark.parametrize("body", [{"audios": None}, {"audios": []}, {"audios": [5]}, {"audios": ["not base64!"]},
-                                  {"audios": [""]}, [1, 2]])
+@pytest.mark.parametrize("body", [{"models": None}, {"models": []}, {"models": [5]}, [1, 2], "text"])
 def test_a_strange_voice_reply_means_no_voice_note(monkeypatch, body):
-    monkeypatch.setattr(get_settings(), "sarvam_api_key", "test-key-not-real")
-    _fake_provider(monkeypatch, tts, body)
+    monkeypatch.setattr(get_settings(), "soniox_api_key", "test-key-not-real")
+    soniox_tts.forget()
+    _fake_provider(monkeypatch, soniox_tts, body)
     assert asyncio.run(tts.speak(f"Your bill is checked {secrets.token_hex(4)}.", "te")) is None
 
 

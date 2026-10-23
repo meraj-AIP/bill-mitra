@@ -31,7 +31,7 @@ export const JOURNEYS: Journey[] = [
         edges: ['tgerc>engine', 'svc>engine'], payload: 'version_for(bill_month) -> TGERC order in force\naudit -> verified | mismatch | partial | not_checkable' },
       { title: 'Worded, then guarded', body: 'The text model gets only the facts. Any figure not in the facts and the checked template goes out instead.',
         edges: ['svc>prov', 'svc>guard'], payload: 'guard.check(text, facts)\npassed -> model text\nfailed -> template from composer.py' },
-      { title: 'Voice note made', body: 'Sarvam speaks the reply in Telugu, cached by hash and converted so it shows as a voice note.',
+      { title: 'Voice note made', body: 'Soniox speaks the reply in the consumer\'s language with an Indian-accent voice, cached by hash so it shows as a voice note.',
         edges: ['svc>prov', 'svc>media'], payload: 'tts(lang="te") -> OGG Opus chunks' },
       { title: 'Reply goes out', body: 'The voice note, then a summary card with up to three buttons.',
         edges: ['svc>sender', 'sender>meta', 'meta>consumer'], payload: '{ "type": "interactive", "interactive": { "type": "button",\n  "action": { "buttons": [ max 3, titles up to 20 characters ] } } }' },
