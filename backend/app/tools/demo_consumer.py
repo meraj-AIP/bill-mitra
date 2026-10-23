@@ -84,6 +84,19 @@ def _move(conn: Any, owners: list[str], to: str) -> tuple[int, int, int, list[st
     return complaints, bills, removed, media_ids
 
 
+def _adopt_staff_trials(conn: Any, to: str) -> tuple[int, int]:
+    """A staff account that tried the assistant as a consumer raised real consumer complaints. Those, and the bills
+    they point at, belong to the demo consumer; the staff account's own chat stays with it."""
+    trials = "SELECT ticket FROM complaints WHERE source = 'consumer_chat' AND user_id LIKE 'acct:%' AND user_id <> ?"
+    bills = conn.execute(f"UPDATE bills SET user_id = ? WHERE id IN (SELECT bill_id FROM complaints WHERE ticket IN "
+                         f"({trials}))", (to, to)).rowcount
+    complaints = conn.execute(f"UPDATE complaints SET user_id = ?, channel = 'web', reply_to = NULL "
+                              f"WHERE ticket IN ({trials})", (to, to)).rowcount
+    # the demo consumer's own complaints answer in its web chat too, or staff replies would wait for a WhatsApp send
+    conn.execute("UPDATE complaints SET channel = 'web', reply_to = NULL WHERE user_id = ? AND channel <> 'web'", (to,))
+    return complaints, bills
+
+
 def _drop_accounts(conn: Any, ids: list[str]) -> int:
     if not ids:
         return 0
@@ -114,6 +127,8 @@ def consolidate(mobile: str, apply: bool) -> Summary:
             ids, owners = _others(conn, target)
             complaints, bills, removed, media_ids = _move(conn, owners, f"acct:{target}")
             dropped = _drop_accounts(conn, ids)
+            trial_complaints, trial_bills = _adopt_staff_trials(conn, f"acct:{target}")
+            complaints, bills = complaints + trial_complaints, bills + trial_bills
             summary = Summary(target, renamed, complaints, bills, removed, dropped, len(owners))
             if not apply:
                 raise _DryRun(summary)

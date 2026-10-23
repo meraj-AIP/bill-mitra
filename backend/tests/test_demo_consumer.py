@@ -44,6 +44,10 @@ def _world() -> dict[str, str]:
                  "stranger_ticket": _complaint(conn, f"acct:{stranger.id}"), "staff_ticket": _complaint(conn, STAFF_OWNER)}
         conn.execute("INSERT INTO chat_messages (user_id, ts, sender, body) VALUES (?, '2026-01-01', 'user', '{}')",
                      (f"acct:{stranger.id}",))
+        world["trial_ticket"] = _complaint(conn, f"acct:{staff.id}")  # staff trying the assistant as a consumer
+        conn.execute("UPDATE complaints SET source = 'consumer_chat' WHERE ticket = ?", (world["trial_ticket"],))
+        conn.execute("INSERT INTO chat_messages (user_id, ts, sender, body) VALUES (?, '2026-01-01', 'user', '{}')",
+                     (f"acct:{staff.id}",))
     return world
 
 
@@ -71,7 +75,8 @@ def test_everything_lands_on_the_demo_consumer_and_staff_stay():
     demo = accounts.by_login(mobile)
     assert demo is not None and demo.id in (world["old"], world["stranger"]) and summary.renamed_from  # history kept
     owner, gone = f"acct:{demo.id}", world["stranger"] if demo.id == world["old"] else world["old"]
-    for ticket in (world["demo_ticket"], world["stranger_ticket"]):
+    assert _one("SELECT COUNT(*) FROM chat_messages WHERE user_id = ?", f"acct:{world['staff']}") == 1
+    for ticket in (world["demo_ticket"], world["stranger_ticket"], world["trial_ticket"]):
         assert _one("SELECT user_id || '|' || channel || '|' || COALESCE(reply_to, '-') FROM complaints "
                     "WHERE ticket = ?", ticket) == f"{owner}|web|-"
     assert _one("SELECT user_id FROM complaints WHERE ticket = ?", world["staff_ticket"]) == STAFF_OWNER
