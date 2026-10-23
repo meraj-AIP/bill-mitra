@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from pydantic import BaseModel
 
 from app.config import get_settings
+from app.core.errors import Refusal
 from app.domain import rbac
 from app.store import units
 from app.store.db import DISCOM_UNITS, tx
@@ -109,14 +110,14 @@ def create(role: str, login: str, name: str, password: str, discom: str | None =
            scopes: list[str] | None = None) -> Account:
     """Staff without explicit scopes get the old DISCOM rule (one, or both). Consumers never carry scopes."""
     if len(password) < MIN_PASSWORD:
-        raise ValueError(f"Password must be at least {MIN_PASSWORD} characters.")
+        raise Refusal(f"Password must be at least {MIN_PASSWORD} characters.")
     unit_ids = [] if role == rbac.CONSUMER else (scopes if scopes is not None else default_scopes(discom))
     if role != rbac.CONSUMER and not unit_ids:
-        raise ValueError("A staff account needs at least one scope.")
+        raise Refusal("A staff account needs at least one scope.")
     account_id = secrets.token_hex(8)
     with tx() as conn:
         if not conn.execute("SELECT 1 FROM roles WHERE slug = ?", (role,)).fetchone():
-            raise ValueError("Unknown role.")
+            raise Refusal("Unknown role.")
         if conn.execute("SELECT 1 FROM accounts WHERE login = ?", (normalise_login(login),)).fetchone():
             raise Conflict("An account with this login already exists.")
         conn.execute("INSERT INTO accounts (id, role, login, name, password_hash, created_by, consent_version, "
@@ -305,7 +306,7 @@ def check_password(account_id: str, password: str) -> bool:
 
 def set_password(account_id: str, password: str) -> None:
     if len(password) < MIN_PASSWORD:
-        raise ValueError(f"Password must be at least {MIN_PASSWORD} characters.")
+        raise Refusal(f"Password must be at least {MIN_PASSWORD} characters.")
     with tx() as conn:
         conn.execute("UPDATE accounts SET password_hash = ?, failed_logins = 0, locked_until = NULL WHERE id = ?",
                      (hash_password(password), account_id))

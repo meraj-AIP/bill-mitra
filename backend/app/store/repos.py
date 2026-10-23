@@ -178,6 +178,7 @@ def erase_chat(conn: sqlite3.Connection, user_id: str) -> list[str]:
     conn.execute("DELETE FROM bills WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM chat_messages WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM chat_drafts WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM pending_reads WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM usc_codes WHERE user_id = ?", (user_id,))
     conn.execute("UPDATE complaints SET reply_to = NULL WHERE user_id = ?", (user_id,))
     # Messages still waiting to go and bills waiting to be read hold the number; a row being sent right now finishes.

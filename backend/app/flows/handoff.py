@@ -10,6 +10,7 @@ Every hand-off needs a note, writes the timeline through the audit log and alert
 from datetime import UTC, datetime
 from typing import Any
 
+from app.core.errors import Refusal
 from app.store import accounts, handoffs, units
 from app.store import complaints as store
 from app.store.accounts import Account
@@ -20,7 +21,7 @@ from app.store.db import DISCOM_UNITS
 NOTE_MIN, NOTE_MAX = 10, 300
 
 
-class Refused(Exception):
+class Refused(Refusal):
     def __init__(self, status: int, message: str) -> None:
         super().__init__(message)
         self.status = status

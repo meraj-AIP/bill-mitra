@@ -1,5 +1,6 @@
 """The reasoning trace: what each step did, how long it took, and whether AI or rules did it."""
 
+import re
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -31,6 +32,14 @@ class Event(BaseModel):
 
 
 Emit = Callable[[Event], Awaitable[None]]
+# Step notes reach the web chat, so a setting's name ("OPENAI_API_KEY", "Sarvam key not set") never does.
+_CONFIG = re.compile(r"\b[A-Z][A-Z0-9]+(?:_[A-Z0-9]+)+\b|(?i:\b[\w-]+ (?:api )?key(?: is)? not set,? ?)")
+
+
+def public(step: TraceStep) -> TraceStep:
+    if not step.detail:
+        return step.model_copy()
+    return step.model_copy(update={"detail": re.sub(r"\s{2,}", " ", _CONFIG.sub("", step.detail)).strip()})
 
 
 class StepHandle:
@@ -59,18 +68,18 @@ class Tracer:
     async def step(self, label: str, mode: Mode):  # type: ignore[no-untyped-def]
         self._count += 1
         step = TraceStep(id=f"s{self._count}", label=label, status="running", mode=mode)
-        await self.emit(Event(kind="trace", trace=step.model_copy()))
+        await self.emit(Event(kind="trace", trace=public(step)))
         started = time.perf_counter()
         handle = StepHandle(step)
         try:
             yield handle
-        except Exception as exc:
+        except Exception:
             step.status = "failed"
-            step.detail = step.detail or type(exc).__name__
+            step.detail = step.detail or "This step did not finish"  # never the error itself
             step.ms = int((time.perf_counter() - started) * 1000)
-            await self.emit(Event(kind="trace", trace=step))
+            await self.emit(Event(kind="trace", trace=public(step)))
             raise
         if step.status == "running":
             step.status = "done"
         step.ms = int((time.perf_counter() - started) * 1000)
-        await self.emit(Event(kind="trace", trace=step))
+        await self.emit(Event(kind="trace", trace=public(step)))

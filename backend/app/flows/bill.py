@@ -10,12 +10,12 @@ from app.domain import capture
 from app.domain.bill import ExtractedBill
 from app.domain.conversation import composer, guard
 from app.domain.conversation.facts import rs
-from app.flows import case_bills, cases, meter, misread
+from app.flows import case_bills, cases, meter, misread, read_problem, read_reply
 from app.flows.analysis import Analysis, analyse
 from app.flows.turn import Turn
 from app.services import charts, llm, vision
 from app.services.openai_client import ProviderError
-from app.store import extract_jobs, media, repos, voice_cache
+from app.store import extract_jobs, media, pending_reads, repos, voice_cache
 
 LANG_NAMES = {"te": "Telugu", "en": "English", "hi": "Hindi", "ur": "Urdu"}
 MIN_TREND_MONTHS = 3
@@ -28,6 +28,9 @@ def outcome(reading: vision.Reading | None, report: capture.CaptureReport | None
         return "reading_off" if not get_settings().vision_live else "reading_failed"
     kind, bill = reading.classification.document_type, reading.bill
     if kind in ("other_bill", "other") or (bill is not None and not bill.is_electricity_bill):
+        return "not_a_bill"
+    # Only TGSPDCL and TGNPDCL bills are priced: the tariff tables are Telangana's.
+    if reading.classification.discom == "OTHER" or (bill is not None and bill.discom == "OTHER"):
         return "not_a_bill"
     if bill is None:
         return "retake"
@@ -50,20 +53,21 @@ def log_read(channel: str, language: str, result: Outcome, reading: vision.Readi
 
 async def read(turn: Turn, data: bytes, mime: str) -> vision.Reading | None:
     settings = get_settings()
+    # Step notes are shown in the web chat, so they never name settings, models or raw errors.
     async with turn.tracer.step("Read the bill", "ai") as step:
         if not settings.vision_live:
-            step.skip("Bill reading is off: OPENAI_API_KEY is not set")
+            step.skip("Bill reading is switched off on this server")
             return None
         try:
             reading = await vision.read_document(data, mime)
         except ProviderError as exc:
             if exc.transient and _read_failure(turn) != "fallback":
-                step.skip(f"Vision provider unavailable ({exc}); the bill will be read again shortly")
+                step.skip("The bill reader is busy; the bill will be read again shortly")
                 raise
-            step.skip(f"Vision provider failed ({exc}); asked the consumer to type the units")
+            step.skip("The bill reader did not give an answer; offered to try again or type the units")
             return None
         seen, bill = reading.classification, reading.bill
-        note = f"First look ({settings.openai_vision_model}, low detail): {seen.document_type}, photo {seen.quality}"
+        note = f"First look (low detail): {seen.document_type}, photo {seen.quality}"
         if bill is not None:
             note += (f". Careful read: {bill.units} units, {len(bill.line_items)} charges, "
                      f"confidence {bill.confidence:.2f}")
@@ -71,11 +75,6 @@ async def read(turn: Turn, data: bytes, mime: str) -> vision.Reading | None:
             note += f". Read again because a check failed: {reading.reread.lower()}"
         step.note(note)
         return reading
-
-
-async def _ask_units(turn: Turn, key: str) -> None:
-    turn.state.awaiting = "units"
-    await turn.buttons(turn.t(key), [("type_units", "btn_type_units")])
 
 
 def _gate_note(report: capture.CaptureReport) -> str:
@@ -116,18 +115,35 @@ async def handle_document(turn: Turn, data: bytes, mime: str, media_id: str | No
     if report is not None:
         async with turn.tracer.step("Check the reading adds up", "rules") as step:
             step.note(_gate_note(report))
-    if result == "not_a_bill":
-        await turn.say_key("not_a_bill")
-    elif result == "meter" and reading and reading.bill:
+    problem = read_problem.diagnose(result, reading, report)
+    if result == "meter" and reading and reading.bill:
         await meter.handle(turn, reading.bill)
-    elif result in ("reading_off", "reading_failed"):
-        await _ask_units(turn, "reading_off" if result == "reading_off" else "ask_units")
-    elif result == "retake":
-        failed = report is not None and any(c.status == "fail" and c.key in capture.BLOCKING for c in report.checks)
-        await _ask_units(turn, "not_add_up" if failed else "poor_quality")
+    elif problem is not None:
+        await read_reply.tell(turn, problem, report, reading.bill if reading else None, media_id)
     elif reading and reading.bill:
         await handle_bill(turn, reading.bill, media_id)
     return result
+
+
+async def on_units_pick(turn: Turn, reply_id: str) -> bool:
+    """The consumer picked the units when two printed figures disagreed. Only a count we offered is accepted, once;
+    the engine then prices the bill at it like any other."""
+    if not reply_id.startswith(read_reply.PICK):
+        return False
+    choice = pending_reads.peek(turn.state.user_id, "choice")
+    picked = reply_id.removeprefix(read_reply.PICK)
+    # Taken only for a count we offered, so a stale or made-up tap leaves the open choice as it was.
+    if not choice or not picked.isdigit() or int(picked) not in choice.get("options", []) or \
+            not pending_reads.take(turn.state.user_id, "choice"):
+        await read_reply.send(turn, turn.t("units_choice_gone"), [(read_reply.NEW_PHOTO, turn.t("btn_new_photo")),
+                                                                  ("type_units", turn.t("btn_type_units"))])
+        return True
+    bill = capture.confirm_units(ExtractedBill.model_validate(choice["bill"]), int(picked))
+    async with turn.tracer.step("Use the units the consumer confirmed", "rules") as step:
+        step.note(f"Consumer picked {picked} of the units offered {choice['options']}")
+    await turn.say_key("units_confirmed", units=int(picked))
+    await handle_bill(turn, bill, choice.get("media_id"))
+    return True
 
 
 def _check_note(a: Analysis) -> str:
@@ -162,7 +178,7 @@ async def _explanation(turn: Turn, a: Analysis, discom: str | None) -> str:
             return logged("reused", kept)
         written = await llm.explain(a.facts, turn.lang)
         if written is None:
-            step.note("Checked template: every figure comes from the engine (no language-model key set)", "rules")
+            step.note("Checked template: every figure comes from the engine (language model off)", "rules")
             return logged("template", template)
         check = guard.check(written, a.facts)
         if not check.passed:
@@ -171,6 +187,9 @@ async def _explanation(turn: Turn, a: Analysis, discom: str | None) -> str:
             return logged("llm_fallback", template)
         step.note(f"Language model wrote it. Number check passed: {check.figures_checked} of "
                   f"{check.figures_checked} figures traced to the engine")
+        note = turn.t("tariff_nearest")
+        if a.facts.tariff_nearest and note not in written:
+            written = f"{written} {note}"  # the template says it; a written explanation must too
         voice_cache.remember_explanation(key, turn.state.user_id, written)
         return logged("llm_pass", written)
 
@@ -207,3 +226,6 @@ async def handle_bill(turn: Turn, bill: ExtractedBill, media_id: str | None, sou
     if len(a.history) >= MIN_TREND_MONTHS:
         chart = charts.trend_png(a.history, a.facts.month, a.facts.units)
         await turn.image(media.save(chart, "image/png"), turn.t("trend_caption"))
+    kept = pending_reads.take(turn.state.user_id, "meter") if bill.present_reading is not None else None
+    if kept is not None:  # a meter photo sent before any bill: now it can be projected
+        await meter.handle(turn, ExtractedBill(document_type="meter", meter_reading=float(kept)))

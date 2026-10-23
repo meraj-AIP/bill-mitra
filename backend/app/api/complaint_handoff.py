@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, StringConstraints
 
 from app.api.complaints import ComplaintDetail, Replier, _detail, _for_staff
 from app.api.deps import require_perm
+from app.core.errors import REFUSED, safe_message
 from app.flows import handoff
 from app.store import complaints as store
 from app.store.accounts import Account
@@ -50,7 +51,7 @@ async def assign(ticket: str, body: AssignBody, account: Assigner) -> ComplaintD
     try:
         handoff.assign(account, _general(account, ticket), body.account_id, body.note)
     except handoff.Refused as exc:
-        raise HTTPException(exc.status, str(exc)) from exc
+        raise HTTPException(exc.status, safe_message(exc, REFUSED)) from exc
     return _fresh(ticket, account)
 
 
@@ -60,5 +61,5 @@ async def send_back(ticket: str, body: ReturnBody, account: Replier) -> Complain
     try:
         handoff.send_back(account, _general(account, ticket), body.note)
     except handoff.Refused as exc:
-        raise HTTPException(exc.status, str(exc)) from exc
+        raise HTTPException(exc.status, safe_message(exc, REFUSED)) from exc
     return _fresh(ticket, account)

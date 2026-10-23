@@ -73,8 +73,9 @@ def test_not_a_bill_is_explained_and_not_stored(reader, sign_in):
     reader(reading(None, kind="other", reason="A photo of logos."))
     with TestClient(app) as client:
         sign_in(client)
-        body = client.post("/api/bills", files=PHOTO).json()
-        assert body["outcome"] == "not_a_bill" and body["id"] is None and "logos" in body["outcome_reason"]
+        body = client.post("/api/bills", files=PHOTO, data={"language": "en"}).json()
+        assert body["outcome"] == "not_a_bill" and body["id"] is None and body["problem"] == "not_a_bill"
+        assert "does not look like an electricity bill" in body["outcome_reason"]
         assert client.get("/api/bills").json()["total"] == 0
 
 
@@ -82,8 +83,10 @@ def test_retake_says_why(reader, sign_in):
     reader(reading(variant(OCT_2025, bill_amount=792.0)))
     with TestClient(app) as client:
         sign_in(client)
-        body = client.post("/api/bills", files=PHOTO).json()
-    assert body["outcome"] == "retake" and "do not add up" in body["outcome_reason"] and body["analysis"] is None
+        body = client.post("/api/bills", files=PHOTO, data={"language": "en"}).json()
+    assert body["outcome"] == "retake" and body["problem"] == "chk_charges_sum" and body["analysis"] is None
+    assert "add up to Rs 692, but the bill amount reads Rs 792, a gap of Rs 100" in body["outcome_reason"]
+    assert "type the units in the Assistant" in body["outcome_reason"]
 
 
 def test_upload_rules(sign_in):

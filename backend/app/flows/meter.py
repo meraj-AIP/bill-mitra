@@ -7,13 +7,18 @@ from app.domain.conversation.facts import rs
 from app.domain.tariff.engine import compute, has_tariff
 from app.flows.analysis import gruha_jyothi_eligible
 from app.flows.turn import Turn
-from app.store import repos
+from app.store import pending_reads, repos
 
 
 async def handle(turn: Turn, reading_doc: ExtractedBill, today: date | None = None) -> None:
+    if reading_doc.meter_reading is None:
+        await turn.say_key("meter_unreadable")
+        return
     last = repos.get_bill(turn.state.current_bill_id) if turn.state.current_bill_id else None
-    if last is None or reading_doc.meter_reading is None or last[0].present_reading is None:
-        await turn.say_key("meter_need_bill")
+    if last is None or last[0].present_reading is None:
+        # Kept, so the projection follows as soon as the bill arrives (flows/bill.handle_bill), without a new photo.
+        pending_reads.put(turn.state.user_id, "meter", reading_doc.meter_reading)
+        await turn.say_key("meter_kept", reading=round(reading_doc.meter_reading))
         return
     bill = last[0]
     today = today or date.today()

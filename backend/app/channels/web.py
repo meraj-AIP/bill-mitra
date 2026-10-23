@@ -6,16 +6,18 @@ import json
 from collections.abc import AsyncIterator
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import ChatUser
 from app.core import service
+from app.core.errors import api_error
 from app.core.messages import Inbound
 from app.core.ratelimit import per_ip
 from app.core.trace import Event
 from app.core.uploads import AUDIO, DOCUMENTS, read_checked
+from app.domain.conversation.lang import text
 from app.store import chat, media, repos
 
 router = APIRouter(prefix="/api/web", tags=["web channel"])
@@ -38,15 +40,15 @@ class Uploaded(BaseModel):
 
 
 @router.post("/upload", response_model=Uploaded, dependencies=[Depends(per_ip("chat-upload", 30))])
-async def upload(file: UploadFile, _: ChatUser) -> Uploaded:
-    data, mime = await read_checked(file, DOCUMENTS | AUDIO)
+async def upload(file: UploadFile, _: ChatUser, language: Literal["te", "en", "hi", "ur"] = "en") -> Uploaded:
+    data, mime = await read_checked(file, DOCUMENTS | AUDIO, language)
     return Uploaded(media_id=media.save(data, mime), mime_type=mime, size_kb=len(data) // 1024)
 
 
 @router.post("/messages")
 async def send(message: WebMessage, account: ChatUser) -> StreamingResponse:
     if message.media_id and media.path_for(message.media_id) is None:
-        raise HTTPException(404, "Upload not found; please attach it again.")
+        raise api_error(404, "file_lost", text(message.language, "file_lost"))
     inbound = Inbound(channel="web", user_id=account.user_id, kind=message.kind, text=message.text,
                       reply_id=message.reply_id, media_id=message.media_id, mime_type=message.mime_type)
     queue: asyncio.Queue[Event | None] = asyncio.Queue()

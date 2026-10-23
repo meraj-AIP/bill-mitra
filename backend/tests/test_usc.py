@@ -98,7 +98,7 @@ def test_nothing_configured_says_unavailable(sign_in):
     with TestClient(app) as client:
         sign_in(client, "consumer")
         got = client.post("/api/bills/by-usc/start", json={"discom": "TGSPDCL", "service_number": fake_usc()})
-    assert got.status_code == 503 and "not available" in got.json()["detail"]
+    assert got.status_code == 503 and got.json()["detail"]["code"] == "usc_unavailable"
 
 
 def test_web_code_flow_wrong_expired_locked_and_unknown_look_alike(sign_in, discom, monkeypatch):
@@ -120,7 +120,8 @@ def test_web_code_flow_wrong_expired_locked_and_unknown_look_alike(sign_in, disc
         code = discom["codes"][0]
         wrong = "000000" if code != "000000" else "111111"
         first, other = verify(known, wrong), verify(unknown, wrong)
-        assert first.status_code == other.status_code == 400 and first.json() == other.json()
+        assert first.status_code == other.status_code == 400
+        assert {**first.json()["detail"], "ref": None} == {**other.json()["detail"], "ref": None}  # alike but the ref
         assert first.json()["detail"]["attempts_left"] == 4
         later = usc._now() + timedelta(minutes=usc.CODE_MINUTES + 1)
         with monkeypatch.context() as m:

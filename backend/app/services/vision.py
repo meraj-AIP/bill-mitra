@@ -137,6 +137,9 @@ class Reading:
     bill: ExtractedBill | None  # None when the first pass stopped it
     reread: str | None = None  # why a second careful read was made: the failed check, or the figures it was unsure of
     reconciled: bool = False  # the two reads were settled together by the checks
+    # Why nothing was read, when it was the file and not the photo: it would not open, or the bill was not in the
+    # pages read.
+    problem: Literal["unopenable", "too_long"] | None = None
 
 
 MIN_SHORT_SIDE = 1000
@@ -334,15 +337,24 @@ async def _second_read(jpeg: bytes, seen: Classification, first: ExtractedBill, 
     return Reading(seen, kept, reread=why)
 
 
+def _page_count(data: bytes, mime: str) -> int:
+    return len(pdfium.PdfDocument(data)) if mime == "application/pdf" else 1
+
+
 async def read_document(data: bytes, mime: str) -> Reading:
     try:
         images = pages(data, mime)
+        count = _page_count(data, mime)
     except (OSError, ValueError, pdfium.PdfiumError, Image.DecompressionBombError):
-        return Reading(UNOPENABLE, None)
+        return Reading(UNOPENABLE, None, problem="unopenable")
     if not images:
-        return Reading(UNOPENABLE, None)
+        return Reading(UNOPENABLE, None, problem="unopenable")
     jpeg, seen = await _first_document(images)
-    if seen.document_type not in ("electricity_bill", "meter") or seen.quality == "unreadable":
+    if seen.document_type not in ("electricity_bill", "meter") and count > MAX_PDF_PAGES:
+        return Reading(seen, None, problem="too_long")
+    # A bill from outside Telangana is never read further: the TG tariff cannot price it.
+    if seen.document_type not in ("electricity_bill", "meter") or seen.quality == "unreadable" or \
+            seen.discom == "OTHER":
         return Reading(seen, None)
     bill = await extract(jpeg, seen)
     if bill.document_type == "meter":

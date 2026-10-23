@@ -33,13 +33,14 @@ from app.api import (
 from app.channels import web
 from app.channels.whatsapp import router as whatsapp
 from app.config import get_settings
-from app.core import security
+from app.core import errors, security
 from app.services import http, scheduler
 from app.store import accounts, demo_accounts
 from app.store import privacy as retention
 from app.store.db import connection, purge_mock_data, startup_lock
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+errors.install_logging()
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s ref=%(ref)s %(message)s")
 # httpx logs every outbound request at INFO: about 20 lines per WhatsApp conversation, with URLs. Failures are still
 # logged by the callers, without the URL.
 for noisy in ("httpx", "httpcore"):
@@ -73,9 +74,11 @@ app = FastAPI(title="Bill Mitra", version="0.1.0", lifespan=lifespan,
 app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in settings.cors_origins.split(",")
                                                   if o.strip() not in ("", "*")],
                    allow_credentials=True, allow_methods=["GET", "POST", "PATCH", "DELETE"],
-                   allow_headers=["*"])
+                   allow_headers=["*"], expose_headers=["X-Request-Id"])
 
 app.middleware("http")(security.protect)
+# Last, so it is outermost: every response, even a refusal from the middleware above, carries its reference.
+errors.install(app)
 
 for router in (auth.router, privacy.router, admin.router, alerts.router, access.router, catalog.router, bills.router,
                bills_by_usc.router, complaints.router, complaint_actions.router, complaint_handoff.router,

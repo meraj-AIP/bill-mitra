@@ -13,8 +13,9 @@ from typing import Literal
 from pydantic import BaseModel
 
 from app.core import service
-from app.core.messages import Inbound
+from app.core.messages import Inbound, TextOut
 from app.core.trace import Event
+from app.domain.conversation.lang import text
 from app.flows import report
 from app.services import delivery, vision
 from app.services.openai_client import ProviderError
@@ -23,26 +24,32 @@ from app.store.extract_jobs import Job
 
 log = logging.getLogger(__name__)
 
-QUEUED_DETAIL = ("The bill reader is busy right now. We kept your bill and will read it again in a few minutes; it "
-                 "will appear in My bills.")
 Finished = tuple[Literal["done", "failed"], str | None, dict[str, object] | None]
 
 
 class ReadJob(BaseModel):
-    """The dashboard's view of a queued read: the 202 body and what GET /api/bills/jobs/{job_id} returns."""
+    """The dashboard's view of a queued read: the 202 body and what GET /api/bills/jobs/{job_id} returns. A finished
+    read always says how it ended: `outcome` is "checked" with a bill_id, or the reason there is none (retake,
+    not_a_bill, reading_failed), with `detail` saying it in the uploader's language."""
 
     job_id: str
     status: Literal["queued", "running", "done", "failed"]
     bill_id: str | None  # set when done and the bill was saved
+    outcome: str | None = None  # set once the job has finished
+    problem: str | None = None  # the lang key of what went wrong, when the frontend wants its own words
     detail: str | None
 
 
 def view(job: Job) -> ReadJob:
     status: Literal["queued", "running", "done", "failed"] = "failed" if job.state == "dismissed" else job.state
-    detail = QUEUED_DETAIL if job.state in ("queued", "running") else None
-    if job.result:
-        detail = str(job.result.get("outcome_reason") or "") or None
-    return ReadJob(job_id=job.id, status=status, bill_id=job.bill_id, detail=detail)
+    if job.state in ("queued", "running"):
+        return ReadJob(job_id=job.id, status=status, bill_id=None, detail=text(job.language, "dash_queued"))
+    result = job.result or {}
+    outcome = "checked" if job.bill_id else str(result.get("outcome") or "reading_failed")
+    detail = result.get("outcome_reason") or (None if job.bill_id else text(job.language, "dash_read_failed"))
+    return ReadJob(job_id=job.id, status=status, bill_id=job.bill_id, outcome=outcome,
+                   problem=result.get("problem") or (None if job.bill_id else "read_failed"),
+                   detail=str(detail) if detail else None)
 
 
 async def run_due(now: datetime | None = None) -> int:
@@ -62,11 +69,20 @@ async def _run(job: Job, now: datetime | None) -> bool:
         if job.last_try:
             gave_up = _report(job, None).model_dump(mode="json") if job.channel == "dashboard" else None
             extract_jobs.finish(job.id, "failed", None, gave_up, error, now)
+            await _tell_gave_up(job)
         else:
             extract_jobs.later(job.id, error, now)
         return False
     extract_jobs.finish(job.id, state, bill_id, result, None, now)
     return state == "done"
+
+
+async def _tell_gave_up(job: Job) -> None:
+    """WhatsApp was told the result would follow, so the last failed try says so and what to do next. Once: the
+    outbox drops a second copy with the same key."""
+    if job.channel == "whatsapp" and job.address:
+        message = TextOut(body=text(job.language, "read_gave_up"), language=job.language)
+        await delivery.send_reply(message, job.user_id, job.address, f"extract:{job.id}:gave_up")
 
 
 async def _whatsapp(job: Job) -> Finished:

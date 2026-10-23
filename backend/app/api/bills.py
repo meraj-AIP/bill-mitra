@@ -1,4 +1,4 @@
-"""Bill dashboard API. An account sees only the bills it uploaded."""
+"""Bill dashboard API. An account sees only the bills it uploaded. Refusals are in the consumer's language."""
 
 from typing import Annotated, Literal
 
@@ -7,8 +7,10 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import ChatUser, require_perm
+from app.core.errors import api_error
 from app.core.ratelimit import per_ip
 from app.core.uploads import DOCUMENTS, read_checked
+from app.domain.conversation.lang import text
 from app.flows import case_bills, cases, extract, report
 from app.flows.analysis import analyse
 from app.store import case_evidence, complaints, extract_jobs, media, repos
@@ -24,11 +26,15 @@ Language = Literal["te", "en", "hi", "ur"]
 UPLOAD_LIMIT = Depends(per_ip("bill-upload", 20))
 
 
+def _not_found(language: str) -> HTTPException:
+    return api_error(404, "bill_not_found", text(language, "err_bill_not_found"))
+
+
 @router.post("", response_model=report.BillReport, dependencies=[UPLOAD_LIMIT],
              responses={202: {"model": extract.ReadJob, "description": "The reader is down for now; poll the job."}})
 async def upload(file: UploadFile, account: ChatUser, language: Annotated[Language, Form()] = "te"
                  ) -> report.BillReport | JSONResponse:
-    data, mime = await read_checked(file, DOCUMENTS)
+    data, mime = await read_checked(file, DOCUMENTS, language)
     found = await report.check_upload(account.user_id, data, mime, media.save(data, mime), language)
     if isinstance(found, report.BillReport):
         return found
@@ -36,11 +42,12 @@ async def upload(file: UploadFile, account: ChatUser, language: Annotated[Langua
 
 
 @router.get("/jobs/{job_id}", response_model=extract.ReadJob)
-def read_job(job_id: Annotated[str, Path(max_length=40)], account: ChatUser) -> extract.ReadJob:
+def read_job(job_id: Annotated[str, Path(max_length=40)], account: ChatUser,
+             language: Language = "te") -> extract.ReadJob:
     """A queued read, for the page to poll. Only the account that uploaded the bill sees it."""
     found = extract_jobs.get_own(account.user_id, job_id)
     if found is None:
-        raise HTTPException(404, "No such read.")
+        raise api_error(404, "read_not_found", text(language, "err_read_not_found"))
     return extract.view(found)
 
 
@@ -59,12 +66,11 @@ def list_bills(
 def get_bill(bill_id: str, account: ChatUser, language: Language = "te") -> report.BillReport:
     found = report.load(account.user_id, bill_id, language)
     if found is None:
-        raise HTTPException(404, NOT_FOUND)
+        raise _not_found(language)
     return found
 
 
 Owner = Annotated[Account, Depends(require_perm("self.bills"))]
-NOT_FOUND = "Bill not found."
 
 
 class ReviewRequest(BaseModel):
@@ -78,13 +84,13 @@ async def review_request(bill_id: str, body: ReviewRequest, account: Owner,
     """The owner reports the bill as wrong. Updates come back in the web app."""
     stored = repos.get_own_bill(account.user_id, bill_id)
     if stored is None:
-        raise HTTPException(404, NOT_FOUND)
+        raise _not_found(language)
     note = body.note.strip() if body.note and body.note.strip() else None
     try:
         ticket = await cases.report(account.user_id, bill_id, analyse(stored.bill, account.user_id), language, "web",
                                     None, note)
-    except Conflict as exc:
-        raise HTTPException(409, str(exc)) from exc
+    except Conflict as exc:  # the one clash here: a check is already open on this bill
+        raise api_error(409, "check_open", text(language, "err_check_open")) from exc
     return _summary(ticket, language)
 
 
@@ -93,11 +99,11 @@ async def review_request(bill_id: str, body: ReviewRequest, account: Owner,
 async def no_bills(bill_id: str, account: Owner, language: Language = "te") -> cases.ReviewSummary:
     """The owner does not have the earlier bills asked for: the open request is answered with that note."""
     if repos.get_own_bill(account.user_id, bill_id) is None:
-        raise HTTPException(404, NOT_FOUND)
+        raise _not_found(language)
     ticket = complaints.open_for_bill(bill_id, cases.KIND)
     request = case_evidence.month_request(ticket) if ticket else None
     if ticket is None or request is None or request["status"] != "open":
-        raise HTTPException(409, "No request for earlier bills is open on this bill.")
+        raise api_error(409, "no_request_open", text(language, "err_no_bill_request"))
     case_bills.no_bills(ticket, request["id"])
     return _summary(ticket, language)
 

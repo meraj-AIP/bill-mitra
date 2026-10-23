@@ -10,6 +10,8 @@ from PIL import Image, ImageOps
 from pillow_heif import register_heif_opener
 
 from app.config import get_settings
+from app.core.errors import api_error
+from app.domain.conversation.lang import text
 
 log = logging.getLogger(__name__)
 register_heif_opener()
@@ -44,15 +46,16 @@ def sniff(head: bytes) -> str | None:
     return None
 
 
-async def read_checked(file: UploadFile, allowed: frozenset[str]) -> tuple[bytes, str]:
+async def read_checked(file: UploadFile, allowed: frozenset[str], language: str = "en") -> tuple[bytes, str]:
     """Read at most the size limit plus one byte, then trust the content, not the declared type."""
-    limit = get_settings().max_upload_mb * 1024 * 1024
-    data = await file.read(limit + 1)
-    if not data or len(data) > limit:
-        raise HTTPException(413, f"The file must be under {get_settings().max_upload_mb} MB.")
+    mb = get_settings().max_upload_mb
+    data = await file.read(mb * 1024 * 1024 + 1)
+    if not data or len(data) > mb * 1024 * 1024:
+        raise api_error(413, "file_too_large", text(language, "err_file_too_large", mb=mb), max_mb=mb)
     mime = sniff(data[:16])
     if mime is None or mime not in allowed:
-        raise HTTPException(415, "Upload a photo (JPG, PNG, WEBP, HEIC) or a PDF of the bill, or a voice note.")
+        key = "err_file_type_voice" if allowed & AUDIO else "err_file_type"
+        raise api_error(415, "unsupported_type", text(language, key))
     return await displayable(data, mime)
 
 

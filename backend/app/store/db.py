@@ -365,13 +365,15 @@ def _upgrade(conn: sqlite3.Connection) -> None:
             extract_jobs,
             otp_codes,
             outbox,
+            pending_reads,
             proposals,
             sender_checks,
             voice_cache,
             wa_queue,
         )
 
-        for queue in (wa_queue, outbox, extract_jobs, proposals, voice_cache, sender_checks, otp_codes, account_connections):
+        for queue in (wa_queue, outbox, extract_jobs, proposals, voice_cache, sender_checks, otp_codes, account_connections,
+                      pending_reads):
             queue.ensure(conn)
         if isinstance(conn, pg.Conn):
             for table in pg.ROWID_TABLES:

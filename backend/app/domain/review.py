@@ -9,6 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.core.errors import Refusal
 from app.domain import capture
 from app.domain.bill import ExtractedBill
 from app.domain.prediction import MonthUsage
@@ -81,16 +82,16 @@ class Outcome:
 
 def printed_amount(bill: ExtractedBill) -> float:
     if bill.bill_amount is None:
-        raise ValueError("This bill has no printed amount to revise.")
+        raise Refusal("This bill has no printed amount to revise.")
     return bill.bill_amount
 
 
 def _checked(original: float, revised: float, corrected_units: int | None, needs_approval: bool) -> Outcome:
     reduction = money(original - revised)
     if reduction <= 0:
-        raise ValueError("The revised amount must be lower than the printed amount.")
+        raise Refusal("The revised amount must be lower than the printed amount.")
     if reduction > original:
-        raise ValueError("The reduction cannot be more than the printed amount.")
+        raise Refusal("The reduction cannot be more than the printed amount.")
     return Outcome(original, money(revised), reduction, corrected_units, needs_approval)
 
 
@@ -98,9 +99,9 @@ def corrected_reading(bill: ExtractedBill, present: float, policy: Policy) -> Ou
     """Reprice the bill month at the corrected reading. On a net metered bill the export stays as printed."""
     original = printed_amount(bill)
     if bill.previous_reading is None:
-        raise ValueError("This bill has no previous reading, so a corrected reading cannot be priced.")
+        raise Refusal("This bill has no previous reading, so a corrected reading cannot be priced.")
     if present < bill.previous_reading:
-        raise ValueError("The corrected reading cannot be lower than the previous reading.")
+        raise Refusal("The corrected reading cannot be lower than the previous reading.")
     drawn = round(present - bill.previous_reading)
     units = max(drawn - (bill.export_units or 0), 0)
     # Only the tariff part of a bill follows the reading. Surcharge, interest and rounding lines stay as printed,

@@ -25,6 +25,11 @@ def _headers() -> dict[str, str]:
 
 
 FFMPEG_TIMEOUT_S = 30
+
+
+class TooLarge(ValueError):
+    """Over the upload size limit, so the consumer is told the limit rather than that the file failed."""
+
 # Inline attempts. A send still failing after this waits in the outbox (store/outbox.py) for a later try.
 SEND = retry.Policy(attempts=3, base_s=1.0, max_s=8.0, budget_s=20.0, min_attempt_s=10.0)
 MEDIA = retry.Policy(attempts=3, base_s=1.0, max_s=8.0, budget_s=20.0, min_attempt_s=10.0)
@@ -40,15 +45,15 @@ async def _get(url: str) -> httpx.Response:
 
 
 async def download(media_ref: str) -> tuple[bytes, str]:
-    """Raises httpx.HTTPError, KeyError or ValueError (too large); the caller tells the consumer."""
+    """Raises httpx.HTTPError, KeyError, TooLarge or ValueError; the caller tells the consumer."""
     s = get_settings()
     limit = s.max_upload_mb * 1024 * 1024
     meta = (await _get(f"{s.whatsapp_graph_url}/{media_ref}")).json()
     if int(meta.get("file_size") or 0) > limit:
-        raise ValueError("media too large")
+        raise TooLarge("media too large")
     data = (await _get(meta["url"])).content
     if len(data) > limit:
-        raise ValueError("media too large")
+        raise TooLarge("media too large")
     return data, meta.get("mime_type", "application/octet-stream").split(";")[0]
 
 

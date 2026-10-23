@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from app.api import catalog
 from app.api.deps import in_scope, require_perm, viewer
+from app.core.errors import REFUSED, Refusal, safe_message
 from app.core.ratelimit import per_ip
 from app.core.uploads import read_csv
 from app.domain import rbac
@@ -125,16 +126,16 @@ def _staff_row(actor: Account, row: dict[str, str]) -> tuple[str, str, str, Unit
     """(name, login, role, unit) from one CSV line. ValueError says what is wrong with the line."""
     name, login, role, code = (str(row.get(k) or "").strip() for k in STAFF_COLUMNS)
     if not name or len(name) > 80:
-        raise ValueError("Give a name of up to 80 characters.")
+        raise Refusal("Give a name of up to 80 characters.")
     if len(login) > 120 or not re.fullmatch(EMAIL, login):
-        raise ValueError("The login must be an email address.")
+        raise Refusal("The login must be an email address.")
     try:
         _grantable_role(actor, role)
     except HTTPException as exc:
-        raise ValueError(exc.detail) from exc
+        raise Refusal(exc.detail) from exc
     found = [u for u in units.by_code(code) if in_scope(actor, u.id)] if code else []
     if len(found) != 1:
-        raise ValueError("No unit with this code in your scope." if not found
+        raise Refusal("No unit with this code in your scope." if not found
                          else "This unit code is in both DISCOMs; create this account by hand.")
     return name, login, role, found[0]
 
@@ -151,7 +152,7 @@ async def import_staff(file: UploadFile, actor: Manager, response: Response) -> 
         except Conflict:
             errors.append(ImportLineError(line=line, detail="An account with this login already exists."))
         except ValueError as exc:
-            errors.append(ImportLineError(line=line, detail=str(exc)))
+            errors.append(ImportLineError(line=line, detail=safe_message(exc, REFUSED)))
         else:
             created.append(ImportedStaff(line=line, login=account.login, name=account.name, role=account.role,
                                          unit=unit.name, password=password))

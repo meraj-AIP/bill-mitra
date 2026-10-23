@@ -156,8 +156,13 @@ TARIFF_VERSIONS: tuple[TariffVersion, ...] = (
 )
 
 
+def in_force(bill_month: date) -> bool:
+    """False when no version covers the month, so version_for falls back to the nearest one and the bill is told so."""
+    return any(v.effective_from <= bill_month <= (v.effective_to or date.max) for v in TARIFF_VERSIONS)
+
+
 def version_for(bill_month: date) -> TariffVersion:
-    """Return the tariff version in force for the given bill month."""
+    """Return the tariff version in force for the given bill month, or the nearest one (see in_force)."""
     for version in TARIFF_VERSIONS:
         ends = version.effective_to or date.max
         if version.effective_from <= bill_month <= ends:
