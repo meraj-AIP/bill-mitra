@@ -33,10 +33,11 @@ def record_in(inbound: Inbound) -> int:
         return int(conn.execute("INSERT INTO chat_messages (user_id, sender, body) VALUES (?, 'user', ?) RETURNING id",
                                 (inbound.user_id, json.dumps(body, ensure_ascii=False))).fetchall()[0][0])
 
-def record_out(user_id: str, message: dict[str, Any]) -> None:
+
+def record_out(user_id: str, message: dict[str, Any]) -> int:
     with tx() as conn:
-        conn.execute("INSERT INTO chat_messages (user_id, sender, body) VALUES (?, 'bot', ?)",
-                     (user_id, json.dumps(message, ensure_ascii=False)))
+        return int(conn.execute("INSERT INTO chat_messages (user_id, sender, body) VALUES (?, 'bot', ?) RETURNING id",
+                                (user_id, json.dumps(message, ensure_ascii=False))).fetchall()[0][0])
 
 
 def add_transcript(message_id: int, text: str) -> None:
@@ -57,6 +58,17 @@ def page(user_id: str, before: int | None, limit: int) -> ChatPage:
                             "ORDER BY id DESC LIMIT ?", (user_id, before, before, limit + 1)).fetchall()
     newest_first = [ChatItem(id=r["id"], at=r["ts"], sender=r["sender"], body=json.loads(r["body"])) for r in rows]
     return ChatPage(items=list(reversed(newest_first[:limit])), has_more=len(rows) > limit)
+
+
+def since(user_id: str, after: int, limit: int) -> ChatPage:
+    """What arrived after `after`, oldest first: the open chat page polls this for messages staff or a background
+    job delivered while it was open."""
+    limit = max(1, min(limit, MAX_PAGE))
+    with tx() as conn:
+        rows = conn.execute("SELECT id, ts, sender, body FROM chat_messages WHERE user_id = ? AND id > ? "
+                            "ORDER BY id LIMIT ?", (user_id, after, limit + 1)).fetchall()
+    items = [ChatItem(id=r["id"], at=r["ts"], sender=r["sender"], body=json.loads(r["body"])) for r in rows]
+    return ChatPage(items=items[:limit], has_more=len(rows) > limit)
 
 
 def last_inbound(user_id: str) -> str | None:

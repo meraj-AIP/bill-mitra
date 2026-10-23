@@ -19,6 +19,7 @@ class UserState(BaseModel):
     current_bill_id: str | None = None
     awaiting: str | None = None
     created: bool = Field(default=False, exclude=True)  # first contact; never stored
+    loaded_awaiting: str | None = Field(default=None, exclude=True)  # as read, so a save keeps a newer staff ask
 
 
 def get_user(user_id: str, channel: str) -> UserState:
@@ -28,15 +29,18 @@ def get_user(user_id: str, channel: str) -> UserState:
             conn.execute("INSERT INTO users (user_id, channel) VALUES (?, ?)", (user_id, channel))
             return UserState(user_id=user_id, channel=channel, created=True)
     return UserState(user_id=row["user_id"], channel=row["channel"], language=row["language"],
-                     current_bill_id=row["current_bill_id"], awaiting=row["awaiting"])
+                     current_bill_id=row["current_bill_id"], awaiting=row["awaiting"],
+                     loaded_awaiting=row["awaiting"])
 
 
 def save_user(state: UserState) -> None:
+    """`awaiting` is written only if nobody changed it during the turn: staff may ask the consumer something while
+    their own turn is running, and that ask must not be lost when the turn saves what it loaded."""
     with tx() as conn:
         conn.execute(
-            "UPDATE users SET language = ?, current_bill_id = ?, awaiting = ?, updated_at = CURRENT_TIMESTAMP "
-            "WHERE user_id = ?",
-            (state.language, state.current_bill_id, state.awaiting, state.user_id),
+            "UPDATE users SET language = ?, current_bill_id = ?, awaiting = CASE WHEN COALESCE(awaiting, '') = ? "
+            "THEN ? ELSE awaiting END, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+            (state.language, state.current_bill_id, state.loaded_awaiting or "", state.awaiting, state.user_id),
         )
 
 

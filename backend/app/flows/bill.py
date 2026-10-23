@@ -84,15 +84,18 @@ def _gate_note(report: capture.CaptureReport) -> str:
 
 
 def _read_failure(turn: Turn) -> str:
-    """Only WhatsApp queues a read for later; the web chat answers in the same request, as before."""
-    if turn.read_failure == "defer" and (turn.inbound.channel != "whatsapp" or not turn.inbound.media_id):
+    """WhatsApp and the web chat queue a read for later, so the web chat behaves like the channel it stands in for:
+    the report arrives in the chat when the read finishes. A web chat by someone not signed in has nowhere to put it."""
+    chat_user = turn.inbound.channel == "whatsapp" or turn.state.user_id.startswith("acct:")
+    if turn.read_failure == "defer" and not (chat_user and turn.inbound.media_id):
         return "fallback"
     return turn.read_failure
 
 
 async def _defer(turn: Turn, mime: str, media_id: str, error: str) -> None:
     """Keep the photo and read it again shortly (app/flows/extract.py); the consumer hears this once."""
-    extract_jobs.create(turn.state.user_id, "whatsapp", media_id, mime, turn.lang, turn.inbound.reply_to, error)
+    channel: extract_jobs.Channel = "whatsapp" if turn.inbound.channel == "whatsapp" else "web"
+    extract_jobs.create(turn.state.user_id, channel, media_id, mime, turn.lang, turn.inbound.reply_to, error)
     await turn.say_key("reading_later")
 
 

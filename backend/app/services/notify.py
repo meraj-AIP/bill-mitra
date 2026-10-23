@@ -11,7 +11,7 @@ from typing import Any
 
 from app.channels.whatsapp.mapper import user_key
 from app.config import get_settings
-from app.core.messages import TextOut
+from app.core.messages import Outbound, TextOut
 from app.domain.conversation.lang import text
 from app.services import delivery
 from app.store import chat, outbox
@@ -84,14 +84,22 @@ def _outcome(row: outbox.Row) -> Outcome:
     return Outcome(delivery.DELIVERY[row.state], row.note, row.wamid, row.id)
 
 
+def to_web_chat(user_id: str, message: Outbound) -> bool:
+    """The one way a message reaches a web chat outside the person's own turn: a staff update, an automatic request
+    or reminder, a bill read that finished later. It is stored as the same message model the chat renders, and the
+    open page picks it up when it polls. A text that WhatsApp would send as a template outside 24 hours is kept as
+    the text itself. False when there is no signed in person behind `user_id` to show it to."""
+    if not user_id.startswith("acct:"):
+        return False
+    chat.record_out(user_id, message.model_dump(exclude_none=True))
+    return True
+
+
 def _to_web_chat(complaint: Complaint, message: str) -> Outcome:
-    """A complaint raised in the web app has no phone to send to. The update lands in the person's web chat, as it
-    would on WhatsApp, so the chat preview behaves like the real channel. A complaint with no account behind it
-    (logged by staff for a caller with no mobile) can only be kept on the complaint."""
-    if not complaint.user_id.startswith("acct:"):
-        return Outcome("stored")
-    chat.record_out(complaint.user_id, TextOut(body=message[:4096], language=complaint.language or "te").model_dump())
-    return Outcome("sent")
+    """A complaint raised in the web app has no phone to send to, so the update lands in the person's web chat. A
+    complaint with no account behind it (logged by staff for a caller with no mobile) is kept on the complaint."""
+    sent = to_web_chat(complaint.user_id, TextOut(body=message[:4096], language=complaint.language or "te"))
+    return Outcome("sent" if sent else "stored")
 
 
 async def _deliver(complaint: Complaint, message: str, template_status: str | None, kind: str) -> Outcome:

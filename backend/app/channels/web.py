@@ -75,7 +75,13 @@ async def send(message: WebMessage, account: ChatUser) -> StreamingResponse:
 
 @router.get("/history", response_model=chat.ChatPage)
 async def history(account: ChatUser, before: Annotated[int | None, Query(ge=1)] = None,
+                  after: Annotated[int | None, Query(ge=0)] = None,
                   limit: Annotated[int, Query(ge=1, le=chat.MAX_PAGE)] = 40) -> chat.ChatPage:
+    """`before` pages back through older messages; `after` returns what is newer, for the open page to poll."""
+    if before is not None and after is not None:
+        raise api_error(422, "bad_cursor", "Ask for messages before an id or after one, not both.")
+    if after is not None:
+        return chat.since(account.user_id, after, limit)
     return chat.page(account.user_id, before, limit)
 
 

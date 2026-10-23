@@ -107,19 +107,21 @@ async def _dispatch(turn: Turn, inbound: Inbound) -> None:
         await question.handle_text(turn, inbound.text)
 
 
-def _recording(emit: Emit, inbound: Inbound, record_in: bool = True) -> Emit:
+def _recording(emit: Emit, inbound: Inbound, record_in: bool = True) -> tuple[Emit, int | None]:
     """Keep the conversation as the person saw it, so it reads back on any device after sign in. A retried turn or a
-    queued bill read does not store the person's message a second time."""
+    queued bill read does not store the person's message a second time. Returns the wrapped emit and the stored id
+    of the person's message."""
     asked = chat.record_in(inbound) if record_in else None
 
     async def recorded(event: Event) -> None:
         if event.kind == "message" and event.message is not None:
-            chat.record_out(inbound.user_id, event.message.model_dump(exclude_none=True))
+            stored = chat.record_out(inbound.user_id, event.message.model_dump(exclude_none=True))
+            event = event.model_copy(update={"chat_id": stored})
         elif event.kind == "transcript" and event.text and asked:
             chat.add_transcript(asked, event.text)
         await emit(event)
 
-    return recorded
+    return recorded, asked
 
 
 def _kept(turn: Turn) -> bool:
@@ -149,8 +151,11 @@ async def handle(inbound: Inbound, emit: Emit, language: str | None = None, *, r
     state = repos.get_user(inbound.user_id, inbound.channel)
     if language:
         state.language = language
-    turn = Turn(inbound=inbound, state=state, tracer=Tracer(_recording(emit, inbound, record_in=first_try)))
+    recorded, asked = _recording(emit, inbound, record_in=first_try)
+    turn = Turn(inbound=inbound, state=state, tracer=Tracer(recorded))
     try:
+        if asked is not None:
+            await emit(Event(kind="state", chat_id=asked))
         if state.created and inbound.channel == "whatsapp":
             await _privacy_notice(turn, inbound)
         await _dispatch(turn, inbound)
@@ -166,7 +171,7 @@ async def resume_document(inbound: Inbound, emit: Emit, last_try: bool) -> str:
     last try a provider failure is raised, so the job is retried; on the last try the consumer is offered Try again
     and typed units, as on any failed read. Returns the read's outcome."""
     state = repos.get_user(inbound.user_id, inbound.channel)
-    turn = Turn(inbound=inbound, state=state, tracer=Tracer(_recording(emit, inbound, record_in=False)),
+    turn = Turn(inbound=inbound, state=state, tracer=Tracer(_recording(emit, inbound, record_in=False)[0]),
                 read_failure="fallback" if last_try else "raise")
     data = media.load(inbound.media_id or "")
     if not data:

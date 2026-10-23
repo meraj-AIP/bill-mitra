@@ -16,7 +16,7 @@ from app.store.db import ts, tx
 BACKOFF_S = (60, 300, 900)
 MAX_ATTEMPTS = 4
 LEASE_SECONDS = 600  # a read takes up to about two minutes with its retries; longer means the worker died
-Channel = Literal["whatsapp", "dashboard"]
+Channel = Literal["whatsapp", "web", "dashboard"]  # web: the web chat, which reads the report back like WhatsApp
 State = Literal["queued", "running", "done", "failed", "dismissed"]
 
 _DDL = (

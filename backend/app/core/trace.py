@@ -29,6 +29,9 @@ class Event(BaseModel):
     message: Outbound | None = None
     text: str | None = None
     data: dict[str, Any] | None = None
+    # The stored chat row behind a message, or (on a "state" event) behind what the person just sent, so an open
+    # page that also polls for new messages can tell the ones it already shows.
+    chat_id: int | None = None
 
 
 Emit = Callable[[Event], Awaitable[None]]
