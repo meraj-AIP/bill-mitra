@@ -10,6 +10,7 @@ import { type RecorderState, useRecorder } from '../hooks/useRecorder';
 interface ComposerProps {
   placeholder: string;
   busy: boolean;
+  autoFocus?: boolean;
   onText: (text: string) => void;
   onAttach: () => void;
   onVoice: (blob: Blob) => void;
@@ -47,7 +48,7 @@ function Recording({ seconds }: { seconds: number }) {
   );
 }
 
-export function Composer({ placeholder, busy, onText, onAttach, onVoice }: ComposerProps) {
+export function Composer({ placeholder, busy, autoFocus = false, onText, onAttach, onVoice }: ComposerProps) {
   const [draft, setDraft] = useState('');
   const recorder = useRecorder(onVoice);
   const recording = recorder.state === 'recording';
@@ -76,7 +77,7 @@ export function Composer({ placeholder, busy, onText, onAttach, onVoice }: Compo
           boxShadow: theme.palette.chat.shadow, transition: 'box-shadow 160ms',
           '&:focus-within': { boxShadow: `0 0 0 2px ${theme.palette.chat.accent}` } })}>
         {recording ? <Recording seconds={recorder.seconds} /> : (
-          <InputBase value={draft} onChange={(e) => setDraft(e.target.value)} multiline maxRows={5} placeholder={placeholder}
+          <InputBase value={draft} onChange={(e) => setDraft(e.target.value)} multiline maxRows={5} placeholder={placeholder} autoFocus={autoFocus}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();

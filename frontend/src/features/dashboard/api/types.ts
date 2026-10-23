@@ -203,6 +203,10 @@ export interface ExtractJob {
   bill_id: string | null;
   /** Set when status is failed: why, in words a consumer can act on. */
   detail: string | null;
+  /** Set when status is done but nothing was saved: the read asked for a retake, or the file was not a bill. */
+  outcome?: 'retake' | 'not_a_bill' | null;
+  /** The translated reason that goes with outcome. Older servers put it in detail instead. */
+  reason?: string | null;
 }
 
 export type UploadOutcome = { kind: 'report'; report: BillReport } | { kind: 'job'; job: ExtractJob };

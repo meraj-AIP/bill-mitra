@@ -7,7 +7,7 @@ import { useState, type FormEvent } from 'react';
 import { useCreateRole, useResetRole, useUpdateRole, type Role, type RoleDraft } from '../api/rolesApi';
 import { separationProblem } from '../model/permissionText';
 import { PermissionGroups } from './PermissionGroups';
-import { useConfirm } from '@/shared/feedback';
+import { ErrorNotice, useConfirm } from '@/shared/feedback';
 
 interface RoleDialogProps {
   /** Null to create a new role. */
@@ -137,7 +137,7 @@ export function RoleDialog({ role, onClose }: RoleDialogProps) {
         <DialogTitle>{titleOf(role)}</DialogTitle>
         <DialogContent dividers>
           <Stack sx={{ gap: 2.5 }}>
-            {error && <Alert severity="error">{error.message}</Alert>}
+            <ErrorNotice error={error} action="Saving the role" />
             {role?.builtin && <BuiltinNote role={role} />}
             {readOnly ? (
               <PermissionGroups value={draft.permissions} />

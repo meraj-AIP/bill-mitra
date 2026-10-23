@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react';
 
 import { MIN_PASSWORD } from '@/features/auth';
 import { isStatus } from '@/shared/api/http';
+import { ErrorNotice } from '@/shared/feedback';
 import type { UnitRef } from '@/shared/api/types';
 
 import { useCreateAccount, type NewAccount } from '../api/adminApi';
@@ -47,7 +48,6 @@ export function CreateAccountDialog({ open, onClose }: { open: boolean; onClose:
   };
 
   const patch = (changes: Partial<Draft>) => setValues((v) => ({ ...v, ...changes }));
-  const error = isStatus(create.error, 409) ? 'An account with this email already exists.' : (create.error?.message ?? null);
 
   return (
     <Dialog open={open} onClose={close} fullWidth maxWidth="sm">
@@ -55,7 +55,9 @@ export function CreateAccountDialog({ open, onClose }: { open: boolean; onClose:
         <DialogTitle>Create a staff account</DialogTitle>
         <DialogContent>
           <Stack sx={{ gap: 2, pt: 1 }}>
-            {error && <Alert severity="error">{error}</Alert>}
+            {isStatus(create.error, 409)
+              ? <Alert severity="error">An account with this email already exists.</Alert>
+              : <ErrorNotice error={create.error} action="Creating the account" />}
             <StaffFields role={values.role} scopes={values.scopes} onRole={(role) => patch({ role })} onScopes={(scopes) => patch({ scopes })}
               scopeError={show('scopes')} />
             {show('role') && <Alert severity="warning">{show('role')}</Alert>}

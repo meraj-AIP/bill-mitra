@@ -1,6 +1,9 @@
 import { Alert, Box, Button, CircularProgress, Link, Stack, TextField, Typography } from '@mui/material';
 import { useState, type FormEvent } from 'react';
 
+import { ErrorNotice } from '@/shared/feedback';
+
+import { attemptsLeft } from '../api/uscApi';
 import { useCountdown } from '../hooks/useCountdown';
 
 interface UscCodeStepProps {
@@ -9,13 +12,20 @@ interface UscCodeStepProps {
   resendAt: number | null;
   verifying: boolean;
   resending: boolean;
-  error: string | null;
+  error: Error | null;
   onVerify: (code: string) => void;
   onResend: () => void;
   onChangeNumber: () => void;
 }
 
 const CODE = /^\d{6}$/;
+
+function TriesLeft({ error }: { error: Error | null }) {
+  const left = attemptsLeft(error);
+  if (left === null) return null;
+  const text = left === 0 ? 'No tries left on this code. Ask for a new code.' : left === 1 ? 'You have 1 try left.' : `You have ${left} tries left.`;
+  return <Typography variant="body2" sx={{ color: 'text.secondary', mt: -1 }} aria-live="polite">{text}</Typography>;
+}
 
 export function UscCodeStep({ message, resendAt, verifying, resending, error, onVerify, onResend, onChangeNumber }: UscCodeStepProps) {
   const [code, setCode] = useState('');
@@ -27,7 +37,8 @@ export function UscCodeStep({ message, resendAt, verifying, resending, error, on
   return (
     <Stack component="form" onSubmit={submit} noValidate sx={{ gap: 2 }}>
       <Alert severity="info">{message ?? 'If this connection has a registered mobile, we have sent a 6 digit code to it.'}</Alert>
-      {error && <Alert severity="error" role="alert">{error}</Alert>}
+      <ErrorNotice error={error} action="Checking the code" />
+      <TriesLeft error={error} />
       <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1.5, alignItems: { sm: 'flex-start' } }}>
         <TextField label="6 digit code" value={code} autoFocus
           onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}

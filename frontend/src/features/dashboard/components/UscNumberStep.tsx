@@ -1,7 +1,8 @@
-import { Alert, Button, CircularProgress, Stack, TextField, ToggleButton, ToggleButtonGroup } from '@mui/material';
+import { Button, CircularProgress, Stack, TextField, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import type { FormEvent } from 'react';
 
 import { DISCOMS, type Discom } from '@/shared/api/types';
+import { ErrorNotice } from '@/shared/feedback';
 import { USC_HINT, uscShapeOk } from '@/shared/lib/serviceNumber';
 
 interface UscNumberStepProps {
@@ -10,7 +11,7 @@ interface UscNumberStepProps {
   onDiscom: (discom: Discom) => void;
   onUsc: (usc: string) => void;
   pending: boolean;
-  error: string | null;
+  error: Error | null;
   onSend: () => void;
 }
 
@@ -20,7 +21,7 @@ export function UscNumberStep({ discom, usc, onDiscom, onUsc, pending, error, on
   const submit = (event: FormEvent) => { event.preventDefault(); onSend(); };
   return (
     <Stack component="form" onSubmit={submit} noValidate sx={{ gap: 2 }}>
-      {error && <Alert severity="error">{error}</Alert>}
+      <ErrorNotice error={error} action="Sending the code" />
       <ToggleButtonGroup exclusive value={discom} onChange={(_e, v: Discom | null) => v && onDiscom(v)} aria-label="Your DISCOM"
         sx={{ flexWrap: 'wrap', '& .MuiToggleButton-root': { px: 2.5, textTransform: 'none', fontWeight: 600 } }}>
         {DISCOMS.map((d) => <ToggleButton key={d} value={d} color="primary">{d}</ToggleButton>)}

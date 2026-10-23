@@ -1,6 +1,7 @@
 import { Box, Container, Drawer, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import { isConsumer, useAuth } from '@/features/auth';
 
@@ -13,10 +14,11 @@ import { Device } from '../components/Device';
 import { NewChatDialog } from '../components/NewChatDialog';
 import { TracePanel } from '../components/TracePanel';
 import { useConversation } from '../hooks/useConversation';
-import { useHistory } from '../hooks/useHistory';
-import { UI } from '../model/strings';
+import { BILL_ACCEPT } from '@/shared/lib/billFile';
 
-const ACCEPT = 'image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif,application/pdf';
+import { useHistory } from '../hooks/useHistory';
+import { FAILURE_TEXT } from '../model/failures';
+import { UI } from '../model/strings';
 
 export function AssistantPage() {
   const theme = useTheme();
@@ -27,6 +29,8 @@ export function AssistantPage() {
   const [traceOpen, setTraceOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement | null>(null);
+  // Sent here from a bill that would not read: show how to type the units instead.
+  const typeUnits = useSearchParams()[0].get('hint') === 'units';
 
   const history = useHistory();
   const chat = useConversation(history.clear);
@@ -58,13 +62,13 @@ export function AssistantPage() {
         <Device>
           <ChatHeader language={language} busy={state.busy} />
           <ChatThread items={items} history={history} busy={state.busy} error={state.error} language={language}
-            onReply={(b) => void chat.reply(b)} onAttach={attach} onText={sendText} />
-          <Composer placeholder={UI[language].placeholder} busy={state.busy}
+            onReply={(b) => void chat.reply(b)} onRetry={chat.retry} onAttach={attach} onText={sendText} />
+          <Composer placeholder={typeUnits ? FAILURE_TEXT[language].unitsHint : UI[language].placeholder} busy={state.busy} autoFocus={typeUnits}
             onText={sendText} onAttach={attach} onVoice={(b) => void chat.sendVoice(b)} />
         </Device>
         {wide && staff && <Box sx={{ justifySelf: 'start', width: '100%', maxWidth: 360, pt: 2 }}>{trace}</Box>}
       </Box>
-      <Box component="input" type="file" accept={ACCEPT} ref={fileInput} sx={{ display: 'none' }} aria-hidden tabIndex={-1}
+      <Box component="input" type="file" accept={BILL_ACCEPT} ref={fileInput} sx={{ display: 'none' }} aria-hidden tabIndex={-1}
         onChange={(e) => {
           const file = e.currentTarget.files?.[0];
           if (file) void chat.sendFile(file);

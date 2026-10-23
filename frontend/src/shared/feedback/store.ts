@@ -7,6 +7,8 @@ export interface Toast {
   severity: ToastSeverity;
   title: string;
   message?: string | undefined;
+  /** The server's request id for a failure, shown small. */
+  reference?: string | null | undefined;
   action?: { label: string; run: () => void } | undefined;
 }
 

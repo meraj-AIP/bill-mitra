@@ -3,28 +3,26 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import type { ReviewSummary } from '@/features/review';
 import { getJson, isStatus, sendJson, uploadForm } from '@/shared/api/http';
 import { queryKeys } from '@/shared/api/queryKeys';
+import { BILL_MAX_MB, billFileIssue, type BillFileIssue } from '@/shared/lib/billFile';
 import { shrinkImage } from '@/shared/lib/image';
 import type { Language } from '@/shared/lib/languages';
 
 import type { BillListQuery, BillReport, BillSummary, ExtractJob, Page, UploadOutcome } from './types';
 
-export const MAX_MB = 12;
-const MAX_BYTES = MAX_MB * 1024 * 1024;
-export const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf'];
-// Some browsers give iPhone photos no type at all, so the extension is checked too.
-const HEIC_NAME = /\.hei[cf]$/i;
+const FILE_PROBLEM: Record<BillFileIssue, string> = {
+  type: 'Please choose a JPG, PNG, WEBP, HEIC or PDF file.',
+  size: `This file is over ${BILL_MAX_MB} MB. Please choose a smaller one.`,
+};
 
 /** Same limits the server enforces, checked first so the user is not kept waiting for a 413 or 415. */
 export function validateFile(file: File): string | null {
-  if (!ACCEPTED_TYPES.includes(file.type) && !HEIC_NAME.test(file.name)) return 'Please choose a JPG, PNG, WEBP, HEIC or PDF file.';
-  if (file.size > MAX_BYTES) return `This file is over ${MAX_MB} MB. Please choose a smaller one.`;
-  return null;
+  const issue = billFileIssue(file);
+  return issue ? FILE_PROBLEM[issue] : null;
 }
 
-/** A 200 is the finished report; a 202 means the read hit a passing fault and the server queued it as a job. */
+/** A 200 is the finished report; a 202 means the read hit a passing fault and the server queued it as a job. The
+ * caller checks the file with validateFile first. */
 export async function uploadBill(file: File, language: Language, onProgress?: (fraction: number) => void): Promise<UploadOutcome> {
-  const problem = validateFile(file);
-  if (problem) throw new Error(problem);
   const body = await shrinkImage(file);
   const form = new FormData();
   form.append('file', body, file.name);

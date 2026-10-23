@@ -5,7 +5,7 @@ import { useFilePreview } from '@/shared/hooks/useFilePreview';
 import type { Language } from '@/shared/lib/languages';
 
 import { useUploadBill, validateFile } from '../api/billsApi';
-import { canResend, uploadProblem, viewOf } from '../model/upload';
+import { canResend, viewOf } from '../model/upload';
 import { useExtractWait } from './useExtractWait';
 
 export interface Sending {
@@ -59,7 +59,7 @@ export function useBillUpload(returnTo: string | null = null) {
   };
 
   const failure = upload.error;
-  const unsaved = upload.data?.kind === 'report' && !upload.data.report.id ? upload.data.report : null;
+  const unsaved = (upload.data?.kind === 'report' && !upload.data.report.id ? upload.data.report : null) ?? wait.ended;
   const resend = file && failure && canResend(failure) ? () => send(file) : null;
 
   return {
@@ -70,7 +70,10 @@ export function useBillUpload(returnTo: string | null = null) {
     sending: upload.isPending ? { progress, retrying: upload.failureCount > 0, paused: upload.isPaused } : null,
     waitCheckFailed: wait.checkFailed,
     unsaved,
-    error: uploadProblem(problem, failure, wait.error),
+    /** A file the browser refused before sending. */
+    problem,
+    /** The send itself failed. */
+    failure,
     // Try again resends the same photo, kept with its preview.
     tryAgain: resend,
     onFile,

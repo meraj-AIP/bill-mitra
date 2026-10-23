@@ -1,7 +1,18 @@
+export type ErrorExtras = Record<string, unknown>;
+
+/**
+ * A refused or failed request. message is the server's own sentence; code, ref and extras come from the error
+ * envelope {detail: {code, message, ref, ...extras}}. Old string details and validation lists still work.
+ * serverText is false when the server said nothing usable, so callers fall back to their own words.
+ */
 export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly code: string | null = null,
+    readonly ref: string | null = null,
+    readonly extras: ErrorExtras = {},
+    readonly serverText = true,
   ) {
     super(message);
   }
@@ -28,19 +39,34 @@ export function isStatus(error: unknown, status: number): boolean {
   return error instanceof ApiError && error.status === status;
 }
 
+// Kept as the message when the server said nothing usable, so a screen that still prints error.message reads sensibly.
+const NO_TEXT = 'Something went wrong. Please try again.';
+const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);
+
+function fromDetail(detail: unknown, status: number, headerRef: string | null): ApiError | null {
+  const plain = text(detail);
+  if (plain) return new ApiError(plain, status, null, headerRef);
+  // Old FastAPI validation errors (422) send a list of problems; the first one is enough to act on.
+  const first: unknown = Array.isArray(detail) ? detail[0] : null;
+  const msg = first && typeof first === 'object' && 'msg' in first ? text(first.msg) : null;
+  if (msg) return new ApiError(msg, status, null, headerRef);
+  if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return null;
+  const { code, message, ref, ...extras } = detail as Record<string, unknown>;
+  const said = text(message);
+  return new ApiError(said ?? NO_TEXT, status, text(code), text(ref) ?? headerRef, extras, said !== null);
+}
+
 async function readError(response: Response): Promise<ApiError> {
-  let message = `Request failed (${response.status})`;
+  // The ref is also sent as a header, so a body that is not JSON (a proxy error page) can still be traced.
+  const headerRef = text(response.headers.get('X-Request-Id'));
   try {
     const body: unknown = await response.json();
-    const detail: unknown = body && typeof body === 'object' && 'detail' in body ? body.detail : null;
-    if (typeof detail === 'string') message = detail;
-    // FastAPI validation errors (422) send a list of problems; the first one is enough to act on.
-    const first: unknown = Array.isArray(detail) ? detail[0] : null;
-    if (first && typeof first === 'object' && 'msg' in first && typeof first.msg === 'string') message = first.msg;
+    const found = fromDetail(body && typeof body === 'object' && 'detail' in body ? body.detail : null, response.status, headerRef);
+    if (found) return found;
   } catch {
-    // The body was not JSON; keep the status message.
+    // The body was not JSON; the status alone says what kind of failure it was.
   }
-  return new ApiError(message, response.status);
+  return new ApiError(NO_TEXT, response.status, null, headerRef, {}, false);
 }
 
 function checkStatus(url: string, status: number): void {
@@ -103,7 +129,8 @@ export function uploadForm<T>(url: string, form: FormData, onProgress?: (fractio
     xhr.ontimeout = xhr.onerror;
     xhr.onload = () => {
       const empty = [204, 205, 304].includes(xhr.status);
-      const response = new Response(empty ? null : xhr.responseText, { status: xhr.status });
+      const response = new Response(empty ? null : xhr.responseText,
+        { status: xhr.status, headers: { 'X-Request-Id': xhr.getResponseHeader('X-Request-Id') ?? '' } });
       if (response.ok) {
         if (empty) return resolve({ status: xhr.status, data: undefined as T });
         void response.json().then((data: T) => resolve({ status: xhr.status, data }), reject);

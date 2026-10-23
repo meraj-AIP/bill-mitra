@@ -25,14 +25,3 @@ export const retryUnsent = (count: number, error: Error): boolean => count < MAX
 
 /** Spread into useMutation for routes where a second call changes nothing (a PUT, a mark as read, a draft). */
 export const IDEMPOTENT = { retry: retryQuery, retryDelay } as const;
-
-/** Words for a failed action, so a person knows whether to try again or check first. */
-export function errorText(error: Error): string {
-  if (error instanceof NetworkError) {
-    return error.sent
-      ? 'The connection dropped before we heard back, so this may have gone through. Check before trying again.'
-      : 'Could not reach the server. Check your connection and try again.';
-  }
-  if (error instanceof ApiError && error.status >= 500) return 'Something went wrong on our side. Please try again in a moment.';
-  return error.message;
-}

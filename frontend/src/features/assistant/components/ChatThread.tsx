@@ -1,15 +1,17 @@
-import { Box, Typography } from '@mui/material';
+import { Box } from '@mui/material';
 import { useMemo } from 'react';
 
-import { ErrorState } from '@/shared/components/States';
+import { ApiError } from '@/shared/api/http';
 
 import type { Language, ReplyButton } from '../api/types';
 import type { History } from '../hooks/useHistory';
 import { useThreadScroll } from '../hooks/useThreadScroll';
 import type { ThreadItem } from '../model/conversation';
+import { FAILURE_TEXT, failureLine, type ChatFailure } from '../model/failures';
 import { UI } from '../model/strings';
 import { buildRows } from '../model/thread';
 import { BotMessage } from './BotMessage';
+import { FailureLine } from './FailureLine';
 import { DayChip, JumpToLatest, LoadEarlier, SavedNotice, ThreadSkeleton, TypingBubble } from './ThreadParts';
 import { UserMessage } from './UserMessage';
 import { WelcomeCard } from './WelcomeCard';
@@ -18,9 +20,10 @@ interface ChatThreadProps {
   items: ThreadItem[];
   history: History;
   busy: boolean;
-  error: string | null;
+  error: ChatFailure | null;
   language: Language;
   onReply: (button: ReplyButton) => void;
+  onRetry: () => void;
   onAttach: () => void;
   onText: (text: string) => void;
 }
@@ -64,7 +67,21 @@ function Wallpaper() {
   );
 }
 
-export function ChatThread({ items, history, busy, error, language, onReply, onAttach, onText }: ChatThreadProps) {
+function TurnFailure({ error, language, onRetry }: { error: ChatFailure; language: Language; onRetry: () => void }) {
+  const { text, ref } = failureLine(error, language);
+  // A refused file needs a different file, not the same one again.
+  return <FailureLine text={text} reference={ref} language={language} onRetry={error.kind === 'request' ? onRetry : undefined} />;
+}
+
+function HistoryFailure({ history, language }: { history: History; language: Language }) {
+  if (!history.error) return null;
+  return (
+    <FailureLine text={FAILURE_TEXT[language].history} language={language} onRetry={history.retry}
+      reference={history.error instanceof ApiError ? history.error.ref : null} />
+  );
+}
+
+export function ChatThread({ items, history, busy, error, language, onReply, onRetry, onAttach, onText }: ChatThreadProps) {
   const empty = !history.loading && !history.error && items.length === 0 && !busy;
   const { box, content, onScroll, atBottom, unread, jumpToLatest, holdPosition } = useThreadScroll(items);
   const loadEarlier = () => {
@@ -85,21 +102,11 @@ export function ChatThread({ items, history, busy, error, language, onReply, onA
             !history.loading && <SavedNotice />
           )}
           {history.loading && <ThreadSkeleton />}
-          {history.error && (
-            <Box sx={{ px: 2, pt: 2 }}>
-              <ErrorState message={`Could not load your saved chat. ${history.error}`} onRetry={history.retry} />
-            </Box>
-          )}
+          <HistoryFailure history={history} language={language} />
           {empty && <WelcomeCard language={language} busy={busy} onAttach={onAttach} onText={onText} />}
           <Messages items={items} busy={busy} onReply={onReply} />
           {busy && <TypingBubble label={UI[language].typing} />}
-          {error && (
-            <Typography variant="caption" component="p" role="alert"
-              sx={{ mx: 'auto', mt: 1.5, px: 1.5, py: 0.75, width: 'fit-content', maxWidth: '86%', borderRadius: '8px', textAlign: 'center',
-                bgcolor: 'error.light', color: 'error.dark' }}>
-              {error}
-            </Typography>
-          )}
+          {error && <TurnFailure error={error} language={language} onRetry={onRetry} />}
         </Box>
       </Box>
       {!atBottom && <JumpToLatest unread={unread} onJump={jumpToLatest} />}

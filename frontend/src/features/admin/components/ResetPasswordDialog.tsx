@@ -6,7 +6,7 @@ import { MIN_PASSWORD, type Account } from '@/features/auth';
 import { useResetPassword } from '../api/adminApi';
 import { generatePassword } from '../model/labels';
 import { InitialPasswordField } from './InitialPasswordField';
-import { ActionError } from '@/shared/feedback';
+import { ErrorNotice } from '@/shared/feedback';
 
 export function ResetPasswordDialog({ account, onClose }: { account: Account; onClose: () => void }) {
   const reset = useResetPassword();
@@ -30,7 +30,7 @@ export function ResetPasswordDialog({ account, onClose }: { account: Account; on
             <Typography variant="body2" sx={{ color: 'text.secondary' }}>
               For {account.name} ({account.login}). They are signed out everywhere and use this password next time.
             </Typography>
-            <ActionError error={reset.error} action="The password reset" />
+            <ErrorNotice error={reset.error} action="The password reset" />
             {reset.isSuccess && <Alert severity="success">Password reset. Copy it now if you have not; it is not shown again.</Alert>}
             <InitialPasswordField label="New password" value={password} onChange={setPassword} error={problem} />
           </Stack>
