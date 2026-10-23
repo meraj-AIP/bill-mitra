@@ -1,5 +1,5 @@
-"""Soniox speaks first and Sarvam stands behind it. Soniox is faked at its HTTP boundary and Sarvam at its call, so
-nothing leaves the machine; keys are obviously fake."""
+"""Voice notes come from Soniox, with an Indian accent voice unless one is configured. Soniox is faked at its HTTP
+boundary, so nothing leaves the machine; keys are obviously fake."""
 
 import asyncio
 import json
@@ -50,49 +50,37 @@ def soniox(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     soniox_tts.forget()
 
 
-@pytest.fixture
-def sarvam(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    monkeypatch.setattr(get_settings(), "sarvam_api_key", "test-key-not-real")
-    spoken: list[str] = []
-
-    async def fake(_client: object, text: str, _code: str) -> bytes:
-        spoken.append(text)
-        return b"ID3" + secrets.token_bytes(64)
-
-    monkeypatch.setattr(tts, "_synthesise", fake)
-    return spoken
-
-
 def _text() -> str:
     return f"Your bill is checked {secrets.token_hex(4)}."
 
 
-def test_soniox_speaks_first_with_an_indian_voice(soniox, sarvam):
+def test_soniox_speaks_with_an_indian_voice(soniox):
     soniox["shared"] = [{"id": "Arjun", "accent": "indian", "gender": "male"}]
     text = _text()
     assert asyncio.run(tts.speak(text, "te"))
-    assert soniox["spoken"] == [("te", "Arjun", text)] and sarvam == []
+    assert soniox["spoken"] == [("te", "Arjun", text)]
     assert asyncio.run(tts.speak(text, "te")) and len(soniox["spoken"]) == 1  # kept, never paid for twice
 
 
-def test_sarvam_takes_over_when_soniox_fails(soniox, sarvam):
+def test_when_soniox_fails_the_words_go_as_text(soniox):
     soniox["fail"] = True
-    text = _text()
-    assert asyncio.run(tts.speak(text, "hi")) and sarvam == [text]
+    assert asyncio.run(tts.speak(_text(), "hi")) is None
 
 
-def test_urdu_and_other_soniox_languages_get_a_voice_sarvam_lacks(soniox, sarvam):
+def test_urdu_and_every_other_soniox_language_get_a_voice(soniox):
     for language in ("ur", "ta"):
         assert asyncio.run(tts.speak(_text(), language))
-    assert [s[0] for s in soniox["spoken"]] == ["ur", "ta"] and sarvam == []
-    soniox["fail"] = True
-    assert asyncio.run(tts.speak(_text(), "ur")) is None  # no Sarvam voice for Urdu, so text is sent
+    assert [s[0] for s in soniox["spoken"]] == ["ur", "ta"]
 
 
-def test_a_language_soniox_does_not_list_goes_to_sarvam(soniox, sarvam):
+def test_a_language_soniox_does_not_list_has_no_voice(soniox):
     soniox["languages"] = ["en"]
-    text = _text()
-    assert asyncio.run(tts.speak(text, "te")) and sarvam == [text] and soniox["spoken"] == []
+    assert asyncio.run(tts.speak(_text(), "te")) is None and soniox["spoken"] == []
+
+
+def test_no_key_means_no_voice_and_no_call(soniox, monkeypatch):
+    monkeypatch.setattr(get_settings(), "soniox_api_key", "")
+    assert asyncio.run(tts.speak(_text(), "te")) is None and soniox["spoken"] == []
 
 
 def test_the_voice_choice_prefers_the_accent_then_a_description_then_any():
@@ -103,17 +91,17 @@ def test_the_voice_choice_prefers_the_accent_then_a_description_then_any():
     assert soniox_tts.choose_voice([], [], "indian") is None
 
 
-def test_a_configured_voice_wins_and_no_accent_lookup_is_made(soniox, sarvam, monkeypatch):
+def test_a_configured_voice_wins_and_no_accent_lookup_is_made(soniox, monkeypatch):
     monkeypatch.setattr(get_settings(), "soniox_tts_voice", "Maya")
     soniox["shared"] = "not a list"  # would break the lookup if it were made
     assert asyncio.run(tts.speak(_text(), "en"))
     assert soniox["spoken"][0][1] == "Maya"
 
 
-def test_a_reply_that_is_not_audio_is_not_kept_as_a_voice_note(soniox, sarvam, monkeypatch):
+def test_a_reply_that_is_not_audio_is_not_kept_as_a_voice_note(soniox, monkeypatch):
     async def bad(*_: object) -> bytes:
         raise ValueError("no audio in the reply")
 
     monkeypatch.setattr(soniox_tts, "synthesise", bad)
     text = _text()
-    assert asyncio.run(tts.speak(text, "en")) and sarvam == [text]
+    assert asyncio.run(tts.speak(text, "en")) is None

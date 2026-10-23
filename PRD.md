@@ -126,7 +126,7 @@ Paths are relative to the repository root. `backend/app` is shortened to `b/` an
 | FR-14 | Explanation in Telugu, English, Hindi and Urdu, written in the order a person would say it: what you pay (the printed bill amount), slab group, Gruha Jyothi, audit result, change from last month, true-up, saving tip, next month. | `b/domain/conversation/composer.py`, `b/domain/conversation/lang/te.py`, `en.py`, `hi.py`, `ur.py` | Built |
 | FR-15 | The language model may phrase the explanation using only the engine's facts. With no model key, the checked template is used. | `b/services/llm.py`, `b/flows/bill.py` | Built |
 | FR-16 | Number guard: extract every number from the model's text (Telugu, Devanagari and Urdu digits included). If any number is not in the engine's facts or a small fixed list (such as 1912, 200), reject the text and use the template. | `b/domain/conversation/guard.py` | Built |
-| FR-17 | Voice out: send the explanation as a voice note with Sarvam Bulbul in Telugu, English or Hindi. Split long text into chunks. Cache audio by text so repeats cost nothing. If voice fails, send text. | `b/services/tts.py`, `b/flows/turn.py` | Built (needs key) |
+| FR-17 | Voice out: send the explanation as a voice note with a Soniox Indian-accent voice in Telugu, English, Hindi or Urdu. Split long text into chunks. Cache audio by text so repeats cost nothing. If voice fails, send text. | `b/services/tts.py`, `b/flows/turn.py` | Built (needs key) |
 | FR-18 | Voice in: transcribe a voice question with Soniox, detect the language, switch the reply language, and reply with voice and text. | `b/services/stt.py`, `b/core/service.py` | Built (needs key) |
 | FR-19 | Summary card under the voice note: audit status, units and group, amount to pay, due date, next month estimate. | `b/domain/conversation/composer.py` (`summary_card`) | Built |
 | FR-20 | Prediction: estimate next month as a range and an amount. History is the usage table printed on the bill plus the account's own earlier uploads for the same service number. Use the same month last year adjusted for recent trend when 6 or more months exist; otherwise use this bill and a seasonal factor. | `b/domain/prediction.py`, `b/store/history.py` | Built |
@@ -258,8 +258,7 @@ Customer charges come from the TGERC schedule: Rs 40, 70, 90, 100, 120, 140 and 
 
 ### Provider details not yet verified
 
-- Sarvam: model `bulbul:v3`, speaker `kavya`. The API field for language has changed between versions, so the code tries `target_language_code` and then `language_code`. To verify with a live key.
-- Soniox: model `stt-async-v5`. To verify with a live key.
+- Soniox: listening `stt-async-v5` and voice `tts-rt-v2`, both verified with a live key on 23 Oct 2026 (India region).
 - Azure OpenAI: `gpt-4.1` for reading bills (300k tokens per minute capacity) and `gpt-4.1-mini` for text. To review for data residency.
 
 ### Reading accuracy so far

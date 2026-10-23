@@ -11,7 +11,7 @@ Hard rules still hold (no model numbers, number guard, no consumer data in logs,
   sleep function is injectable).
 - Retry only transient failures: timeouts, connection errors, HTTP 408, 409 where the provider says retry, 425, 429,
   500, 502, 503, 504. Never 400, 401, 403, 404, 422: those are logged once and surfaced.
-- Applied to: Azure OpenAI (vision read, classify, wording, assist), Sarvam TTS, Soniox STT, WhatsApp Graph (send,
+- Applied to: Azure OpenAI (vision read, classify, wording, assist), Soniox TTS and STT, WhatsApp Graph (send,
   media upload, media download), DISCOM billing records, DISCOM bills by USC. Each caller keeps its own settings
   (vision: 3 attempts in 60 s; wording and classify: 2 attempts in 15 s, then the rules fallback; WhatsApp send: 3
   attempts in 20 s inline, then the outbox).

@@ -1,4 +1,4 @@
-"""What costs money to make once: Sarvam voice notes by their exact text, and the language model's bill explanation
+"""What costs money to make once: voice notes by their exact text, and the language model's bill explanation
 by the bill's figures. In the database, so every worker and instance shares one cache and a write is never lost.
 
 Neither table holds a name, number or address: keys are hashes, explanations carry only bill figures. Rows go with

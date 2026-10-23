@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 _TMP = tempfile.mkdtemp(prefix="billmitra-test-")
 os.environ["DATA_DIR"] = _TMP
-for key in ("OPENAI_API_KEY", "SARVAM_API_KEY", "SONIOX_API_KEY", "WHATSAPP_TOKEN"):
+for key in ("OPENAI_API_KEY", "SONIOX_API_KEY", "WHATSAPP_TOKEN"):
     os.environ[key] = ""
 os.environ["AUTOMATION_ENABLED"] = "false"  # tests call the jobs directly with a fixed clock
 os.environ["QUEUE_RETRY_ENABLED"] = "false"  # the same for the queue recovery jobs

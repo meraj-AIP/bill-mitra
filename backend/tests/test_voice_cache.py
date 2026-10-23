@@ -1,5 +1,5 @@
-"""Paid calls are made once: a sentence already spoken is never sent to Sarvam again, and the same bill sent again
-reuses its checked explanation, so neither the language model nor Sarvam is paid twice. Nothing leaves the machine:
+"""Paid calls are made once: a sentence already spoken is never sent to Soniox again, and the same bill sent again
+reuses its checked explanation, so neither the language model nor Soniox is paid twice. Nothing leaves the machine:
 both providers are faked here."""
 
 import asyncio
@@ -9,7 +9,7 @@ import secrets
 import pytest
 
 from app.config import get_settings
-from app.services import llm, tts
+from app.services import llm, soniox_tts, tts
 from app.store import media, voice_cache
 from app.store.db import tx
 from tests.real import OCT_2025, reading, variant
@@ -17,39 +17,43 @@ from tests.test_complaints import chat
 
 
 @pytest.fixture
-def sarvam(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """Voice on with a fake Sarvam that records every text it is asked to speak."""
-    monkeypatch.setattr(get_settings(), "sarvam_api_key", "test-key-not-real")
+def voice(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Voice on with a fake Soniox that records every text it is asked to speak."""
+    monkeypatch.setattr(get_settings(), "soniox_api_key", "test-key-not-real")
     spoken: list[str] = []
 
-    async def fake(_client: object, text: str, _code: str) -> bytes:
+    async def catalogue(_client: object) -> soniox_tts.Catalogue:
+        return soniox_tts.Catalogue("Arjun", frozenset({"te", "en", "hi", "ur"}))
+
+    async def fake(_client: object, text: str, _code: str, _voice: str) -> bytes:
         spoken.append(text)
         return b"ID3" + secrets.token_bytes(64)  # distinct bytes, so each clip is its own file
 
-    monkeypatch.setattr(tts, "_synthesise", fake)
+    monkeypatch.setattr(soniox_tts, "catalogue", catalogue)
+    monkeypatch.setattr(soniox_tts, "synthesise", fake)
     return spoken
 
 
-def test_a_sentence_already_spoken_is_not_paid_for_again(sarvam):
+def test_a_sentence_already_spoken_is_not_paid_for_again(voice):
     text = f"Your bill is checked {secrets.token_hex(4)}."
     first = asyncio.run(tts.speak(text, "te"))
     again = asyncio.run(tts.speak(text, "te"))
-    assert first and again == first and sarvam == [text]
-    assert asyncio.run(tts.speak(text, "en")) != first and len(sarvam) == 2  # another language is another voice
+    assert first and again == first and voice == [text]
+    assert asyncio.run(tts.speak(text, "en")) != first and len(voice) == 2  # another language is another voice
 
 
-def test_a_clip_the_retention_sweep_removed_is_made_again(sarvam):
+def test_a_clip_the_retention_sweep_removed_is_made_again(voice):
     text = f"Due date passed {secrets.token_hex(4)}."
     [clip] = asyncio.run(tts.speak(text, "te"))
     path = media.path_for(clip)
     assert path is not None
     path.unlink()
     remade = asyncio.run(tts.speak(text, "te"))
-    assert remade and remade != [clip] and sarvam == [text, text]
-    assert asyncio.run(tts.speak(text, "te")) == remade and len(sarvam) == 2
+    assert remade and remade != [clip] and voice == [text, text]
+    assert asyncio.run(tts.speak(text, "te")) == remade and len(voice) == 2
 
 
-def test_the_same_bill_sent_again_reuses_its_explanation_and_voice(reader, sarvam, monkeypatch):
+def test_the_same_bill_sent_again_reuses_its_explanation_and_voice(reader, voice, monkeypatch):
     written: list[int] = []
 
     async def model(_facts: object, _language: str) -> str:
@@ -63,7 +67,7 @@ def test_the_same_bill_sent_again_reuses_its_explanation_and_voice(reader, sarva
         reader(reading(reader_bill))
         chat(user, "web", kind="image")
     assert len(written) == 1
-    assert sarvam.count("Every charge on your bill matches the tariff.") == 1
+    assert voice.count("Every charge on your bill matches the tariff.") == 1
 
     other = f"web:{secrets.token_hex(10)}"
     reader(reading(reader_bill))
@@ -79,7 +83,7 @@ def test_erasing_an_account_removes_its_explanations():
         assert conn.execute("SELECT COUNT(*) FROM explain_cache WHERE user_id = ?", (user,)).fetchone()[0] == 0
 
 
-def test_the_old_cache_file_moves_into_the_database(sarvam):
+def test_the_old_cache_file_moves_into_the_database(voice):
     key, clip = secrets.token_hex(16), media.save(b"ID3" + secrets.token_bytes(32), "audio/mpeg")
     legacy = get_settings().data_dir / "tts_index.json"
     legacy.write_text(json.dumps({key: [clip]}))

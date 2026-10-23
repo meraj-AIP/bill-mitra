@@ -9,7 +9,7 @@ pooled connection the far end closed, HTTP 408, 425, 429, 500, 502, 503, 504).
 | --- | --- | --- | --- |
 | Vision read: classify, read, reread (`services/vision.py` via `openai_client.chat_json`) | timeout, reset connection, 429, 5xx, malformed answer | own loop: 3 tries on 408/429/5xx only, no jitter, no budget; then the consumer was asked to type the units and the dashboard said "try again in a minute" | `READ` 3 tries in 60 s per call. A failure still transient after that becomes an extract job (row below); a malformed answer is permanent and answered as before |
 | Wording, classify, explain, assist (`services/llm.py`) | as above | same loop, waits up to 20 s each | `TEXT` 2 tries in 15 s, then the checked template or the rules, as before |
-| Sarvam TTS (`services/tts.py`) | timeout, 429, 5xx | one try, then text | `VOICE` 2 tries in 15 s, then text |
+| Soniox TTS (`services/soniox_tts.py`) | timeout, 429, 5xx | one try, then text | `VOICE` 2 tries in 15 s, then text |
 | Soniox STT: upload, create, poll, transcript (`services/stt.py`) | timeout, 429, 5xx | one try each, then "please type" | `LISTEN` 3 tries in 15 s per request, then "please type" |
 | WhatsApp media download (`channels/whatsapp/client.py`) | Meta down, reset connection, 404, too large | one try; any failure told the consumer "send it again" | `MEDIA` 3 tries in 20 s. Transient: the whole turn fails and the inbox retries it. Permanent (404, too large): "send it again" as before |
 | WhatsApp media upload (voice note, chart) | as above | one try; a failure broke the rest of the turn | `MEDIA` 3 tries in 20 s, inside the outbox send, so a failure queues the message |
