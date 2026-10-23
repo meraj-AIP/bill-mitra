@@ -22,11 +22,14 @@ def test_off_when_unset_lists_nothing(monkeypatch: pytest.MonkeyPatch):
 
 def test_one_login_per_role_and_each_signs_in(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(get_settings(), "demo_accounts_password", DEMO_PASSWORD)
+    monkeypatch.setattr(get_settings(), "demo_otp_mobile", "6000000002")  # synthetic; the consumer comes from settings
+    monkeypatch.setattr(get_settings(), "demo_otp_code", "123456")
     demo_accounts.ensure()
     demo_accounts.ensure()  # a restart keeps the same accounts, it never makes duplicates
     listed = TestClient(api).get("/api/auth/demo-accounts").json()
     assert {row["role"] for row in listed} == {role.slug for role in rbac.BUILTIN_ROLES}
     assert all(set(row) == {"role", "role_name", "login"} for row in listed)
+    assert {row["login"] for row in listed if row["role"] == "consumer"} == {"6000000002"}
     assert DEMO_PASSWORD not in TestClient(api).get("/api/auth/demo-accounts").text
     for row in listed:
         response = TestClient(api).post("/api/auth/login", json={"login": row["login"], "password": DEMO_PASSWORD})

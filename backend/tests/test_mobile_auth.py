@@ -133,9 +133,11 @@ def test_an_on_screen_code_never_opens_a_real_account(discom, monkeypatch):
             refused = _start(client, mobile, purpose=purpose)
             assert refused.status_code == 403 and "dev_code" not in refused.text and "WhatsApp" in refused.json()["detail"]["message"]
         monkeypatch.setattr(get_settings(), "demo_accounts_password", "test-only-demo-passphrase")
+        monkeypatch.setattr(get_settings(), "demo_otp_mobile", "6000000001")  # synthetic: the demo consumer comes from settings
+        monkeypatch.setattr(get_settings(), "demo_otp_code", "123456")
         demo_accounts.ensure()
         sample = _start(client, "6000000001", purpose="login", discom=None)
-        assert sample.status_code == 200 and sample.json()["dev_code"]
+        assert sample.status_code == 200 and sample.json()["dev_code"] == "123456"
         signed = client.post("/api/auth/otp/login", json={"mobile": "6000000001", "code": sample.json()["dev_code"]})
         assert signed.status_code == 200 and signed.json()["role"] == "consumer"
 
