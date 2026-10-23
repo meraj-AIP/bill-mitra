@@ -8,10 +8,13 @@ export type UserContent =
   | { kind: 'audio'; src: string; transcript?: string | undefined }
   | { kind: 'reply'; title: string };
 
-/** One message in the thread. `live` marks messages sent in this visit, which get the enter animation. */
+/**
+ * One message in the thread. `live` marks messages that arrived in this visit, which get the enter animation.
+ * `serverId` is the stored chat row, so a poll for new messages skips what the thread already shows.
+ */
 export type ThreadItem =
-  | { key: string; at: Date; live: boolean; from: 'user'; content: UserContent }
-  | { key: string; at: Date; live: boolean; from: 'bot'; message: Outbound };
+  | { key: string; at: Date; live: boolean; serverId?: number | undefined; from: 'user'; content: UserContent }
+  | { key: string; at: Date; live: boolean; serverId?: number | undefined; from: 'bot'; message: Outbound };
 
 export interface TraceTurn {
   id: string;
@@ -31,7 +34,9 @@ export interface ConversationState {
 export type Action =
   | { type: 'user'; content: UserContent; title: string }
   | { type: 'trace'; step: TraceStep }
-  | { type: 'bot'; message: Outbound }
+  | { type: 'bot'; message: Outbound; serverId?: number | undefined }
+  | { type: 'stored'; serverId: number }
+  | { type: 'pushed'; items: ThreadItem[] }
   | { type: 'transcript'; text: string }
   | { type: 'done' }
   | { type: 'failed'; error: ChatFailure }
@@ -51,6 +56,13 @@ function mergeStep(steps: TraceStep[], step: TraceStep): TraceStep[] {
   const index = steps.findIndex((s) => s.id === step.id);
   if (index < 0) return [...steps, step];
   return steps.map((s, i) => (i === index ? step : s));
+}
+
+function storeLastUser(items: ThreadItem[], serverId: number): ThreadItem[] {
+  const index = items.findLastIndex((item) => item.from === 'user');
+  const item = items[index];
+  if (!item) return items;
+  return [...items.slice(0, index), { ...item, serverId }, ...items.slice(index + 1)];
 }
 
 function attachTranscript(items: ThreadItem[], text: string): ThreadItem[] {
@@ -74,7 +86,14 @@ export function reducer(state: ConversationState, action: Action): ConversationS
     case 'trace':
       return { ...state, turns: updateLastTurn(state.turns, (t) => ({ ...t, steps: mergeStep(t.steps, action.step) })) };
     case 'bot':
-      return { ...state, items: [...state.items, { key: nextId('b'), at: now, live: true, from: 'bot', message: action.message }] };
+      return {
+        ...state,
+        items: [...state.items, { key: nextId('b'), at: now, live: true, serverId: action.serverId, from: 'bot', message: action.message }],
+      };
+    case 'stored':
+      return { ...state, items: storeLastUser(state.items, action.serverId) };
+    case 'pushed':
+      return { ...state, items: [...state.items, ...action.items] };
     case 'transcript':
       return { ...state, items: attachTranscript(state.items, action.text) };
     case 'done':

@@ -28,6 +28,11 @@ export function fetchHistory(before: number | undefined, signal: AbortSignal): P
   return getJson<HistoryPage>(`/api/web/history?${query.toString()}`, signal);
 }
 
+/** Messages stored after `after`, oldest first: what staff or a background job sent while the page was open. */
+export function fetchAfter(after: number, signal: AbortSignal): Promise<HistoryPage> {
+  return getJson<HistoryPage>(`/api/web/history?after=${after}&limit=${PAGE_SIZE}`, signal);
+}
+
 /** Starts a new chat and deletes the saved one on the server. */
 export async function resetConversation(): Promise<void> {
   await postJson('/api/web/reset');

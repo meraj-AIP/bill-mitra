@@ -37,7 +37,7 @@ function userContent(body: UserBody, options: ReplyButton[]): UserContent {
 export function fromHistory(items: HistoryItem[]): ThreadItem[] {
   let options: ReplyButton[] = [];
   return items.map((item): ThreadItem => {
-    const base = { key: `h${item.id}`, at: parseAt(item.at), live: false };
+    const base = { key: `h${item.id}`, at: parseAt(item.at), live: false, serverId: item.id };
     if (item.sender === 'bot') {
       options = optionsOf(item.body) ?? options;
       return { ...base, from: 'bot', message: item.body };

@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 
 import type { ComplaintDetail, ComplaintRow, ComplaintStatus, Priority, Source, Triage } from '@/features/complaints';
 import { getJson, sendJson } from '@/shared/api/http';
+import { LIVE_MS } from '@/shared/api/live';
 import { queryKeys } from '@/shared/api/queryKeys';
 import type { Discom, Page } from '@/shared/api/types';
 
@@ -103,7 +104,7 @@ export function useInbox(query: InboxQuery) {
     queryKey: queryKeys.consoleComplaintList(query),
     queryFn: ({ signal }) => getJson<Page<ComplaintRow>>(`/api/console/complaints?${params.toString()}`, signal),
     placeholderData: keepPreviousData,
-    refetchInterval: 60_000,
+    refetchInterval: LIVE_MS, // a consumer on another device may answer at any moment; paused while the tab is hidden,
   });
 }
 
@@ -113,7 +114,8 @@ export function useConsoleComplaint(ticket: string) {
   return useQuery({
     queryKey: queryKeys.consoleComplaint(ticket),
     queryFn: ({ signal }) => getJson<ComplaintDetail>(path(ticket), signal),
-    refetchInterval: 60_000, // replies and changes made here update it at once; this catches others' changes
+    // Replies and changes made here update it at once; this catches the consumer's answers and others' changes.
+    refetchInterval: LIVE_MS,
   });
 }
 

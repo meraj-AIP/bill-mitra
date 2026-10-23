@@ -17,6 +17,7 @@ import { useConversation } from '../hooks/useConversation';
 import { BILL_ACCEPT } from '@/shared/lib/billFile';
 
 import { useHistory } from '../hooks/useHistory';
+import { useLiveChat } from '../hooks/useLiveChat';
 import { FAILURE_TEXT } from '../model/failures';
 import { UI } from '../model/strings';
 
@@ -36,6 +37,7 @@ export function AssistantPage() {
   const chat = useConversation(history.clear);
   const { state, language } = chat;
   const items = useMemo(() => [...history.items, ...state.items], [history.items, state.items]);
+  useLiveChat(history, chat);
 
   const attach = () => fileInput.current?.click();
   const sendText = (text: string) => void chat.sendText(text);

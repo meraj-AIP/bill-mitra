@@ -1,6 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { getJson, sendJson } from '@/shared/api/http';
+import { LIVE_MS } from '@/shared/api/live';
 import { queryKeys } from '@/shared/api/queryKeys';
 
 import type { CaseDetail, CasePageResult, CaseQuery, Draft, NewDecision, Preview, RequestKind, SectionOption } from './types';
@@ -23,7 +24,7 @@ export function useCases(query: CaseQuery) {
     queryKey: queryKeys.reviewCaseList(query),
     queryFn: ({ signal }) => getJson<CasePageResult>(`/api/review/cases?${listParams(query).toString()}`, signal),
     placeholderData: keepPreviousData,
-    refetchInterval: 60_000,
+    refetchInterval: LIVE_MS, // a consumer on another device may answer at any moment; paused while the tab is hidden,
   });
 }
 
@@ -40,7 +41,7 @@ export function useCase(ticket: string) {
   return useQuery({
     queryKey: queryKeys.reviewCase(ticket),
     queryFn: ({ signal }) => getJson<CaseDetail>(casePath(ticket), signal),
-    refetchInterval: 60_000,
+    refetchInterval: LIVE_MS, // a consumer on another device may answer at any moment; paused while the tab is hidden,
   });
 }
 

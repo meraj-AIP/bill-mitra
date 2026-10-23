@@ -1,6 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { getJson, sendJson } from '@/shared/api/http';
+import { LIVE_MS } from '@/shared/api/live';
 import { queryKeys } from '@/shared/api/queryKeys';
 import { IDEMPOTENT } from '@/shared/api/retry';
 
@@ -25,8 +26,8 @@ export function useAlerts(query: AlertQuery) {
 }
 
 /**
- * The bell's one request: the latest few plus the unread count. It polls every minute and, by TanStack's
- * default, pauses while the tab is hidden.
+ * The bell's one request: the latest few plus the unread count. It polls every few seconds, so a consumer's
+ * answer shows while staff watch, and by TanStack's default pauses while the tab is hidden.
  */
 export function useLatestAlerts(enabled: boolean) {
   const query: AlertQuery = { page: 1, pageSize: LATEST_COUNT, unread: false };
@@ -34,7 +35,7 @@ export function useLatestAlerts(enabled: boolean) {
     queryKey: queryKeys.alertList(query),
     queryFn: ({ signal }) => fetchAlerts(query, signal),
     enabled,
-    refetchInterval: 60_000,
+    refetchInterval: LIVE_MS,
   });
 }
 

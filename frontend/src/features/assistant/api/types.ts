@@ -32,9 +32,11 @@ export interface TraceStep {
   ms?: number | null;
 }
 
+/** `chat_id` is the stored row behind a message, or (on `state`) behind what the person just sent. */
 export type StreamEvent =
   | { kind: 'trace'; trace: TraceStep }
-  | { kind: 'message'; message: Outbound }
+  | { kind: 'message'; message: Outbound; chat_id?: number | null }
+  | { kind: 'state'; chat_id?: number | null }
   | { kind: 'transcript'; text: string }
   | { kind: 'done' };
 

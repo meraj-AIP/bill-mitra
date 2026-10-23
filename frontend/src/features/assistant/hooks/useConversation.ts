@@ -4,7 +4,7 @@ import { billFileIssue } from '@/shared/lib/billFile';
 
 import { mediaUrl, resetConversation, sendMessage, upload } from '../api/assistantApi';
 import type { Language, OutgoingMessage, ReplyButton, StreamEvent } from '../api/types';
-import { initialState, reducer, type UserContent } from '../model/conversation';
+import { initialState, reducer, type ThreadItem, type UserContent } from '../model/conversation';
 import type { ChatFailure } from '../model/failures';
 
 const failed = (error: unknown): { type: 'failed'; error: ChatFailure } => ({ type: 'failed', error: { kind: 'request', error } });
@@ -25,7 +25,8 @@ export function useConversation(onCleared: () => void) {
       dispatch({ type: 'user', content, title });
       const onEvent = (event: StreamEvent) => {
         if (event.kind === 'trace') dispatch({ type: 'trace', step: event.trace });
-        else if (event.kind === 'message') dispatch({ type: 'bot', message: event.message });
+        else if (event.kind === 'message') dispatch({ type: 'bot', message: event.message, serverId: event.chat_id ?? undefined });
+        else if (event.kind === 'state' && event.chat_id) dispatch({ type: 'stored', serverId: event.chat_id });
         else if (event.kind === 'transcript') dispatch({ type: 'transcript', text: event.text });
       };
       try {
@@ -103,7 +104,9 @@ export function useConversation(onCleared: () => void) {
     if (again) void again();
   }, []);
 
-  return { state, language, setLanguage, sendText, sendFile, sendVoice, reply, reset, retry };
+  const append = useCallback((items: ThreadItem[]) => dispatch({ type: 'pushed', items }), []);
+
+  return { state, language, setLanguage, sendText, sendFile, sendVoice, reply, reset, retry, append };
 }
 
 export type Conversation = ReturnType<typeof useConversation>;
