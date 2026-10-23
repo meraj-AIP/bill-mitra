@@ -44,6 +44,8 @@ export function BulkBar({ tickets, onDone }: BulkBarProps) {
     onDone();
   };
 
+  // Nothing selected and nothing to report: no bar, so the list sits right under the filters.
+  if (!result && tickets.length === 0) return null;
   return (
     <Stack sx={{ gap: 1 }}>
       {result && <Outcome result={result} />}

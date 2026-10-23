@@ -91,7 +91,7 @@ export function InboxFilters({ query, showDiscom, onFilter, onFailed, onSort, mi
           {(Object.keys(SORT_LABEL) as Array<InboxQuery['sort']>).map((s) => <MenuItem key={s} value={s}>{SORT_LABEL[s]}</MenuItem>)}
         </TextField>
       </Stack>
-      <Collapse in={open}>
+      <Collapse in={open} unmountOnExit>
         <MoreFilters query={query} showDiscom={showDiscom} onFilter={onFilter} onFailed={onFailed} />
       </Collapse>
     </Stack>

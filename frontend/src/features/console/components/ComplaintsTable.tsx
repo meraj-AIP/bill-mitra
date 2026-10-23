@@ -1,8 +1,12 @@
-import { Checkbox, Chip, Link as MuiLink, Skeleton, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material';
-import { Link, useNavigate } from 'react-router-dom';
+import { Checkbox, Skeleton, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
 
-import { CHANNEL_LABEL, DemoChip, DueChip, PriorityChip, SOURCE_LABEL, StatusChip, TRIAGE, type ComplaintRow } from '@/features/complaints';
-import { dateTime, rupees } from '@/shared/lib/format';
+import type { ComplaintRow } from '@/features/complaints';
+import { dateTime } from '@/shared/lib/format';
+
+import { ComplaintCell, complaintPath, DueCell, PriorityCell, StatusCell } from './InboxCells';
+
+export { complaintPath };
 
 interface ComplaintsTableProps {
   rows: ComplaintRow[] | undefined;
@@ -12,29 +16,8 @@ interface ComplaintsTableProps {
   selection?: { selected: Set<string>; onToggle: (ticket: string) => void; onToggleAll: (tickets: string[]) => void };
 }
 
-/** The status, plus only the most urgent flag: a reply that did not arrive, then overdue, then an overcharge. */
-function StatusCell({ c }: { c: ComplaintRow }) {
-  const flag = c.delivery_failed ? <Chip size="small" color="error" label="Reply not delivered" />
-    : c.overdue ? <DueChip c={c} />
-      : c.triage === 'overcharge' ? <Chip size="small" variant="outlined" color={TRIAGE.overcharge.tone} label={TRIAGE.overcharge.label} /> : null;
-  const holder = c.waiting_on === 'consumer' ? 'Waiting on consumer' : c.assignee_name ? `With ${c.assignee_name}` : null;
-  return (
-    <Stack sx={{ gap: 0.5, alignItems: 'flex-start' }}>
-      <StatusChip status={c.status} />
-      {flag}
-      {holder && <Typography variant="caption" sx={{ color: 'text.secondary' }} noWrap>{holder}</Typography>}
-    </Stack>
-  );
-}
-
-function source(c: ComplaintRow): string {
-  if (c.source) return SOURCE_LABEL[c.source];
-  return c.channel ? CHANNEL_LABEL[c.channel] : 'Unknown';
-}
-
-export function complaintPath(ticket: string): string {
-  return `/console/complaints/${encodeURIComponent(ticket)}`;
-}
+const HEAD = { '& .MuiTableCell-head': { color: 'text.secondary', fontWeight: 600, fontSize: '0.75rem', letterSpacing: '0.02em', bgcolor: 'grey.50' } };
+const ROW = { cursor: 'pointer', '& > td': { py: 1.5, verticalAlign: 'top' }, '&:last-child > td': { borderBottom: 0 } };
 
 /** Rows open the complaint on click; the ticket is also a real link so keyboards and new tabs work. */
 export function ComplaintsTable({ rows, loadingRows, dimmed = false, selection }: ComplaintsTableProps) {
@@ -44,20 +27,20 @@ export function ComplaintsTable({ rows, loadingRows, dimmed = false, selection }
   const allOn = tickets.length > 0 && tickets.every((t) => selection?.selected.has(t));
   return (
     <TableContainer sx={{ opacity: dimmed ? 0.6 : 1, transition: 'opacity 200ms' }}>
-      <Table size="small" aria-label="Complaints">
-        <TableHead>
+      <Table size="small" aria-label="Complaints" sx={{ tableLayout: 'fixed', minWidth: 880 }}>
+        <TableHead sx={HEAD}>
           <TableRow>
             {selection && (
-              <TableCell padding="checkbox">
+              <TableCell padding="checkbox" sx={{ width: 48 }}>
                 <Checkbox size="small" checked={allOn} onChange={() => selection.onToggleAll(tickets)}
                   slotProps={{ input: { 'aria-label': 'Select every complaint on this page' } }} />
               </TableCell>
             )}
-            <TableCell>Ticket</TableCell>
-            <TableCell>Issue</TableCell>
-            <TableCell>Status</TableCell>
-            <TableCell>Priority</TableCell>
-            <TableCell>Last activity</TableCell>
+            <TableCell>Complaint</TableCell>
+            <TableCell sx={{ width: 190 }}>Status</TableCell>
+            <TableCell sx={{ width: 100 }}>Priority</TableCell>
+            <TableCell sx={{ width: 130 }}>Due</TableCell>
+            <TableCell sx={{ width: 150 }}>Last activity</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -65,7 +48,7 @@ export function ComplaintsTable({ rows, loadingRows, dimmed = false, selection }
             <TableRow key={i}><TableCell colSpan={columns}><Skeleton /></TableCell></TableRow>
           ))}
           {rows?.map((c) => (
-            <TableRow key={c.ticket} hover onClick={() => navigate(complaintPath(c.ticket))} sx={{ cursor: 'pointer' }}
+            <TableRow key={c.ticket} hover onClick={() => navigate(complaintPath(c.ticket))} sx={ROW}
               selected={selection?.selected.has(c.ticket) ?? false}>
               {selection && (
                 <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
@@ -73,26 +56,12 @@ export function ComplaintsTable({ rows, loadingRows, dimmed = false, selection }
                     slotProps={{ input: { 'aria-label': `Select ${c.ticket}` } }} />
                 </TableCell>
               )}
-              <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                <MuiLink component={Link} to={complaintPath(c.ticket)} onClick={(e) => e.stopPropagation()}
-                  sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
-                  {c.ticket}
-                </MuiLink>
-                <Typography variant="caption" component="p" sx={{ color: 'text.secondary' }}>
-                  {dateTime(c.created_at)}, {source(c)}{c.discom ? `, ${c.discom}` : ''}
-                </Typography>
-                {c.demo && <DemoChip />}
-              </TableCell>
-              <TableCell sx={{ minWidth: 220, maxWidth: 380 }}>
-                <Typography variant="subtitle2" component="p">{c.type_label ?? 'Complaint'}</Typography>
-                <Typography variant="body2" sx={{ color: 'text.secondary', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                  {c.amount ? `${rupees(c.amount)}. ` : ''}{c.issue}
-                </Typography>
-              </TableCell>
+              <TableCell><ComplaintCell c={c} /></TableCell>
               <TableCell><StatusCell c={c} /></TableCell>
-              <TableCell>{c.priority ? <PriorityChip priority={c.priority} /> : '-'}</TableCell>
-              <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                {c.last_message_at ? dateTime(c.last_message_at) : 'No messages'}
+              <TableCell><PriorityCell c={c} /></TableCell>
+              <TableCell><DueCell c={c} /></TableCell>
+              <TableCell>
+                <Typography variant="body2" noWrap>{c.last_message_at ? dateTime(c.last_message_at) : 'No messages'}</Typography>
                 <Typography variant="caption" component="p" sx={{ color: 'text.secondary' }}>
                   {c.messages_count === 1 ? '1 message' : `${c.messages_count} messages`}
                 </Typography>
