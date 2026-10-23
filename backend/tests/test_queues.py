@@ -170,11 +170,11 @@ def test_web_upload_while_the_reader_is_down_is_a_202_then_a_poll_then_my_bills(
         assert queued.status_code == 202
         job = queued.json()
         assert job["status"] == "queued" and job["bill_id"] is None and job["detail"]
-        assert set(job) == {"job_id", "status", "bill_id", "detail"}
+        assert set(job) == {"job_id", "status", "bill_id", "outcome", "problem", "detail"} and job["outcome"] is None
         assert client.get(f"/api/bills/jobs/{job['job_id']}").json()["status"] == "queued"
         run(recovery.run_extracts, 61)
         done = client.get(f"/api/bills/jobs/{job['job_id']}").json()
-        assert done["status"] == "done" and done["bill_id"]
+        assert done["status"] == "done" and done["bill_id"] and done["outcome"] == "checked"
         assert done["bill_id"] in [b["id"] for b in client.get("/api/bills").json()["items"]]
         assert client.get(f"/api/bills/{done['bill_id']}").json()["outcome"] == "checked"
         sign_in(client)  # someone else

@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.core.errors import Refusal, safe_message
 from app.store.db import DISCOM_UNITS, IntegrityError, tx
 
 Kind = Literal["discom", "circle", "division", "subdivision", "section", "ero"]
@@ -19,7 +20,7 @@ MAX_ALIASES = 20
 LIST_LIMIT = 200
 
 
-class Conflict(ValueError):
+class Conflict(Refusal):
     """The request is well formed but clashes with what is stored (a 409)."""
 
 
@@ -126,7 +127,7 @@ def search(*, parent_id: str | None, q: str | None, kind: str | None, viewer: st
 def _clean_aliases(aliases: list[str]) -> list[str]:
     cleaned = list(dict.fromkeys(a.strip() for a in aliases if a.strip()))
     if len(cleaned) > MAX_ALIASES or any(len(a) > 80 or not norm(a) for a in cleaned):
-        raise ValueError(f"Up to {MAX_ALIASES} aliases, each 1 to 80 characters with a letter or digit.")
+        raise Refusal(f"Up to {MAX_ALIASES} aliases, each 1 to 80 characters with a letter or digit.")
     return cleaned
 
 
@@ -147,19 +148,19 @@ def _check_ero(conn: sqlite3.Connection, kind: str, discom: str, ero_id: str | N
     if ero_id is None:
         return
     if kind != "section":
-        raise ValueError("Only a section can point at an ERO.")
+        raise Refusal("Only a section can point at an ERO.")
     ero = _get(conn, ero_id)
     if ero is None or ero.kind != "ero" or ero.discom != discom:
-        raise ValueError("The ERO must be an ERO unit of the same DISCOM.")
+        raise Refusal("The ERO must be an ERO unit of the same DISCOM.")
 
 
 def _create(conn: sqlite3.Connection, kind: str, name: str, code: str | None, parent_id: str | None,
             ero_id: str | None, aliases: list[str]) -> Unit:
     if kind not in PARENT_KIND:
-        raise ValueError("DISCOM units are fixed; create circles, divisions and the rest under them.")
+        raise Refusal("DISCOM units are fixed; create circles, divisions and the rest under them.")
     parent = _get(conn, parent_id)
     if parent is None or parent.kind != PARENT_KIND[kind]:
-        raise ValueError(f"A {kind} must sit under a {PARENT_KIND[kind]}.")
+        raise Refusal(f"A {kind} must sit under a {PARENT_KIND[kind]}.")
     _check_ero(conn, kind, parent.discom, ero_id)
     unit_id = f"u_{secrets.token_hex(6)}"
     try:
@@ -183,7 +184,7 @@ def create(kind: str, name: str, code: str | None, parent_id: str | None, ero_id
 
 def _update(conn: sqlite3.Connection, unit: Unit, changes: dict[str, Any]) -> Unit:
     if unit.kind == "discom" and set(changes) - {"aliases"}:
-        raise ValueError("DISCOM units are fixed.")
+        raise Refusal("DISCOM units are fixed.")
     if "ero_id" in changes:
         _check_ero(conn, unit.kind, unit.discom, changes["ero_id"])
     if "aliases" in changes:
@@ -224,21 +225,21 @@ def _import_row(conn: sqlite3.Connection, row: dict[str, str]) -> bool:
     """True when a unit was created, False when updated. ValueError explains a bad line."""
     kind, name, code, discom = (row.get(k, "").strip() for k in ("kind", "name", "code", "discom"))
     if discom not in DISCOM_UNITS or not name or not code:
-        raise ValueError("kind, name, code and a discom of TGSPDCL or TGNPDCL are required.")
+        raise Refusal("kind, name, code and a discom of TGSPDCL or TGNPDCL are required.")
     parent_code, ero_code = row.get("parent_code", "").strip(), row.get("ero_code", "").strip()
     parent = _by_code(conn, discom, parent_code) if parent_code else _get(conn, DISCOM_UNITS[discom])
     if parent is None:
-        raise ValueError(f"No unit with code {parent_code} in {discom}.")
+        raise Refusal(f"No unit with code {parent_code} in {discom}.")
     ero = _by_code(conn, discom, ero_code) if ero_code else None
     if ero_code and ero is None:
-        raise ValueError(f"No ERO with code {ero_code} in {discom}.")
+        raise Refusal(f"No ERO with code {ero_code} in {discom}.")
     aliases = [a for a in row.get("aliases", "").split(";") if a.strip()]
     existing = _by_code(conn, discom, code)
     if existing is None:
         _create(conn, kind, name, code, parent.id, ero.id if ero else None, aliases)
         return True
     if existing.kind != kind or existing.parent_id != parent.id:
-        raise ValueError("A unit with this code exists with another kind or parent; units are not moved by import.")
+        raise Refusal("A unit with this code exists with another kind or parent; units are not moved by import.")
     _update(conn, existing, {"name": name, "aliases": aliases, "ero_id": ero.id if ero else existing.ero_id})
     return False
 
@@ -259,7 +260,7 @@ def import_rows(rows: list[tuple[int, dict[str, str]]]) -> ImportResult:
             except ValueError as exc:
                 conn.execute("ROLLBACK TO unit_row")
                 conn.execute("RELEASE unit_row")
-                errors.append({"line": line, "detail": str(exc)})
+                errors.append({"line": line, "detail": safe_message(exc, "This line could not be imported.")})
     return ImportResult(created=created, updated=updated, errors=errors)
 
 
@@ -310,7 +311,7 @@ def map_unmapped(name: str, discom: str, section_id: str) -> Unit:
     with tx() as conn:
         section = _get(conn, section_id)
         if section is None or section.kind != "section" or section.discom != discom:
-            raise ValueError("Choose a section of the same DISCOM.")
+            raise Refusal("Choose a section of the same DISCOM.")
         updated = _update(conn, section, {"aliases": [*section.aliases, name.strip()]})
         conn.execute("DELETE FROM unmapped_sections WHERE discom = ? AND norm = ?", (discom, norm(name)))
     return updated

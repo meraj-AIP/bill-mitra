@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from app.api.deps import require_perm
+from app.core.errors import api_error
 from app.core.hashing import clean_service_number
 from app.core.ratelimit import per_ip
 from app.core.uploads import DOCUMENTS, read_checked
@@ -30,7 +31,6 @@ Discom = Literal["TGSPDCL", "TGNPDCL"]
 State = Literal["received", "in_progress", "waiting_for_you", "resolved", "closed"]
 Text1000 = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=1000)]
 Owner = Annotated[Account, Depends(require_perm("self.bills"))]
-NOT_FOUND = "Complaint not found."
 
 
 class ComplaintTypeOut(BaseModel):
@@ -122,7 +122,7 @@ def _view(row: dict[str, Any], language: str) -> ConsumerComplaint:
 def _detail(user_id: str, ticket: str, language: str) -> ConsumerComplaintDetail:
     row = store.one(user_id, ticket)
     if row is None:
-        raise HTTPException(404, NOT_FOUND)
+        raise api_error(404, "complaint_not_found", text(language, "err_complaint_not_found"))
     return ConsumerComplaintDetail(**_view(row, language).model_dump(),
                                    messages=[_message(ticket, m, language) for m in row["messages"]])
 
@@ -141,10 +141,10 @@ def _message(ticket: str, m: dict[str, Any], language: str) -> ThreadMessage:
              dependencies=[Depends(per_ip("consumer-complaint", 10))])
 async def create(body: ConsumerRaise, account: Owner, language: Language = "te") -> ConsumerComplaintDetail:
     if body.bill_id and repos.get_own_bill(account.user_id, body.bill_id) is None:
-        raise HTTPException(404, "Bill not found.")
+        raise api_error(404, "bill_not_found", text(language, "err_bill_not_found"))
     if body.type == complaint_types.WRONG_READING and body.bill_id and \
             complaints.open_for_bill(body.bill_id, "wrong_reading"):
-        raise HTTPException(409, "This bill is already being checked.")
+        raise api_error(409, "check_open", text(language, "err_check_open"))
     ticket = await intake.submit(intake.Raise(
         user_id=account.user_id, type=body.type, discom=body.discom, description=body.description,
         language=language, channel="web", source="consumer_web", service_number=body.service_number,
@@ -168,23 +168,23 @@ def one(ticket: str, account: Owner, language: Language = "te") -> ConsumerCompl
 @router.post("/api/complaints/{ticket}/reply", response_model=ConsumerComplaintDetail,
              dependencies=[Depends(per_ip("consumer-complaint-reply", 20))])
 async def reply(ticket: str, body: ConsumerReply, account: Owner, language: Language = "te") -> ConsumerComplaintDetail:
-    _waiting(account, ticket)
-    _answer(account, ticket, body.body, None)
+    _waiting(account, ticket, language)
+    _answer(account, ticket, body.body, None, language)
     return _detail(account.user_id, ticket, language)
 
 
-def _waiting(account: Account, ticket: str) -> None:
+def _waiting(account: Account, ticket: str, language: str) -> None:
     found = store.one(account.user_id, ticket)
     if found is None:
-        raise HTTPException(404, NOT_FOUND)
+        raise api_error(404, "complaint_not_found", text(language, "err_complaint_not_found"))
     if found["state"] != "waiting_for_you":
-        raise HTTPException(409, "We have not asked anything on this complaint. We will write here when we do.")
+        raise api_error(409, "nothing_asked", text(language, "err_nothing_asked"))
 
 
-def _answer(account: Account, ticket: str, body: str, media_id: str | None) -> None:
+def _answer(account: Account, ticket: str, body: str, media_id: str | None, language: str) -> None:
     """The consumer's answer answers every open request. A complaint closed meanwhile takes nothing."""
     if complaints.add_message(ticket, "consumer", None, body, "stored", media_id=media_id) is None:
-        raise HTTPException(409, "This complaint is closed.")
+        raise api_error(409, "complaint_closed", text(language, "err_complaint_closed"))
     review_store.answer_requests(ticket)
     repos.clear_awaiting(account.user_id, "info:" + ticket)
 
@@ -195,10 +195,10 @@ async def photo(ticket: str, file: UploadFile, account: Owner, language: Languag
                 caption: Annotated[str | None, Form(max_length=1000)] = None) -> ConsumerComplaintDetail:
     """A photo in answer to what we asked. Checked like a bill upload: the bytes decide the type, and the size limit
     holds. Nothing is stored unless the complaint is waiting for the consumer."""
-    _waiting(account, ticket)
-    data, mime = await read_checked(file, DOCUMENTS)
+    _waiting(account, ticket, language)
+    data, mime = await read_checked(file, DOCUMENTS, language)
     words = caption.strip() if caption and caption.strip() else PHOTO_NOTE
-    _answer(account, ticket, words, media.save(data, mime))
+    _answer(account, ticket, words, media.save(data, mime), language)
     return _detail(account.user_id, ticket, language)
 
 

@@ -106,6 +106,8 @@ class ExtractedBill(BaseModel):
     subsidy_amount: float | None = None
     usage_history: list[UsagePoint] = Field(default_factory=list)
     unreadable_fields: list[str] = Field(default_factory=list)
+    # Figures the consumer chose in the chat when two printed figures disagreed (capture.confirm_units).
+    confirmed_by_consumer: list[str] = Field(default_factory=list)
     confidence: float = Field(default=0.9, ge=0, le=1)
     source: Source = "vision"
 

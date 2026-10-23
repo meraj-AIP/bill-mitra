@@ -9,7 +9,7 @@ from app.domain.bill import ExtractedBill
 from app.domain.insights import Insights
 from app.domain.prediction import Prediction
 from app.domain.tariff.engine import Computation
-from app.domain.tariff.tables import version_for
+from app.domain.tariff.tables import in_force, version_for
 
 
 class Facts(BaseModel):
@@ -63,6 +63,8 @@ class Facts(BaseModel):
     reading_status: str | None = None
     printed_bill_amount: float | None = None
     printed_total_payable: float | None = None
+    # No tariff order on file covers the bill month, so the nearest one was used; the explanation must say so.
+    tariff_nearest: bool = False
 
 
 def build_facts(bill: ExtractedBill, comp: Computation, result: AuditResult,
@@ -97,7 +99,7 @@ def build_facts(bill: ExtractedBill, comp: Computation, result: AuditResult,
         save_amount=ins.saving.saving if ins.saving else None,
         ac_minutes=ins.saving.ac_minutes_per_day if ins.saving else None,
         cliff_100=cliff.get(100, 0.0), cliff_200=cliff.get(200, 0.0),
-        due_date=bill.due_date, rates=rates, reading_status=bill.present_status,
+        due_date=bill.due_date, rates=rates, reading_status=bill.present_status, tariff_nearest=not in_force(month),
     )
 
 

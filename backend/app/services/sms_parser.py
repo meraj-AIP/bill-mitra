@@ -4,6 +4,7 @@ import re
 from datetime import date
 
 from app.domain.bill import ExtractedBill
+from app.domain.conversation.lang import PACKS
 
 _MONTHS = {m: i for i, m in enumerate(
     ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], start=1)}
@@ -14,6 +15,10 @@ _AMOUNT = re.compile(r"(?:amount|amt)[^\d]{0,12}?(?:rs\.?|₹)?\s*([\d,]+(?:\.\d
                      re.I)
 _DUE = re.compile(r"due\s*(?:date|dt)?[\s.:-]*(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})", re.I)
 _MONTH = re.compile(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s'-]*(\d{2,4})\b", re.I)
+# Typed month names: English abbreviations and the full names of every language pack.
+_NAMED = {**_MONTHS, **{name.lower(): i for pack in PACKS.values() for i, name in enumerate(pack.MONTHS, start=1)}}
+_TYPED_MONTH = re.compile(r"(?<!\w)(" + "|".join(sorted(map(re.escape, _NAMED), key=len, reverse=True)) +
+                          r")[a-z]*\.?[\s,'-]*(\d{4}|\d{2}(?!\d))?", re.I)
 
 
 def looks_like_sms(message: str) -> bool:
@@ -48,10 +53,21 @@ def parse(message: str) -> ExtractedBill | None:
     )
 
 
-def manual(units: int, message: str) -> ExtractedBill:
-    month = _MONTH.search(message)
-    bill_month = None
-    if month:
-        year = int(month.group(2))
-        bill_month = f"{year + 2000 if year < 100 else year:04d}-{_MONTHS[month.group(1).lower()[:3]]:02d}"
-    return ExtractedBill(units=units, bill_month=bill_month, source="manual", confidence=1.0)
+def typed_month(message: str, today: date | None = None) -> str | None:
+    """The bill month in typed units ("214 units October 2025", "214 యూనిట్లు అక్టోబర్"), in any of the four
+    languages. A month without a year is the latest such month, this one included."""
+    found = _TYPED_MONTH.search(message)
+    if not found:
+        return None
+    month = _NAMED[found.group(1).lower()]
+    if found.group(2):
+        year = int(found.group(2))
+        year += 2000 if year < 100 else 0
+    else:
+        today = today or date.today()
+        year = today.year if month <= today.month else today.year - 1
+    return f"{year:04d}-{month:02d}"
+
+
+def manual(units: int, message: str, today: date | None = None) -> ExtractedBill:
+    return ExtractedBill(units=units, bill_month=typed_month(message, today), source="manual", confidence=1.0)

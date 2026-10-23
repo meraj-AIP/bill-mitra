@@ -7,7 +7,7 @@ reading is trusted, not the model's own confidence alone.
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.domain import meter_status
 from app.domain.bill import ExtractedBill
@@ -16,6 +16,7 @@ from app.domain.tariff.engine import money
 
 FieldStatus = Literal["captured", "missing", "unreadable"]
 CheckStatus = Literal["pass", "fail", "skipped"]
+ProblemCode = Literal["no_units", "unreadable", "check", "low_confidence"]
 MONEY_TOLERANCE = 1.0  # bills round the payable amount to the rupee through a Loss/Gain line
 MIN_CONFIDENCE = 0.6
 # A failed check here means a number on the bill was misread, so the reading cannot be trusted.
@@ -50,6 +51,8 @@ class Check(BaseModel):
     label: str
     status: CheckStatus
     detail: str
+    # The printed figures and the rules' own result, so a failed check can be told to the consumer in their language.
+    values: dict[str, float] = Field(default_factory=dict)
 
 
 class CaptureReport(BaseModel):
@@ -59,6 +62,9 @@ class CaptureReport(BaseModel):
     checks: list[Check]
     trusted: bool
     problem: str | None  # why the reading is not trusted, in plain words
+    # The same as a stable code and the field or check it is about, for the consumer's message.
+    problem_code: ProblemCode | None = None
+    problem_key: str | None = None
 
 
 def _value(bill: ExtractedBill, key: str) -> str | None:
@@ -102,7 +108,8 @@ def _register_check(key: str, label: str, previous: float | None, present: float
     shown = f"({present:g} - {previous:g})" + (f" x MF {factor:g}" if factor != 1 else "")
     note = ", the meter rolled over" if rolled else ""
     return Check(key=key, label=label, status="pass" if ok else "fail",
-                 detail=f"{shown} = {expected}{note}, bill says {units}")
+                 detail=f"{shown} = {expected}{note}, bill says {units}",
+                 values={"previous": previous, "present": present, "difference": expected, "units": units})
 
 
 def _readings(bill: ExtractedBill) -> Check:
@@ -124,7 +131,8 @@ def _net_units(bill: ExtractedBill) -> Check:
     net = bill.units - bill.export_units
     ok = net == bill.billed_units  # whole units on both sides, so any gap is a misread digit
     return Check(key="net_units", label=label, status="pass" if ok else "fail",
-                 detail=f"{bill.units} - {bill.export_units} = {net}, bill says {bill.billed_units}")
+                 detail=f"{bill.units} - {bill.export_units} = {net}, bill says {bill.billed_units}",
+                 values={"units": bill.units, "export": bill.export_units, "net": net, "billed": bill.billed_units})
 
 
 def _energy_units(bill: ExtractedBill) -> Check:
@@ -147,7 +155,8 @@ def _energy_units(bill: ExtractedBill) -> Check:
         return Check(key="energy_units", label=label, status="skipped",
                      detail="The energy charge does not follow the tariff for any nearby units, so it cannot confirm them")
     return Check(key="energy_units", label=label, status="fail",
-                 detail=f"The printed energy charge fits {fits} units, the bill was read as {bill.units}")
+                 detail=f"The printed energy charge fits {fits} units, the bill was read as {bill.units}",
+                 values={"energy": energy, "fits": fits, "units": bill.units})
 
 
 def _reading_status(bill: ExtractedBill) -> Check:
@@ -168,7 +177,8 @@ def _charges_sum(bill: ExtractedBill) -> Check:
     total = money(sum(item.amount for item in bill.line_items))
     ok = abs(total - bill.bill_amount) <= MONEY_TOLERANCE
     return Check(key="charges_sum", label=label, status="pass" if ok else "fail",
-                 detail=f"Charges add to {total:.2f}, bill amount is {bill.bill_amount:.2f}")
+                 detail=f"Charges add to {total:.2f}, bill amount is {bill.bill_amount:.2f}",
+                 values={"sum": total, "bill_amount": bill.bill_amount, "gap": money(abs(total - bill.bill_amount))})
 
 
 def _total(bill: ExtractedBill) -> Check:
@@ -179,7 +189,9 @@ def _total(bill: ExtractedBill) -> Check:
     ok = abs(expected - bill.total_payable) <= MONEY_TOLERANCE
     return Check(key="total", label=label, status="pass" if ok else "fail",
                  detail=f"{bill.bill_amount:.2f} + {bill.arrears:.2f} = {expected:.2f}, total due is "
-                        f"{bill.total_payable:.2f}")
+                        f"{bill.total_payable:.2f}",
+                 values={"bill_amount": bill.bill_amount, "arrears": bill.arrears, "expected": expected,
+                         "total": bill.total_payable, "gap": money(abs(expected - bill.total_payable))})
 
 
 def _days(bill: ExtractedBill) -> Check:
@@ -205,17 +217,19 @@ def _blocking(checks: list[Check]) -> list[Check]:
     return [c for c in checks if c.key in BLOCKING and c.key not in skip and c.status == "fail"]
 
 
-def _problem(bill: ExtractedBill, checks: list[Check]) -> str | None:
+def _problem(bill: ExtractedBill, checks: list[Check]) -> tuple[ProblemCode, str | None, str] | None:
+    """Why the reading is not trusted: a code, the field or check it is about, and the same in plain words."""
     if bill.units is None:
-        return "The units used this month could not be read."
+        return "no_units", "units", "The units used this month could not be read."
     unreadable = [key for key in KEY_FIELDS if key in bill.unreadable_fields]
     if unreadable:
-        return "Some key numbers are not clear enough to read with certainty."
+        return "unreadable", unreadable[0], "Some key numbers are not clear enough to read with certainty."
     failed = _blocking(checks)
     if failed:
-        return f"The numbers we read do not add up ({failed[0].label.lower()}), so one of them is probably misread."
+        return ("check", failed[0].key,
+                f"The numbers we read do not add up ({failed[0].label.lower()}), so one of them is probably misread.")
     if bill.confidence < MIN_CONFIDENCE:
-        return "The photo is not clear enough to read every number with certainty."
+        return "low_confidence", None, "The photo is not clear enough to read every number with certainty."
     return None
 
 
@@ -235,6 +249,19 @@ def report(bill: ExtractedBill) -> CaptureReport:
     checks = [_readings(bill), *([_net_units(bill)] if solar else []), *([_export_readings(bill)] if exported else []),
               _energy_units(bill), _charges_sum(bill), _total(bill), _days(bill),
               *([_reading_status(bill)] if status else [])]
-    problem = _problem(bill, checks)
+    found = _problem(bill, checks)
+    code, key, problem = found if found else (None, None, None)
     return CaptureReport(captured=sum(f.status == "captured" for f in fields), expected=len(fields), fields=fields,
-                         checks=checks, trusted=problem is None, problem=problem)
+                         checks=checks, trusted=found is None, problem=problem, problem_code=code, problem_key=key)
+
+
+def confirm_units(bill: ExtractedBill, units: int) -> ExtractedBill:
+    """The units the consumer picked when two printed figures disagreed. Meter readings that do not give those units
+    are dropped, since one of them was misread, and the pick is marked as the consumer's own."""
+    update: dict[str, object] = {
+        "units": units, "unreadable_fields": [f for f in bill.unreadable_fields if f != "units"],
+        "confirmed_by_consumer": sorted({*bill.confirmed_by_consumer, "units"})}
+    if bill.previous_reading is not None and bill.present_reading is not None and \
+            register_units(bill.previous_reading, bill.present_reading, bill.multiplying_factor)[0] != units:
+        update.update(previous_reading=None, present_reading=None)
+    return bill.model_copy(update=update)

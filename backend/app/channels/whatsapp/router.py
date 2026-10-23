@@ -17,9 +17,10 @@ from app.channels.whatsapp import client
 from app.channels.whatsapp.mapper import IncomingWhatsApp, parse_failures, parse_webhook, user_key
 from app.config import get_settings
 from app.core import retry, service
+from app.core.errors import api_error
 from app.core.messages import Inbound, TextOut
 from app.core.trace import Event
-from app.core.uploads import displayable
+from app.core.uploads import DOCUMENTS, displayable, sniff
 from app.domain.conversation.lang import text
 from app.services import delivery, notify
 from app.store import media, repos, wa_queue
@@ -49,10 +50,10 @@ async def verify(mode: str = Query(alias="hub.mode"), token: str = Query(alias="
     raise HTTPException(403, "verification failed")
 
 
-async def _say(incoming: IncomingWhatsApp, key: str, language: str | None = None) -> None:
+async def _say(incoming: IncomingWhatsApp, key: str, language: str | None = None, **values: object) -> None:
     """A fixed line outside the conversation engine, through the outbox like every other message."""
     language = language or repos.get_user(user_key(incoming.wa_id), "whatsapp").language
-    message = TextOut(body=text(language, key), language=language)
+    message = TextOut(body=text(language, key, **values), language=language)
     await delivery.send_reply(message, user_key(incoming.wa_id), incoming.wa_id, f"turn:{incoming.message_id}:{key}")
 
 
@@ -92,11 +93,13 @@ async def drain(sender: str, now: datetime | None = None) -> None:
 
 async def _failed(claimed: wa_queue.Claimed, error: str, now: datetime | None) -> None:
     attempts, parked = wa_queue.fail(claimed.id, error, now)
+    language = repos.language_of(user_key(claimed.incoming.wa_id)) or "te"
     if attempts == 1:
         # Once, whatever happens next; the dedupe key keeps a second copy out of the outbox.
-        language = repos.language_of(user_key(claimed.incoming.wa_id)) or "te"
         await _say(claimed.incoming, "working_on_it", language)
     if parked:
+        # "We will reply shortly" was promised, so the person hears how it ended and what to do next.
+        await _say(claimed.incoming, "turn_gave_up", language)
         # No message text: staff see it in Operations by its attempts and error class.
         raise_alert("inbound_failed", None, "WhatsApp message not answered",
                     f"A consumer's WhatsApp message failed {attempts} times and is parked. Retry or dismiss it on "
@@ -116,13 +119,21 @@ async def _turn(incoming: IncomingWhatsApp) -> None:
         return
     media_id = mime = None
     if incoming.media_ref:
+        mb = get_settings().max_upload_mb
         try:
             data, mime = await client.download(incoming.media_ref)
+        except client.TooLarge:
+            await _say(incoming, "file_too_large", mb=mb)
+            return
         except (httpx.HTTPError, *retry.TRANSPORT, KeyError, ValueError) as exc:
             if retry.transient(exc):
                 raise  # Meta is down for now: the inbox tries the whole turn again
             log.warning("whatsapp media could not be downloaded")
             await _say(incoming, "media_failed")
+            return
+        # The bytes decide, as on the web: a Word file or a spreadsheet is said to be the wrong kind, not "not a bill".
+        if incoming.kind in ("image", "document") and sniff(data[:16]) not in DOCUMENTS:
+            await _say(incoming, "file_unsupported", mb=mb)
             return
         data, mime = await displayable(data, mime)
         media_id = media.save(data, mime)
@@ -144,10 +155,10 @@ async def _turn(incoming: IncomingWhatsApp) -> None:
 @router.post("/webhook")
 async def receive(request: Request, tasks: BackgroundTasks) -> dict[str, str]:
     settings = get_settings()
-    if not settings.whatsapp_enabled:
-        raise HTTPException(503, "WhatsApp channel is not configured")
-    if not settings.whatsapp_app_secret:
-        raise HTTPException(503, "Set WHATSAPP_APP_SECRET so incoming messages can be verified")
+    if not settings.whatsapp_enabled or not settings.whatsapp_app_secret:
+        # The caller is the public internet: the reason stays in our log, the answer says nothing about setup.
+        log.warning("whatsapp webhook refused: the channel or its app secret is not set up")
+        raise api_error(503, "unavailable", "This service is not available right now.")
     body = await request.body()
     if not signature_valid(settings.whatsapp_app_secret, body, request.headers.get("X-Hub-Signature-256")):
         raise HTTPException(401, "bad signature")

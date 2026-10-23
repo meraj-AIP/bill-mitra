@@ -79,12 +79,14 @@ def test_misread_customer_charge_is_never_trusted(reader):
     reader(reading(variant(MAR_2024, line_items=[
         {**i.model_dump(), "amount": 9.42} if i.code == "customer" else i.model_dump() for i in MAR_2024.line_items])))
     text = bodies(run(new_user(), kind="image"))
-    assert "do not add up" in text and "Rs" not in text
+    # The printed figures and the rules' gap are named; nothing is priced from a reading that does not add up.
+    assert "add up to Rs 693.42, but the bill amount reads Rs 774, a gap of Rs 80.58" in text
+    assert "charges in the middle of the slip" in text and "to pay" not in text
 
 
 def test_blurred_units_are_not_guessed(reader):
     reader(reading(variant(OCT_2025, unreadable_fields=["units"], quality="poor")))
-    assert "could not read this photo clearly" in bodies(run(new_user(), kind="image"))
+    assert "could not read the units" in bodies(run(new_user(), kind="image"))
 
 
 def test_reading_off_without_a_key_says_so():
@@ -93,7 +95,9 @@ def test_reading_off_without_a_key_says_so():
 
 def test_provider_failure_falls_back_to_typed_units(reader):
     reader(ProviderError("HTTPStatusError"))
-    assert "Type the units" in bodies(run(new_user(), kind="image"))
+    events = run(new_user(), kind="image")
+    assert "type the units on your bill, for example: 214 units October 2025" in bodies(events)
+    assert [b.id for b in messages(events)[-1].buttons] == ["retry_last", "type_units"]
 
 
 def test_meter_photo_projects_from_the_last_real_bill(reader):

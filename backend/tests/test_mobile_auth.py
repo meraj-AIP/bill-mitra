@@ -80,7 +80,7 @@ def test_a_number_the_discom_does_not_hold_cannot_sign_up(discom):
     mobile = _mobile()
     with TestClient(app) as client:
         refused = _start(client, mobile)
-        assert refused.status_code == 404 and "not registered with TGSPDCL" in refused.json()["detail"]
+        assert refused.status_code == 404 and "not registered with TGSPDCL" in refused.json()["detail"]["message"]
         assert _start(client, mobile, discom=None).status_code == 422  # the DISCOM must be chosen
         assert client.get("/api/auth/me").status_code == 401
 
@@ -131,7 +131,7 @@ def test_an_on_screen_code_never_opens_a_real_account(discom, monkeypatch):
         client.post("/api/auth/logout")
         for purpose in ("login", "signup"):
             refused = _start(client, mobile, purpose=purpose)
-            assert refused.status_code == 403 and "dev_code" not in refused.text and "WhatsApp" in refused.json()["detail"]
+            assert refused.status_code == 403 and "dev_code" not in refused.text and "WhatsApp" in refused.json()["detail"]["message"]
         monkeypatch.setattr(get_settings(), "demo_accounts_password", "test-only-demo-passphrase")
         demo_accounts.ensure()
         sample = _start(client, "6000000001", purpose="login", discom=None)

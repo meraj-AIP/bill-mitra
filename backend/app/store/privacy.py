@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from app.config import get_settings
-from app.store import account_connections, media, otp_codes, repos, voice_cache
+from app.store import account_connections, media, otp_codes, pending_reads, repos, voice_cache
 from app.store.db import tx
 
 log = logging.getLogger(__name__)
@@ -53,6 +53,7 @@ def sweep() -> SweepResult:
         conn.executemany("DELETE FROM bills WHERE id = ?", [(r["id"],) for r in old])
         conn.execute("DELETE FROM chat_messages WHERE ts < datetime('now', ?)", (f"-{days} days",))
         voice_cache.sweep(conn, days)
+        pending_reads.sweep(conn)
         conn.execute("UPDATE users SET current_bill_id = NULL WHERE current_bill_id IS NOT NULL AND "
                      "current_bill_id NOT IN (SELECT id FROM bills)")
     otp_codes.sweep()

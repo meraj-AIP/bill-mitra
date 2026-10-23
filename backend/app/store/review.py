@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from app.core.errors import Refusal
 from app.store.complaints import OPEN_STATUSES, VISIBLE, VISIBLE_PARAMS
 from app.store.db import tx
 
@@ -170,7 +171,7 @@ def create_decision(ticket: str, bill_id: str, values: dict[str, Any], proposed_
         current = conn.execute("SELECT status FROM review_decisions WHERE ticket = ? AND status != 'withdrawn' "
                                "ORDER BY id DESC LIMIT 1", (ticket,)).fetchone()
         if current and current[0] in ("pending_approval", "approved"):
-            raise ValueError("This case already has a decision. Withdraw it before recording another.")
+            raise Refusal("This case already has a decision. Withdraw it before recording another.")
         revision = _next_revision(conn, bill_id) if approved and values["reduction"] > 0 else None
         return int(conn.execute(
             "INSERT INTO review_decisions (ticket, bill_id, kind, status, original_amount, revised_amount, reduction, "

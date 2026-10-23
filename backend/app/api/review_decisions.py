@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, StringConstraints
 
 from app.api.deps import require_perm
 from app.api.review import DECIDABLE, CaseDetail, Preview, case_analysis, corrected_preview, detail, find_case
+from app.core.errors import REFUSED, Refusal, safe_message
 from app.domain import review as rules
 from app.domain.conversation.facts import rs
 from app.domain.review import MIN_NOTE, DecisionKind, ReasonCode
@@ -87,13 +88,13 @@ def _outcome(body: DecisionBody, complaint: Complaint) -> tuple[rules.Outcome, s
             return rules.correct(a.bill, a.comp), a.bill.bill_month
         if body.kind == "corrected_reading":
             if body.corrected_present_reading is None:
-                raise ValueError("Give the corrected present reading.")
+                raise Refusal("Give the corrected present reading.")
             return rules.corrected_reading(a.bill, body.corrected_present_reading, policy), a.bill.bill_month
         if body.reduction is None:
-            raise ValueError("Give the reduction in rupees.")
+            raise Refusal("Give the reduction in rupees.")
         return rules.custom(a.bill, body.reduction, policy), a.bill.bill_month
     except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        raise HTTPException(400, safe_message(exc, REFUSED)) from exc
 
 
 async def _settled(complaint: Complaint, decision_id: int, actor_id: str, bill_month: str | None) -> None:
@@ -159,7 +160,7 @@ async def decide(ticket: str, body: DecisionBody, account: Decider) -> CaseDetai
     try:
         decision_id = store.create_decision(ticket, complaint.bill_id or "", values, account.id, approved)
     except ValueError as exc:
-        raise HTTPException(409, str(exc)) from exc
+        raise HTTPException(409, safe_message(exc, REFUSED)) from exc
     accounts.audit(account.id, "decision.create", ticket, f"decision {decision_id}, {body.kind}, reduction Rs "
                    f"{rs(outcome.reduction)}, {'approved by policy' if approved else 'awaiting approval'}",
                    unit_id=complaint.unit_id)

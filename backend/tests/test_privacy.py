@@ -98,7 +98,7 @@ def test_staff_cannot_delete_themselves_and_anonymous_gets_401(sign_in):
         assert client.delete("/api/me").status_code == 401
         sign_in(client, "officer", "TGSPDCL")
         response = client.delete("/api/me")
-    assert response.status_code == 403 and response.json()["detail"] == "Staff accounts are closed by an administrator."
+    assert response.status_code == 403 and response.json()["detail"]["message"] == "Staff accounts are closed by an administrator."
 
 
 def test_stop_in_chat_deletes_media_and_cuts_the_reply_address():

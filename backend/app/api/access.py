@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFi
 from pydantic import BaseModel, Field
 
 from app.api.deps import in_scope, require_perm, viewer
+from app.core.errors import REFUSED, safe_message
 from app.core.uploads import read_csv
 from app.domain import rbac
 from app.domain.review import Policy
@@ -93,9 +94,9 @@ async def create_role(body: NewRole, actor: RoleManager) -> Role:
     try:
         role = roles.create(body.name, body.description, body.permissions)
     except Conflict as exc:
-        raise HTTPException(409, str(exc)) from exc
+        raise HTTPException(409, safe_message(exc, REFUSED)) from exc
     except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        raise HTTPException(400, safe_message(exc, REFUSED)) from exc
     accounts.audit(actor.id, "role.create", role.slug, ",".join(role.permissions))
     return role
 
@@ -105,7 +106,7 @@ async def patch_role(slug: str, body: RolePatch, actor: RoleManager) -> Role:
     try:
         role = roles.update(slug, name=body.name, description=body.description, permissions=body.permissions)
     except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        raise HTTPException(400, safe_message(exc, REFUSED)) from exc
     if role is None:
         raise HTTPException(404, "Role not found.")
     accounts.audit(actor.id, "role.update", slug, ",".join(sorted(body.model_fields_set)) or None)
@@ -127,7 +128,7 @@ async def delete_role(slug: str, actor: RoleManager) -> Response:
         if not roles.delete(slug):
             raise HTTPException(404, "Role not found.")
     except Conflict as exc:
-        raise HTTPException(409, str(exc)) from exc
+        raise HTTPException(409, safe_message(exc, REFUSED)) from exc
     accounts.audit(actor.id, "role.delete", slug)
     return Response(status_code=204)
 
@@ -152,9 +153,9 @@ async def create_unit(body: NewUnit, actor: UnitManager) -> Unit:
     try:
         unit = units.create(body.kind, body.name, body.code, body.parent_id, body.ero_id, body.aliases)
     except Conflict as exc:
-        raise HTTPException(409, str(exc)) from exc
+        raise HTTPException(409, safe_message(exc, REFUSED)) from exc
     except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        raise HTTPException(400, safe_message(exc, REFUSED)) from exc
     accounts.audit(actor.id, "unit.create", unit.id, unit.kind, unit_id=unit.id)
     return unit
 
@@ -165,9 +166,9 @@ async def patch_unit(unit_id: str, body: UnitPatch, actor: UnitManager) -> Unit:
     try:
         unit = units.update(unit_id, body.model_dump(include=body.model_fields_set))
     except Conflict as exc:
-        raise HTTPException(409, str(exc)) from exc
+        raise HTTPException(409, safe_message(exc, REFUSED)) from exc
     except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        raise HTTPException(400, safe_message(exc, REFUSED)) from exc
     assert unit is not None
     accounts.audit(actor.id, "unit.update", unit_id, ",".join(sorted(body.model_fields_set)) or None, unit_id=unit_id)
     return unit
@@ -203,9 +204,9 @@ async def map_unmapped(body: MapUnmapped, actor: UnitManager) -> Response:
     try:
         section = units.map_unmapped(body.name, body.discom, body.section_id)
     except Conflict as exc:
-        raise HTTPException(409, str(exc)) from exc
+        raise HTTPException(409, safe_message(exc, REFUSED)) from exc
     except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        raise HTTPException(400, safe_message(exc, REFUSED)) from exc
     moved = cases.reroute(body.discom, {units.norm(n) for n in [section.name, *section.aliases]})
     accounts.audit(actor.id, "unit.map", section.id, f"{len(moved)} open cases re-routed", unit_id=section.id)
     return Response(status_code=204)

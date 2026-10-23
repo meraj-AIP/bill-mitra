@@ -196,6 +196,7 @@ def to_bill(raw: dict[str, Any]) -> ExtractedBill:
     """Validate, and when a field still does not fit the model, drop just that field and say it was unreadable.
     Raises ValidationError only when the answer has no usable shape at all."""
     data = normalise(raw)
+    data.pop("confirmed_by_consumer", None)  # only the consumer's own tap sets it, never a model's answer
     for _ in range(MAX_SALVAGE):
         try:
             return ExtractedBill.model_validate(data)

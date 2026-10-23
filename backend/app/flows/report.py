@@ -15,9 +15,10 @@ from app.config import get_settings
 from app.domain import capture
 from app.domain.bill import ExtractedBill
 from app.domain.conversation import composer
+from app.domain.conversation.lang import text
 from app.domain.prediction import MonthUsage
 from app.domain.review import Final
-from app.flows import case_bills, cases, misread
+from app.flows import case_bills, cases, misread, read_problem
 from app.flows.analysis import Analysis, analyse
 from app.flows.bill import Outcome, log_read, outcome, read_ms
 from app.flows.complaint import LABEL_EN
@@ -28,11 +29,6 @@ from app.store import complaints, extract_jobs, media, repos
 
 log = logging.getLogger(__name__)
 
-REASONS: dict[str, str] = {
-    "reading_off": "Bill reading is switched off on this server because no vision model key is set.",
-    "reading_failed": "The bill reader did not respond. Please try again in a minute.",
-    "meter": "This is a meter photo. Upload the bill itself here; meter photos work in the Assistant.",
-}
 
 
 class BillReport(BaseModel):
@@ -41,7 +37,8 @@ class BillReport(BaseModel):
     media_url: str | None  # None when no photo was stored, for example a bill fetched by its USC
     mime_type: str
     outcome: Outcome
-    outcome_reason: str | None
+    outcome_reason: str | None  # in the uploader's language: what happened, which part, and what to do next
+    problem: str | None = None  # the same as a stable key (flows/read_problem.py), None when checked
     classification: dict[str, Any] | None
     bill: dict[str, Any] | None
     capture: capture.CaptureReport | None
@@ -83,18 +80,15 @@ def _analysis(a: Analysis, language: str) -> dict[str, Any]:
     }
 
 
-def _reason(result: Outcome, reading: vision.Reading | None, report: capture.CaptureReport | None) -> str | None:
-    if result in REASONS:
-        return REASONS[result]
-    seen = reading.classification if reading else None
-    if result == "not_a_bill" and seen:
-        return f"{seen.reason} Upload a TGSPDCL or TGNPDCL electricity bill."
-    if result == "retake":
-        return (report.problem if report else None) or (seen.quality_issue if seen else None) or \
-            "The photo is not clear enough to read."
-    if reading and reading.reread:
-        return "The first reading did not add up, so the bill was read a second time. The second reading checks out."
-    return None
+def _problem(result: Outcome, reading: vision.Reading | None, report: capture.CaptureReport | None) -> str | None:
+    return "meter" if result == "meter" else read_problem.diagnose(result, reading, report)
+
+
+def _reason(problem: str | None, reading: vision.Reading | None, report: capture.CaptureReport | None,
+            language: str) -> str | None:
+    if problem is not None:
+        return read_problem.reason(problem, report, language)
+    return text(language, "dash_reread") if reading and reading.reread else None
 
 
 async def read(data: bytes, mime: str) -> vision.Reading | None:
@@ -132,6 +126,7 @@ def finish_upload(user_id: str, reading: vision.Reading | None, mime: str, media
     result = outcome(reading, report)
     log_read("dashboard", language, result, reading, ms)
     result_out: Outcome = "not_a_bill" if result == "meter" else result
+    problem = _problem(result, reading, report)
     bill_id, created, analysis, final, found = None, None, None, None, None
     if result == "checked" and reading and reading.bill:
         a = analyse(reading.bill, user_id)
@@ -146,7 +141,7 @@ def finish_upload(user_id: str, reading: vision.Reading | None, mime: str, media
     return BillReport(
         id=bill_id, created_at=created.created_at if created else None,
         media_url=f"/api/media/{media_id}" if media_id else None,
-        mime_type=mime, outcome=result_out, outcome_reason=_reason(result, reading, report),
+        mime_type=mime, outcome=result_out, outcome_reason=_reason(problem, reading, report, language), problem=problem,
         classification=reading.classification.model_dump() if reading else None, bill=_bill_out(reading),
         capture=report, analysis=analysis, final=final, misread=found)
 

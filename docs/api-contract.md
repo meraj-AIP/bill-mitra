@@ -1,8 +1,37 @@
 # API contract: accounts, access, complaints and bill review
 
-The backend and the web app both build to this file. Errors are always `{ "detail": string }`, with one exception: a
-wrong code on `POST /api/bills/by-usc/verify` answers `{ "detail": { "message": string, "attempts_left": number } }`.
+The backend and the web app both build to this file. Every error has the one shape in [Errors](#errors) below.
 The detailed rules for roles, units, review policy and bill review (decision maths, case states, evidence pack) are in [review-contract.md](review-contract.md). This file lists every route and its shape; it does not repeat those rules.
+
+## Errors
+
+Every 4xx and 5xx answer, from any route or middleware, is this envelope ([errors-contract.md](errors-contract.md)):
+
+```ts
+interface ApiErrorBody { detail: {
+  code: string;      // stable snake_case key, e.g. not_found, invalid, rate_limited, code_wrong, server_error
+  message: string;   // safe to show as is; in the request's language where the route takes `language`
+  ref: string;       // short request id, also in the X-Request-Id header and the server log line
+  [extra: string]: unknown;   // per route, e.g. attempts_left on a wrong USC code, max_mb on a file too large
+} }
+```
+
+- Every response, error or not, carries `X-Request-Id`. Support finds the log line by it.
+- 500: `{ code: "server_error", message: "Something went wrong on our side. Reference A1B2C3.", ref: "A1B2C3" }`. The
+  log has the exception type, the code lines and the ref, never the error text or the request body.
+- 422: one readable sentence. A validator's own words when it wrote some (`"A service number is 5 to 16 digits."`),
+  otherwise "Some details are missing or not in the right form. Please check them and try again." No field paths.
+- 429: says what was limited, for example `{ code: "rate_limited", message: "Too many uploads. Please wait a minute.",
+  limit: "bill-upload" }`.
+- No Python error text reaches a client. Domain refusals written for people (`Refusal` in `app/core/errors.py`) are
+  passed through; anything else becomes "That could not be done. Please check the details and try again."
+- Translated (`language` query, form field or body): the bill dashboard, bill by USC, the consumer's complaints, the
+  web chat upload and `POST /api/auth/otp/start`. A 422 or 500 uses the `language` query parameter when there is one.
+
+```json
+{ "detail": { "code": "code_wrong", "message": "That code is not right or has expired. You have 4 tries left, or you can ask for a new code.", "ref": "7F3A0C", "attempts_left": 4 } }
+{ "detail": { "code": "bill_not_found", "message": "बिल नहीं मिला।", "ref": "0B91D2" } }
+```
 
 ## Sessions, permissions and scopes
 
@@ -142,7 +171,7 @@ interface Policy { discom: 'TGSPDCL' | 'TGNPDCL'; ae_limit: number | null; custo
 | `POST /api/bills/{bill_id}/review-request` | `self.bills`, owner | `{ note? (max 500) }`, `language?` | `ReviewSummary`. 409 if a case is already open for the bill |
 | `POST /api/bills/{bill_id}/review-request/no-bills` | `self.bills`, owner | `language?` | `ReviewSummary`. Answers the open request for earlier bills with "I do not have them". 409 if no such request is open |
 | `POST /api/bills/by-usc/start` | `self.bills` | `{ discom: 'TGSPDCL' or 'TGNPDCL', service_number (5..16 digits) }`, `language?` | 202 `UscStarted`, the same body whether or not the number exists. 503 when the DISCOM lookup or the code sender is not configured, 429 after 5 starts per account or 3 per service number in an hour |
-| `POST /api/bills/by-usc/verify` | `self.bills` | `{ discom, service_number, code (6 digits; omit on a development server) }`, `language?` | `BillReport` of the fetched bill (saved as the caller's bill, `source = 'discom'`). 400 `{ detail: { message, attempts_left } }` for a wrong, expired or unknown code (all alike), 429 when locked (5 wrong codes lock for 30 minutes), 404 when no bill comes back, 503 not configured |
+| `POST /api/bills/by-usc/verify` | `self.bills` | `{ discom, service_number, code (6 digits; omit on a development server) }`, `language?` | `BillReport` of the fetched bill (saved as the caller's bill, `source = 'discom'`). 400 `code_wrong` with `attempts_left` for a wrong, expired or unknown code (all alike but the ref), 429 when locked (5 wrong codes lock for 30 minutes), 404 when no bill comes back, 503 not configured |
 
 ```ts
 interface BillRow { id: string; created_at: string; bill_month: string | null; discom: string | null; units: number | null;
@@ -165,8 +194,19 @@ The consumer side never names who reviews. `office` is the DISCOM.
 ```ts
 interface ReadJob { job_id: string; status: 'queued' | 'running' | 'done' | 'failed';
   bill_id: string | null;   // set when done and the bill was saved
-  detail: string | null }   // plain words while waiting; why, when done without a bill (not a bill, retake) or failed
+  outcome: 'checked' | 'retake' | 'not_a_bill' | 'reading_failed' | 'reading_off' | null;   // null until finished
+  problem: string | null;   // the problem key below, when finished without a bill
+  detail: string | null }   // in the uploader's language: while waiting, or why there is no bill and what to do
+// BillReport gains problem: string | null, and outcome_reason is in the request's language.
+// problem keys: chk_readings, chk_energy_units, chk_net_units, chk_export_readings, chk_charges_sum, chk_total,
+//   unread_units, unread_energy, unread_bill_amount, unread_low_confidence, poor_quality, meter_unreadable, meter,
+//   not_a_bill, other_discom (never priced), file_unopenable, file_too_long, read_failed, reading_off
+// CaptureReport gains problem_code ('no_units' | 'unreadable' | 'check' | 'low_confidence' | null) and problem_key;
+// each check gains values: { [name]: number }, the printed figures and the rules' result.
 ```
+
+A finished read always ends: `done` with a `bill_id`, `done` with `outcome` retake or not_a_bill and a reason, or
+`failed` with `outcome: 'reading_failed'`. The page never has to keep polling a finished job.
 
 ```ts
 interface UscStarted { status: 'accepted'; message: string; expires_in_seconds: number;   // 300

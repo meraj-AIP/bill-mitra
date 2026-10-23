@@ -5,7 +5,10 @@ import time
 from collections.abc import Callable
 from threading import Lock
 
-from fastapi import HTTPException, Request
+from fastapi import Request
+
+from app.core.errors import api_error, request_language
+from app.domain.conversation.lang import text
 
 _hits: dict[str, tuple[float, int]] = {}
 _lock = Lock()
@@ -24,10 +27,18 @@ def hit(key: str, limit: int, window_s: int) -> bool:
         return count + 1 <= limit
 
 
+# What each limiter guards, so the refusal says what was limited (lang key err_limit_<kind>).
+KINDS = {"login": "signin", "otp-start": "codes", "otp-verify": "signin", "bill-upload": "uploads",
+         "chat-upload": "uploads", "review-request": "reports", "account-import": "imports",
+         "consumer-complaint": "complaints", "consumer-complaint-reply": "messages",
+         "consumer-complaint-photo": "uploads"}
+
+
 def per_ip(name: str, limit: int, window_s: int = 60) -> Callable[[Request], None]:
     def check(request: Request) -> None:
         client = request.client.host if request.client else "unknown"
         if not hit(f"{name}:{client}", limit, window_s):
-            raise HTTPException(429, "Too many attempts. Please wait a minute and try again.")
+            message = text(request_language(request), f"err_limit_{KINDS.get(name, 'other')}")
+            raise api_error(429, "rate_limited", message, limit=name)
 
     return check

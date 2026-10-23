@@ -80,7 +80,8 @@ class Graph:
         if host == "lookaside.fbsbx.com":
             self.auth_headers.append(request.headers.get("authorization", ""))
             self.downloads.append("lookaside")
-            return httpx.Response(200, content=b"synthetic-photo-bytes")
+            # A JPEG signature, so the upload type check lets the synthetic photo through.
+            return httpx.Response(200, content=b"\xff\xd8\xff synthetic-photo-bytes")
         if host == "api.sarvam.ai":
             self.tts_calls += 1
             return httpx.Response(200, json={"audios": [base64.b64encode(self.tts_audio).decode()]})

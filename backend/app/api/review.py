@@ -15,6 +15,7 @@ from app.api.complaints import AuditLineOut, visible_to
 from app.api.deps import require_perm, viewer
 from app.api.thread import ComplaintMessage, RequestOut
 from app.core import csvsafe
+from app.core.errors import REFUSED, safe_message
 from app.domain import review as rules
 from app.domain.complaint_reply import RequestKind
 from app.domain.review import DecisionKind, Policy, ReasonCode, Spike
@@ -297,7 +298,7 @@ async def preview(ticket: str, body: PreviewBody,
     try:
         return corrected_preview(complaint, found[0], body.corrected_present_reading)
     except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
+        raise HTTPException(400, safe_message(exc, REFUSED)) from exc
 
 
 def corrected_preview(complaint: Complaint, a: Analysis, present: float) -> Preview:

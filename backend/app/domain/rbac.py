@@ -6,6 +6,8 @@ The catalogue and the built-in roles are fixed here. Custom roles are rows in th
 import re
 from dataclasses import dataclass
 
+from app.core.errors import Refusal
+
 # code: (label, group). Order is the order the admin page lists them.
 PERMISSIONS: dict[str, tuple[str, str]] = {
     "roles.manage": ("Create, edit and delete custom roles", "Administration"),
@@ -81,12 +83,12 @@ def validate(permissions: list[str]) -> list[str]:
     chosen = list(dict.fromkeys(permissions))
     unknown = [p for p in chosen if p not in PERMISSIONS]
     if unknown:
-        raise ValueError(f"Unknown permission: {', '.join(unknown)}.")
+        raise Refusal(f"Unknown permission: {', '.join(unknown)}.")
     if not chosen:
-        raise ValueError("A role needs at least one permission.")
+        raise Refusal("A role needs at least one permission.")
     clash = sorted(set(chosen) & NOT_WITH_ROLE_MANAGEMENT) if "roles.manage" in chosen else []
     if clash:
-        raise ValueError(f"A role that manages roles cannot also hold {', '.join(clash)}.")
+        raise Refusal(f"A role that manages roles cannot also hold {', '.join(clash)}.")
     return [p for p in PERMISSIONS if p in chosen]
 
 
@@ -94,9 +96,9 @@ def check_builtin_edit(slug: str, permissions: list[str]) -> None:
     """The two locks on editing a built-in role: households keep exactly their access, and the admin role
     always keeps role management, so nobody can lock every administrator out."""
     if slug == CONSUMER:
-        raise ValueError("The consumer role is fixed: every household relies on it.")
+        raise Refusal("The consumer role is fixed: every household relies on it.")
     if slug == ADMIN and "roles.manage" not in permissions:
-        raise ValueError("The admin role must keep role management.")
+        raise Refusal("The admin role must keep role management.")
 
 
 def default_permissions(slug: str) -> list[str] | None:
@@ -107,5 +109,5 @@ def default_permissions(slug: str) -> list[str] | None:
 def slugify(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_")[:40]
     if not slug:
-        raise ValueError("The role name needs at least one letter or digit.")
+        raise Refusal("The role name needs at least one letter or digit.")
     return slug

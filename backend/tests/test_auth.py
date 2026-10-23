@@ -32,7 +32,8 @@ def test_wrong_password_and_unknown_login_get_the_same_answer():
     with TestClient(app) as client:
         for login in ("wrong-pass@example.com", "nobody@example.com"):
             response = client.post("/api/auth/login", json={"login": login, "password": "not-the-password"})
-            assert response.status_code == 401 and response.json() == {"detail": WRONG}
+            detail = response.json()["detail"]
+            assert response.status_code == 401 and (detail["code"], detail["message"]) == ("not_signed_in", WRONG)
 
 
 def test_five_failures_lock_the_login():

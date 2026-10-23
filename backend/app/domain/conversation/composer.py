@@ -62,6 +62,8 @@ def explain(f: Facts, lang: str) -> list[str]:
     elif f.gj_lost:
         out.append(text(lang, "gj_lost"))
     out.extend(_audit_sentences(f, lang))
+    if f.tariff_nearest:
+        out.append(text(lang, "tariff_nearest"))
     out.extend(_estimated(f, lang, "reading_estimated"))
     if f.surcharge:
         out.append(text(lang, "surcharge", surcharge=rs(f.surcharge)))

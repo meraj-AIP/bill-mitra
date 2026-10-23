@@ -4,9 +4,9 @@ from collections.abc import Awaitable, Callable
 from urllib.parse import urlsplit
 
 from fastapi import Request, Response
-from fastapi.responses import JSONResponse
 
 from app.config import get_settings
+from app.core import errors
 
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 EXEMPT = ("/api/whatsapp/webhook",)  # signed by Meta, not sent by a browser
@@ -27,7 +27,7 @@ def _allowed_origin(request: Request) -> bool:
 async def protect(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
     if request.method in UNSAFE and request.url.path.startswith("/api/") and \
             not request.url.path.startswith(EXEMPT) and not _allowed_origin(request):
-        return JSONResponse({"detail": "Request from another site refused."}, status_code=403)
+        return errors.respond(403, {"code": "cross_site", "message": "Request from another site refused."})
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")

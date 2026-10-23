@@ -7,7 +7,9 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import COOKIE, AnyAccount
 from app.config import get_settings
+from app.core.errors import api_error
 from app.core.ratelimit import per_ip
+from app.domain.conversation.lang import text
 from app.flows import mobile_auth
 from app.store import account_connections, accounts, demo_accounts
 from app.store.account_connections import Connection
@@ -95,16 +97,9 @@ class SignIn(BaseModel):
     code: str = Field(pattern=r"^\d{6}$")
 
 
-START_REFUSED = {
-    "not_registered": (404, "This number is not registered with {discom}. Use the mobile number on your electricity "
-                            "connection, or update it at your DISCOM office."),
-    "rate_limited": (429, "Too many codes for this number. Please wait an hour and try again."),
-    "locked": (429, "Too many wrong codes. Please wait 30 minutes and try again."),
-    "unavailable": (503, "Codes cannot be sent this way right now. Try the other option, or try again later."),
-    "not_sent": (502, "The code could not be sent. Try the other option, or try again in a minute."),
-    "demo_only": (403, "This demo server cannot send codes yet, so it signs in only the sample consumer and new numbers. "
-                       "Please use Bill Mitra on WhatsApp."),
-}
+# The HTTP status per refusal; the words are in the lang packs as err_otp_<status>, in the language asked for.
+START_REFUSED = {"not_registered": 404, "rate_limited": 429, "locked": 429, "unavailable": 503, "not_sent": 502,
+                 "demo_only": 403}
 VERIFY_REFUSED = {
     "wrong": (400, "That code is not right, or it has expired. Check it, or ask for a new one."),
     "locked": (429, "Too many wrong codes. Please wait 30 minutes and try again."),
@@ -122,11 +117,11 @@ def code_channels() -> CodeChannels:
 @router.post("/otp/start", response_model=CodeSent, dependencies=[Depends(per_ip("otp-start", 10))])
 async def start_code(body: CodeRequest) -> CodeSent:
     if body.purpose == "signup" and body.discom is None:
-        raise HTTPException(422, "Choose your DISCOM.")
+        raise api_error(422, "discom_needed", text(body.language, "err_choose_discom"))
     started = await mobile_auth.start(body.mobile, body.purpose, body.channel, body.discom, body.language)
     if started.status != "sent":
-        code, message = START_REFUSED[started.status]
-        raise HTTPException(code, message.format(discom=body.discom))
+        raise api_error(START_REFUSED[started.status], started.status,
+                        text(body.language, f"err_otp_{started.status}", discom=body.discom))
     return CodeSent(channel=started.channel or body.channel, expires_in=mobile_auth.CODE_MINUTES * 60, resend_in=30,
                     connections=started.connections, dev_code=started.dev_code)
 
