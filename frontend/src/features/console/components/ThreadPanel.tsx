@@ -1,11 +1,11 @@
-import { Alert, Box } from '@mui/material';
+import { Box } from '@mui/material';
 import { useLayoutEffect, useRef } from 'react';
 
 import { useAuth } from '@/features/auth';
 import { MessageThread, type ComplaintDetail } from '@/features/complaints';
 
 import { useRetry } from '../api/actionsApi';
-import { useConfirm } from '@/shared/feedback';
+import { ErrorNotice, useConfirm } from '@/shared/feedback';
 
 /**
  * The thread scrolls inside its own box, so a new message moves this box and never the page.
@@ -33,7 +33,7 @@ export function ThreadPanel({ ticket, messages, inApp = false, height = { xs: '4
   }, [messages.length]);
   return (
     <Box ref={box} sx={{ maxHeight: height, overflowY: 'auto', overscrollBehavior: 'contain', pr: 0.5 }}>
-      {retry.isError && <Alert severity="error" sx={{ mb: 1.5 }}>{retry.error.message}</Alert>}
+      <ErrorNotice error={retry.isError ? retry.error : null} action="Sending it again" sx={{ mb: 1.5 }} />
       <MessageThread messages={messages} viewer="staff" {...(canRetry ? { onRetry: (id: number) => void sendAgain(id) } : {})} inApp={inApp} />
     </Box>
   );

@@ -19,9 +19,14 @@ main() {
   $sudo env APP_DIR="$app_dir" BACKUP_BUCKET="${BACKUP_BUCKET:-}" "$here/backup.sh" || fail "backup, deploy stopped"
 
   cd "$app_dir"
-  log "pulling $(git -C src rev-parse --short HEAD)"
-  git -C src pull --ff-only || fail "git pull"
-  log "now at $(git -C src rev-parse --short HEAD), rebuilding"
+  # git runs as the owner of src/, never as root: a root pull leaves root-owned objects that break the next pull.
+  local owner as_owner=""
+  owner="$(stat -c %U src)"
+  [ "$(id -un)" = "$owner" ] || as_owner="sudo -u $owner"
+  log "pulling $($as_owner git -C src rev-parse --short HEAD) as $owner"
+  $as_owner git -C src pull --ff-only \
+    || fail "git pull. If it says unpack-objects or permission denied, run: sudo chown -R $owner:$owner $app_dir/src/.git, then deploy again"
+  log "now at $($as_owner git -C src rev-parse --short HEAD), rebuilding"
   $sudo docker compose -f compose.yml up -d --build || fail "docker compose up"
 
   log "waiting up to ${wait_seconds}s for $health_url"

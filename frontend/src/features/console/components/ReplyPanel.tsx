@@ -11,7 +11,7 @@ import { useReply } from '../api/consoleApi';
 import { usePreset } from '../hooks/usePreset';
 import type { Focus } from '../model/focus';
 import { OptionCards } from './OptionCards';
-import { Cancelled, useConfirm, type ConfirmOptions } from '@/shared/feedback';
+import { Cancelled, describeError, useConfirm, type ConfirmOptions } from '@/shared/feedback';
 
 function Destination({ complaint }: { complaint: ComplaintDetail }) {
   const whatsapp = complaint.reply_channel === 'whatsapp';
@@ -122,7 +122,7 @@ export function ReplyPanel({ complaint, preset }: { complaint: ComplaintDetail; 
       )}
       {chosen && (
         <DraftRow wording={loaded.wording} asks={chosen.asks !== null} pending={ai.isPending}
-          error={ai.isError ? ai.error.message : null} onDraft={draftWithAi} />
+          error={ai.isError ? describeError(ai.error, 'The AI draft').message : null} onDraft={draftWithAi} />
       )}
       <ReplyBox key={loaded.n} stacked initial={loaded.text} label="Reply to the consumer"
         placeholder="Pick a reply above or write in plain words. The consumer may read this on a phone."

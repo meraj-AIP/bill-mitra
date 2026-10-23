@@ -1,5 +1,6 @@
 import { InputAdornment, LinearProgress, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 
+import { describeError } from '@/shared/feedback';
 import { formatCount } from '@/shared/lib/format';
 
 import type { CaseDetail, DecisionKind, Preview } from '../api/types';
@@ -34,7 +35,7 @@ const printed = (v: number | null | undefined) => (v === null || v === undefined
 
 function ReadingField({ c, draft, onDraft, preview, problems }: AmountFieldsProps) {
   const previous = c.bill?.previous_reading ?? null;
-  const helper = preview.error?.message ?? problems.reading
+  const helper = (preview.error ? describeError(preview.error, 'The price check').message : null) ?? problems.reading
     ?? `Printed: ${printed(c.bill?.present_reading)}. Previous: ${printed(previous)}.`;
   return (
     <Stack sx={{ gap: 1 }}>

@@ -1,4 +1,5 @@
 import { AssistCard, type AssistView } from '@/shared/components/AssistCard';
+import { describeError } from '@/shared/feedback';
 import { revealSection } from '@/shared/lib/reveal';
 
 import { useAskConsumer, useCaseAssist, useDraft, useRefreshCaseAssist, type CaseAssist as Assist } from '../api/reviewApi';
@@ -28,8 +29,9 @@ export function CaseAssist({ c, onAsk }: { c: CaseDetail; onAsk: () => void }) {
     action: ruled ? null : actionFor(c, data, onAsk),
     wordedBy: data.worded_by ?? 'rules',
   } : null;
+  const failed = assist.error ?? refresh.error;
   return (
-    <AssistCard subject="this case" view={view} pending={assist.isFetching || refresh.isPending} error={(assist.error ?? refresh.error)?.message ?? null}
+    <AssistCard subject="this case" view={view} pending={assist.isFetching || refresh.isPending} error={failed ? describeError(failed, 'AI assist').message : null}
       onAsk={() => refresh.mutate()}
       onSendQuestion={c.can.request_info ? (text) => ask.mutateAsync({ kind: 'note', note: text }) : null} foldQuestions />
   );

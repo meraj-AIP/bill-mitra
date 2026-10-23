@@ -5,7 +5,8 @@ import { Link, useParams } from 'react-router-dom';
 import { DetailSkeleton, pagePhotos } from '@/features/complaints';
 import { isStatus } from '@/shared/api/http';
 import { PhotoGallery, uniquePhotos } from '@/shared/components/PhotoGallery';
-import { EmptyState, ErrorState } from '@/shared/components/States';
+import { EmptyState } from '@/shared/components/States';
+import { ErrorNotice } from '@/shared/feedback';
 
 import { revealSection } from '@/shared/lib/reveal';
 
@@ -69,7 +70,7 @@ export function CasePage() {
         <EmptyState title="Case not found" hint="The ticket may be mistyped, or the case may sit outside your units."
           action={<Button variant="contained" component={Link} to="/review">Back to the queue</Button>} />
       )}
-      {result.isError && !isStatus(result.error, 404) && <ErrorState message={result.error.message} onRetry={() => void result.refetch()} />}
+      {result.isError && !isStatus(result.error, 404) && <ErrorNotice error={result.error} title="Could not load this case" retrySafe onRetry={() => void result.refetch()} />}
       {c && (
         <Gallery c={c}>
           <Stack sx={{ gap: 2.5 }}>

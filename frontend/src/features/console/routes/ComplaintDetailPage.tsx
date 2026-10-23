@@ -6,7 +6,8 @@ import { useAuth } from '@/features/auth';
 import { DetailSkeleton, pagePhotos, type ComplaintDetail } from '@/features/complaints';
 import { isStatus } from '@/shared/api/http';
 import { PhotoGallery } from '@/shared/components/PhotoGallery';
-import { EmptyState, ErrorState } from '@/shared/components/States';
+import { EmptyState } from '@/shared/components/States';
+import { ErrorNotice } from '@/shared/feedback';
 
 import { useConsoleComplaint } from '../api/consoleApi';
 import { CaseFile } from '../components/CaseFile';
@@ -90,7 +91,7 @@ export function ComplaintDetailPage() {
           action={<Button variant="contained" component={Link} to={INBOX}>Back to the inbox</Button>} />
       )}
       {complaint.isError && !isStatus(complaint.error, 404) && (
-        <ErrorState message={complaint.error.message} onRetry={() => void complaint.refetch()} />
+        <ErrorNotice error={complaint.error} title="Could not load this complaint" retrySafe onRetry={() => void complaint.refetch()} />
       )}
       {complaint.data && <Detail key={complaint.data.ticket} data={complaint.data} />}
     </Container>

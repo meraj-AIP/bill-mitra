@@ -6,7 +6,7 @@ import { useAskQuestion, useReplyOptions, type ReplyOptions } from '../api/actio
 import { useComplaintAssist, useRefreshAssist, type ComplaintAssist as Assist, type NextAction } from '../api/assistApi';
 import { useSetStatus } from '../api/consoleApi';
 import { reveal, type FocusTarget } from '../model/focus';
-import { useConfirm } from '@/shared/feedback';
+import { describeError, useConfirm } from '@/shared/feedback';
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/[\s-]+/g, '_');
 const statusFor = (key: string): ComplaintStatus | undefined => COMPLAINT_STATUSES.find((s) => norm(s) === norm(key));
@@ -82,7 +82,11 @@ export function ComplaintAssist({ complaint, onFocus }: Props) {
   const action = useNextStep(complaint, assist.data?.next_action ?? null, canReply, onFocus);
   return (
     <AssistCard subject="this complaint" view={assist.data ? toView(assist.data, action) : null} pending={assist.isFetching || refresh.isPending}
-      error={(assist.error ?? refresh.error)?.message ?? null} onAsk={() => refresh.mutate()}
+      error={assistError(assist.error ?? refresh.error)} onAsk={() => refresh.mutate()}
       onSendQuestion={canReply && isOpen(complaint) ? (text) => question.mutateAsync(text) : null} />
   );
+}
+
+function assistError(error: Error | null): string | null {
+  return error ? describeError(error, 'AI assist').message : null;
 }

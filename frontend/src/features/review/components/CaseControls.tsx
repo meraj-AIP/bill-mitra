@@ -5,7 +5,7 @@ import { useState } from 'react';
 
 import { useAssign, useUnmask } from '../api/reviewApi';
 import type { CaseDetail } from '../api/types';
-import { useConfirm } from '@/shared/feedback';
+import { describeError, useConfirm } from '@/shared/feedback';
 
 const LAYOUT = {
   inline: { direction: 'row', text: 'body2', sx: { gap: 0.5, alignItems: 'center' }, button: 'Show', indent: 0 },
@@ -42,7 +42,7 @@ export function UnmaskControl({ c, inline = false }: { c: CaseDetail; inline?: b
 }
 
 function UnmaskError({ error }: { error: Error | null }) {
-  return error ? <Typography variant="caption" sx={{ color: 'error.main' }}>{error.message}</Typography> : null;
+  return error ? <Typography variant="caption" sx={{ color: 'error.main' }}>{describeError(error).message}</Typography> : null;
 }
 
 
