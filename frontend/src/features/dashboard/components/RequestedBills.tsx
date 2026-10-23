@@ -9,7 +9,7 @@ import type { ReviewSummary } from '@/features/review';
 import { monthLabel } from '@/shared/lib/format';
 
 import { useNoBills } from '../api/billsApi';
-import { ActionError } from '@/shared/feedback';
+import { ErrorNotice } from '@/shared/feedback';
 
 function NoBillsDialog({ billId, onClose }: { billId: string; onClose: () => void }) {
   const noBills = useNoBills(billId);
@@ -18,7 +18,7 @@ function NoBillsDialog({ billId, onClose }: { billId: string; onClose: () => voi
       <DialogTitle>Continue without these bills?</DialogTitle>
       <DialogContent>
         <DialogContentText>We check this bill with the bills we already have and tell you the outcome.</DialogContentText>
-        <ActionError error={noBills.error} sx={{ mt: 2 }} />
+        <ErrorNotice error={noBills.error} sx={{ mt: 2 }} />
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onClose}>Cancel</Button>

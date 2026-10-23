@@ -33,7 +33,7 @@ export function useHistory() {
   return {
     items,
     loading: query.isPending,
-    error: query.isError && !query.isFetchNextPageError ? query.error.message : null,
+    error: query.isError && !query.isFetchNextPageError ? query.error : null,
     retry: useCallback(() => void refetch(), [refetch]),
     hasEarlier: query.hasNextPage,
     loadingEarlier: query.isFetchingNextPage,

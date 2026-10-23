@@ -8,6 +8,7 @@ import type { Unit } from '@/shared/api/types';
 import { useUnits } from '@/shared/api/units';
 import { PageHeader } from '@/shared/components/PageHeader';
 import { EmptyState, ErrorState } from '@/shared/components/States';
+import { ErrorNotice } from '@/shared/feedback';
 import { useUrlState } from '@/shared/hooks/useUrlState';
 
 import { CHILD_KINDS, inSentence, UnitDialog } from '../components/UnitDialog';
@@ -96,7 +97,7 @@ function Structure() {
     <Stack sx={{ gap: 2 }}>
       <Toolbar t={t} onAdd={canAdd ? () => setOpen({ kind: 'unit', unit: null }) : null} onImport={() => setOpen({ kind: 'import' })} />
       {t.lost && <ErrorState message="This place in the tree no longer exists. Go back to Telangana and open it again." onRetry={() => t.goTo(0)} />}
-      {t.childrenError && <ErrorState message={t.childrenError.message} onRetry={t.refetch} />}
+      <ErrorNotice error={t.childrenError} title="Could not load the units here" retrySafe onRetry={t.refetch} />
       <Level t={t} eros={eros} onEdit={(unit) => setOpen({ kind: 'unit', unit })} />
       <Dialogs open={open} parent={t.current} eros={eros} onClose={() => setOpen(null)} />
     </Stack>

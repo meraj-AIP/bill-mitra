@@ -7,7 +7,8 @@ import { ReplyBox } from '@/features/complaints';
 import { isStatus } from '@/shared/api/http';
 import { Panel } from '@/shared/components/Panel';
 import { PhotoGallery } from '@/shared/components/PhotoGallery';
-import { EmptyState, ErrorState } from '@/shared/components/States';
+import { EmptyState } from '@/shared/components/States';
+import { ErrorNotice } from '@/shared/feedback';
 
 import { useMyComplaint, useReplyToComplaint } from '../api/myComplaintsApi';
 import type { MyComplaintDetail } from '../api/types';
@@ -80,7 +81,7 @@ export function MyComplaintPage() {
           action={<Button variant="contained" component={Link} to="/complaints">Your complaints</Button>} />
       )}
       {complaint.isError && !isStatus(complaint.error, 404) && (
-        <ErrorState message={complaint.error.message} onRetry={() => void complaint.refetch()} />
+        <ErrorNotice error={complaint.error} title="Could not load your complaint" retrySafe onRetry={() => void complaint.refetch()} />
       )}
       {complaint.data && <Detail c={complaint.data} />}
     </Container>

@@ -1,5 +1,5 @@
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
-import { Alert, AlertTitle, Box, Button, IconButton, Stack } from '@mui/material';
+import { Alert, AlertTitle, Box, Button, IconButton, Stack, Typography } from '@mui/material';
 
 import { dismiss, useToasts, type Toast } from './store';
 
@@ -30,6 +30,9 @@ export function Toasts() {
             action={<Actions t={t} />} sx={{ pointerEvents: 'auto', boxShadow: 6, alignItems: 'flex-start' }}>
             <AlertTitle sx={{ mb: t.message ? 0.25 : 0 }}>{t.title}</AlertTitle>
             {t.message}
+            {t.reference && (
+              <Typography variant="caption" component="p" sx={{ mt: 0.5, opacity: 0.85 }}>Reference {t.reference}</Typography>
+            )}
           </Alert>
         ))}
       </Stack>

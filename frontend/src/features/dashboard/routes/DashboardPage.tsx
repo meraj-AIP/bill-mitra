@@ -1,10 +1,11 @@
-import { Alert, Button, Container, Grid, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, Container, Grid, Stack } from '@mui/material';
 import type { ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
 import { useHealth } from '@/shared/api/health';
 import { BillImage } from '@/shared/components/BillImage';
 import { PageHeader } from '@/shared/components/PageHeader';
+import { ErrorNotice } from '@/shared/feedback';
 import type { FilePreview } from '@/shared/hooks/useFilePreview';
 import { monthLabel } from '@/shared/lib/format';
 
@@ -16,6 +17,7 @@ import { UploadCard } from '../components/UploadCard';
 import { UscCard } from '../components/UscCard';
 import { useBillsParams } from '../hooks/useBillsParams';
 import { useBillUpload, type Sending } from '../hooks/useBillUpload';
+import { isLostUpload, LOST_UPLOAD } from '../model/upload';
 
 function WithPreview({ preview, children }: { preview: FilePreview; children: ReactNode }) {
   return (
@@ -28,17 +30,19 @@ function WithPreview({ preview, children }: { preview: FilePreview; children: Re
   );
 }
 
+interface SendFailedProps { failure: Error; onTryAgain: (() => void) | null; onStartOver: () => void }
+
 /** The send gave up. The photo stays on screen so Try again needs no new pick. */
-function SendFailed({ message, onTryAgain, onStartOver }: { message: string; onTryAgain: (() => void) | null; onStartOver: () => void }) {
+function SendFailed({ failure, onTryAgain, onStartOver }: SendFailedProps) {
   return (
-    <Alert severity="error" action={
-      <Stack sx={{ gap: 0.5 }}>
-        {onTryAgain && <Button color="inherit" size="small" onClick={onTryAgain}>Try again</Button>}
-        <Button color="inherit" size="small" onClick={onStartOver}>Choose another</Button>
-      </Stack>
-    }>
-      <Typography variant="body2">{message}</Typography>
-    </Alert>
+    <Stack sx={{ gap: 1.5 }}>
+      {isLostUpload(failure)
+        ? <Alert severity="warning">{LOST_UPLOAD}</Alert>
+        : <ErrorNotice error={failure} action="Sending your bill" retrySafe={Boolean(onTryAgain)} onRetry={onTryAgain ?? undefined} />}
+      <Box>
+        <Button variant="outlined" size="small" onClick={onStartOver}>Choose another</Button>
+      </Box>
+    </Stack>
   );
 }
 
@@ -70,10 +74,10 @@ function UploadStage({ flow, returnTo }: { flow: Flow; returnTo: string | null }
   const { preview, view } = flow;
   if (view === 'reading' && preview) return <Reading preview={preview} sending={flow.sending} />;
   if (view === 'waiting') return <StillReading checkFailed={flow.waitCheckFailed} onStartOver={flow.startOver} />;
-  if (view === 'failed' && preview) {
+  if (view === 'failed' && preview && flow.failure) {
     return (
       <WithPreview preview={preview}>
-        <SendFailed message={flow.error ?? ''} onTryAgain={flow.tryAgain} onStartOver={flow.startOver} />
+        <SendFailed failure={flow.failure} onTryAgain={flow.tryAgain} onStartOver={flow.startOver} />
       </WithPreview>
     );
   }
@@ -85,7 +89,7 @@ function UploadStage({ flow, returnTo }: { flow: Flow; returnTo: string | null }
   }
   return (
     <>
-      <UploadCard language={flow.language} onLanguage={flow.setLanguage} onFile={flow.onFile} onDismiss={flow.startOver} error={flow.error} />
+      <UploadCard language={flow.language} onLanguage={flow.setLanguage} onFile={flow.onFile} onDismiss={flow.startOver} error={flow.problem} />
       {!returnTo && <UscCard language={flow.language} />}
     </>
   );

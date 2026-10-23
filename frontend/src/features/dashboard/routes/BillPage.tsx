@@ -3,7 +3,8 @@ import { Button, Container, Grid, Skeleton, Stack, Typography } from '@mui/mater
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { ApiError } from '@/shared/api/http';
-import { EmptyState, ErrorState } from '@/shared/components/States';
+import { EmptyState } from '@/shared/components/States';
+import { ErrorNotice } from '@/shared/feedback';
 import { dateTime, monthLabel } from '@/shared/lib/format';
 import { toLanguage, type Language } from '@/shared/lib/languages';
 
@@ -70,7 +71,7 @@ export function BillPage() {
             hint="It may belong to another account, or the link may be mistyped."
             action={<Button variant="contained" component={Link} to="/">Go to the dashboard</Button>} />
         )}
-        {bill.isError && !notFound && <ErrorState message={bill.error.message} onRetry={() => void bill.refetch()} />}
+        {bill.isError && !notFound && <ErrorNotice error={bill.error} title="Could not load this bill" retrySafe onRetry={() => void bill.refetch()} />}
         {report && (
           <BillReportView report={report} language={language} onLanguage={setLanguage} onRetry={() => navigate('/')}
             reloading={bill.isPlaceholderData} />

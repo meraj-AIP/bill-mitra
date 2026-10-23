@@ -3,7 +3,7 @@ import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import { Box, Button, Stack, Typography } from '@mui/material';
 import { useRef, useState, type DragEvent } from 'react';
 
-import { ACCEPTED_TYPES, MAX_MB } from '../api/billsApi';
+import { BILL_ACCEPT, BILL_MAX_MB } from '@/shared/lib/billFile';
 
 interface UploadZoneProps {
   onFile: (file: File) => void;
@@ -54,7 +54,7 @@ export function UploadZone({ onFile }: UploadZoneProps) {
         Drop your bill here
       </Typography>
       <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5 }}>
-        JPG, PNG, WEBP, HEIC or PDF, up to {MAX_MB} MB
+        JPG, PNG, WEBP, HEIC or PDF, up to {BILL_MAX_MB} MB
       </Typography>
       <Stack direction={{ xs: 'column', sm: 'row' }} sx={{ gap: 1, justifyContent: 'center', mt: 2.5 }}>
         <Button variant="contained" size="large" onClick={() => browse.current?.click()} startIcon={<UploadFileOutlinedIcon />}>
@@ -65,7 +65,7 @@ export function UploadZone({ onFile }: UploadZoneProps) {
           Take a photo
         </Button>
       </Stack>
-      <Box component="input" type="file" ref={browse} accept={`${ACCEPTED_TYPES.join(',')},.heic,.heif`} sx={{ display: 'none' }}
+      <Box component="input" type="file" ref={browse} accept={BILL_ACCEPT} sx={{ display: 'none' }}
         onChange={(e) => {
           take(e.currentTarget.files);
           e.currentTarget.value = '';

@@ -1,5 +1,7 @@
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle } from '@mui/material';
+import { Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle } from '@mui/material';
 import { useState } from 'react';
+
+import { ErrorNotice } from '@/shared/feedback';
 
 interface NewChatDialogProps {
   open: boolean;
@@ -10,7 +12,7 @@ interface NewChatDialogProps {
 /** New chat erases the saved conversation on the server, so it asks first. */
 export function NewChatDialog({ open, onClose, onConfirm }: NewChatDialogProps) {
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   const close = () => {
     if (pending) return;
@@ -25,7 +27,7 @@ export function NewChatDialog({ open, onClose, onConfirm }: NewChatDialogProps) 
       await onConfirm();
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not start a new chat');
+      setError(e);
     } finally {
       setPending(false);
     }
@@ -38,7 +40,7 @@ export function NewChatDialog({ open, onClose, onConfirm }: NewChatDialogProps) 
         <DialogContentText variant="body2">
           This deletes your conversation with Bill Mitra from your account, including every message and reply. It cannot be undone.
         </DialogContentText>
-        {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+        <ErrorNotice error={error} action="Starting a new chat" sx={{ mt: 2 }} />
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
         <Button onClick={close} disabled={pending} color="inherit">Keep chat</Button>

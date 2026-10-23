@@ -7,6 +7,7 @@ import { APPROVALS_PATH, ApprovalsTabLabel } from '@/features/approvals';
 import { AccountMenu, isConsumer, landingFor, useAuth } from '@/features/auth';
 import { ModeStatus } from '@/shared/components/ModeStatus';
 import { OfflineBanner } from '@/shared/components/OfflineBanner';
+import { setAudience } from '@/shared/feedback';
 
 import { ManageMenu } from './ManageMenu';
 import { currentTab, navFor, type Nav } from './nav';
@@ -79,6 +80,8 @@ export function AppShell() {
   const nav = account ? navFor(account) : null;
   const home = landingFor(account);
   const staff = Boolean(account) && !isConsumer(account);
+  // Set during render, not in an effect, so the pages below already get the right wording on their first render.
+  setAudience(staff ? 'staff' : 'consumer');
   return (
     <Box sx={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default', '@media print': { bgcolor: 'background.paper' } }}>
       <MuiLink href="#main" sx={{ position: 'absolute', left: 8, top: -48, zIndex: 'tooltip', bgcolor: 'background.paper', px: 2, py: 1,

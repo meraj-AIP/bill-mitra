@@ -2,7 +2,7 @@ import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, Di
 import { useState, type FormEvent } from 'react';
 
 import { useDeleteMe } from '../api/authApi';
-import { ActionError } from '@/shared/feedback';
+import { ErrorNotice } from '@/shared/feedback';
 
 const WORD = 'DELETE';
 
@@ -36,7 +36,7 @@ export function DeleteAccountDialog({ open, onClose }: { open: boolean; onClose:
             <Typography variant="body2" sx={{ color: 'text.secondary' }}>
               Complaints you raised stay with the DISCOM as a department record, without your name or mobile number.
             </Typography>
-            <ActionError error={remove.error} action="Deleting your account" />
+            <ErrorNotice error={remove.error} action="Deleting your account" />
             <TextField label={`Type ${WORD} to confirm`} value={typed} onChange={(e) => setTyped(e.target.value)} fullWidth autoFocus
               autoComplete="off" slotProps={{ htmlInput: { spellCheck: false, autoCapitalize: 'characters' } }} />
           </Stack>

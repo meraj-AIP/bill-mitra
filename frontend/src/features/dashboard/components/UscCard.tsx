@@ -45,7 +45,6 @@ export function UscCard({ language }: { language: Language }) {
   };
 
   const reset = () => { setSent(null); start.reset(); verify.reset(); setUnsaved(null); };
-  const errorText = verify.error?.message ?? start.error?.message ?? null;
 
   return (
     <Paper variant="outlined" component="section" aria-labelledby="usc-title" sx={{ p: { xs: 2, sm: 3 } }}>
@@ -58,11 +57,11 @@ export function UscCard({ language }: { language: Language }) {
       {unsaved && <Alert severity="warning" sx={{ mb: 2 }}>{unsaved}</Alert>}
       {sent ? (
         <UscCodeStep message={sent.message} resendAt={sent.resendAt} verifying={verify.isPending} resending={start.isPending}
-          error={errorText} onResend={send} onChangeNumber={reset}
+          error={verify.error ?? start.error} onResend={send} onChangeNumber={reset}
           onVerify={(code) => request && verify.mutate({ ...request, code }, { onSuccess: open })} />
       ) : (
         <UscNumberStep discom={discom} usc={usc} onDiscom={setDiscom} onUsc={setUsc} pending={start.isPending}
-          error={start.error?.message ?? null} onSend={send} />
+          error={start.error} onSend={send} />
       )}
     </Paper>
   );

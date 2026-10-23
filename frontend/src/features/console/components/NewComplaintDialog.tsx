@@ -1,4 +1,4 @@
-import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, TextField, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -53,7 +53,6 @@ export function NewComplaintDialog({ open, onClose, fixedDiscom }: NewComplaintD
             For a call, a walk-in or something seen in the field. If you add the caller&apos;s mobile, updates reach them on WhatsApp.
           </Typography>
           <Stack sx={{ gap: 2.25 }}>
-            {create.isError && <Alert severity="error">{create.error.message}</Alert>}
             <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } }}>
               <TextField select label="Source" required value={draft.source} error={show(problems.source)}
                 helperText={show(problems.source) ? 'Pick where this came from.' : ' '}

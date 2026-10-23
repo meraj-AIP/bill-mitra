@@ -1,15 +1,24 @@
-import { useCallback, useReducer, useState } from 'react';
+import { useCallback, useReducer, useRef, useState } from 'react';
+
+import { billFileIssue } from '@/shared/lib/billFile';
 
 import { mediaUrl, resetConversation, sendMessage, upload } from '../api/assistantApi';
 import type { Language, OutgoingMessage, ReplyButton, StreamEvent } from '../api/types';
 import { initialState, reducer, type UserContent } from '../model/conversation';
+import type { ChatFailure } from '../model/failures';
 
-const reason = (error: unknown, fallback: string) => (error instanceof Error ? error.message : fallback);
+const failed = (error: unknown): { type: 'failed'; error: ChatFailure } => ({ type: 'failed', error: { kind: 'request', error } });
 
 /** Messages sent in this visit, streamed replies and the step trace for each turn. */
 export function useConversation(onCleared: () => void) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [language, setLanguage] = useState<Language>('te');
+  // What Try again repeats: the last thing sent, so a failed turn needs no retyping or new pick.
+  const last = useRef<(() => Promise<void>) | null>(null);
+  const remember = useCallback((attempt: () => Promise<void>) => {
+    last.current = attempt;
+    return attempt();
+  }, []);
 
   const run = useCallback(
     async (content: UserContent, title: string, message: OutgoingMessage) => {
@@ -23,19 +32,25 @@ export function useConversation(onCleared: () => void) {
         await sendMessage(language, message, onEvent);
         dispatch({ type: 'done' });
       } catch (error) {
-        dispatch({ type: 'failed', error: reason(error, 'Could not reach Bill Mitra') });
+        dispatch(failed(error));
       }
     },
     [language],
   );
 
   const sendText = useCallback(
-    (text: string) => run({ kind: 'text', text }, `Text: "${text.slice(0, 48)}"`, { kind: 'text', text }),
-    [run],
+    (text: string) => remember(() => run({ kind: 'text', text }, `Text: "${text.slice(0, 48)}"`, { kind: 'text', text })),
+    [run, remember],
   );
 
   const sendFile = useCallback(
-    async (file: File) => {
+    (file: File) => remember(async () => {
+      const issue = billFileIssue(file);
+      if (issue) {
+        last.current = null;
+        dispatch({ type: 'failed', error: { kind: 'file', issue } });
+        return;
+      }
       try {
         const uploaded = await upload(file, file.name);
         const isPdf = uploaded.mime_type === 'application/pdf';
@@ -47,14 +62,14 @@ export function useConversation(onCleared: () => void) {
           mime_type: uploaded.mime_type,
         });
       } catch (error) {
-        dispatch({ type: 'failed', error: reason(error, 'Upload failed') });
+        dispatch(failed(error));
       }
-    },
-    [run],
+    }),
+    [run, remember],
   );
 
   const sendVoice = useCallback(
-    async (blob: Blob) => {
+    (blob: Blob) => remember(async () => {
       try {
         const uploaded = await upload(blob, 'voice-note.webm');
         await run({ kind: 'audio', src: mediaUrl(uploaded.media_id) }, 'Voice note', {
@@ -63,26 +78,32 @@ export function useConversation(onCleared: () => void) {
           mime_type: uploaded.mime_type,
         });
       } catch (error) {
-        dispatch({ type: 'failed', error: reason(error, 'Voice note failed') });
+        dispatch(failed(error));
       }
-    },
-    [run],
+    }),
+    [run, remember],
   );
 
   const reply = useCallback(
     (button: ReplyButton) =>
-      run({ kind: 'reply', title: button.title }, `Tapped: ${button.title}`, { kind: 'button_reply', reply_id: button.id }),
-    [run],
+      remember(() => run({ kind: 'reply', title: button.title }, `Tapped: ${button.title}`, { kind: 'button_reply', reply_id: button.id })),
+    [run, remember],
   );
 
   /** Throws on failure so the confirm dialog can stay open and say why. */
   const reset = useCallback(async () => {
     await resetConversation();
     onCleared();
+    last.current = null;
     dispatch({ type: 'reset' });
   }, [onCleared]);
 
-  return { state, language, setLanguage, sendText, sendFile, sendVoice, reply, reset };
+  const retry = useCallback(() => {
+    const again = last.current;
+    if (again) void again();
+  }, []);
+
+  return { state, language, setLanguage, sendText, sendFile, sendVoice, reply, reset, retry };
 }
 
 export type Conversation = ReturnType<typeof useConversation>;

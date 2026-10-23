@@ -1,4 +1,5 @@
 import type { Outbound, TraceStep } from '../api/types';
+import type { ChatFailure } from './failures';
 
 export type UserContent =
   | { kind: 'text'; text: string }
@@ -24,7 +25,7 @@ export interface ConversationState {
   items: ThreadItem[];
   turns: TraceTurn[];
   busy: boolean;
-  error: string | null;
+  error: ChatFailure | null;
 }
 
 export type Action =
@@ -33,7 +34,7 @@ export type Action =
   | { type: 'bot'; message: Outbound }
   | { type: 'transcript'; text: string }
   | { type: 'done' }
-  | { type: 'failed'; error: string }
+  | { type: 'failed'; error: ChatFailure }
   | { type: 'reset' };
 
 export const initialState: ConversationState = { items: [], turns: [], busy: false, error: null };

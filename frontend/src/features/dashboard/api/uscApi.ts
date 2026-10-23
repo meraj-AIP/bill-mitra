@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
-import { sendJson } from '@/shared/api/http';
+import { ApiError, sendJson } from '@/shared/api/http';
 import { queryKeys } from '@/shared/api/queryKeys';
 import type { Language } from '@/shared/lib/languages';
 
@@ -34,6 +34,12 @@ export function useUscStart(language: Language) {
     },
     onSuccess: ({ report }) => keep(report, language),
   });
+}
+
+/** A wrong code answers with how many tries this code has left; null when the server did not say. */
+export function attemptsLeft(error: unknown): number | null {
+  const left = error instanceof ApiError ? error.extras.attempts_left : undefined;
+  return typeof left === 'number' && Number.isFinite(left) && left >= 0 ? left : null;
 }
 
 export function useUscVerify(language: Language) {

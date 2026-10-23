@@ -2,7 +2,7 @@ import { Box, Paper, TablePagination } from '@mui/material';
 import type { ReactNode } from 'react';
 
 import type { Page } from '@/shared/api/types';
-import { ErrorState } from '@/shared/components/States';
+import { ErrorNotice } from '@/shared/feedback';
 import { PAGE_SIZES } from '@/shared/hooks/useUrlState';
 
 interface ListResult<T> {
@@ -32,7 +32,7 @@ export function ListPanel<T>({ result, page, pageSize, onPage, onPageSize, empty
     <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
       {error && (
         <Box sx={{ p: 2 }}>
-          <ErrorState message={error.message} onRetry={() => void result.refetch()} />
+          <ErrorNotice error={error} title="Could not load this list" retrySafe onRetry={() => void result.refetch()} />
         </Box>
       )}
       {data?.total === 0 && empty}

@@ -1,6 +1,6 @@
 import type { ReportState } from '@/features/review';
 
-import type { AuditStatus, Classification, HistorySource, LineStatus, Outcome } from '../api/types';
+import type { AuditStatus, HistorySource, LineStatus, Outcome } from '../api/types';
 
 export type Tone = 'success' | 'warning' | 'error' | 'info' | 'default';
 
@@ -52,19 +52,6 @@ export const OUTCOME_TONE: Record<Outcome, 'success' | 'warning' | 'error' | 'in
   retake: 'warning',
   reading_off: 'info',
   reading_failed: 'error',
-};
-
-export const DOCUMENT_TYPE: Record<Classification['document_type'], string> = {
-  electricity_bill: 'An electricity bill',
-  meter: 'A photo of a meter',
-  other_bill: 'Some other bill',
-  other: 'Not a bill',
-};
-
-export const QUALITY: Record<Classification['quality'], string> = {
-  good: 'Clear',
-  poor: 'Hard to read',
-  unreadable: 'Unreadable',
 };
 
 export const HISTORY_SOURCE: Record<HistorySource, string> = {
