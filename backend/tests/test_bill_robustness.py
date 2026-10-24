@@ -347,3 +347,28 @@ def test_each_net_units_mismatch_is_said_plainly_in_every_language(fields, key):
     for language in ("te", "en", "hi", "ur"):
         said = text(language, code, **read_problem.values(code, report))
         assert "{" not in said and said.strip()
+
+
+@pytest.mark.parametrize("category", ["3 INDUSTRIAL", "LT-III INDUSTRY", "5 AGRICULTURE", "LT-V AGRI", "4 COTTAGE",
+                                      "LT-VI STREET LIGHTS", "7 GENERAL PURPOSE", "Cat:8 TEMPORARY SUPPLY"])
+def test_a_category_without_a_loaded_tariff_is_read_but_never_checked_on_the_wrong_rates(category):
+    from app.domain.conversation import composer
+    from app.flows.analysis import analyse
+
+    bill = variant(SOLAR_SEP_2026, category=category, is_domestic=False)
+    assert bill.tariff_category() == "other"
+    report = capture.report(bill)
+    assert report.trusted  # read fine; its energy charge is not judged against slabs it was never priced on
+    assert {c.key: c.status for c in report.checks}["energy_units"] == "skipped"
+    a = analyse(bill, "web:test-other-category")
+    assert a.audit.status == "not_checkable" and a.audit.overcharge == 0
+    assert "not one I can check yet" in " ".join(composer.explain(a.facts, "en"))
+
+
+@pytest.mark.parametrize("category", ["2B NON-DOMESTIC/COMM", "LT-II COMMERCIAL", "2 NON DOMESTIC", "Cat:2A"])
+def test_commercial_bills_are_still_checked(category):
+    from app.flows.analysis import analyse
+
+    bill = variant(SOLAR_SEP_2026, category=category, is_domestic=False)
+    assert bill.tariff_category() == "non_domestic"
+    assert analyse(bill, "web:test-commercial").audit.status == "verified"

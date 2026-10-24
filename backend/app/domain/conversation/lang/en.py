@@ -84,6 +84,7 @@ T = {
     "cstatus_resolved": "Resolved",
     "cstatus_rejected": "Rejected",
     "meter_projection": "Meter reading {reading}. Since your last bill you have used {used} units in {days} days. At this pace the month ends near *{proj} units*, about *Rs {amount}*.",
+    "meter_projection_units": "Meter reading {reading}. Since your last bill you have used {used} units in {days} days. At this pace the month ends near *{proj} units*.",
     "meter_need_bill": "Send your latest bill first so I know your last reading.",
     "stop": "Done. Your bills and data are deleted.",
     "privacy_notice": "Hello, I'm Bill Mitra. I read the electricity bill you send, check every charge against the TGERC tariff, explain it simply and estimate next month. An outside AI service reads the photo only to produce the answer. If you raise a complaint, it goes to the electricity department only. We keep your bill for up to {days} days and never sell it. Type STOP any time to delete your data.",

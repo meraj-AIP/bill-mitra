@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from app.domain import meter_status
 from app.domain.bill import ExtractedBill
-from app.domain.pricing import price
+from app.domain.pricing import checkable, price
 from app.domain.tariff.engine import money
 
 FieldStatus = Literal["captured", "missing", "unreadable"]
@@ -153,6 +153,8 @@ def _energy_units(bill: ExtractedBill) -> Check:
     energy = bill.item("energy")
     solar = bill.export_units is not None or bill.billed_units is not None
     units = bill.billed_units if solar else bill.units
+    if not checkable(bill):  # no tariff for its category, so its slabs cannot say which units it was priced on
+        return Check(key="energy_units", label=label, status="skipped", detail="No tariff loaded for this category")
     if energy is None or units is None:
         return Check(key="energy_units", label=label, status="skipped",
                      detail="No energy charge, or no billed units read on a solar bill")

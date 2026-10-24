@@ -10,9 +10,15 @@ def gruha_jyothi_eligible(bill: ExtractedBill) -> bool:
 
 
 def category(bill: ExtractedBill) -> Category:
-    # A non-domestic bill from before LT-II rates were loaded is priced as before and reported not checkable.
+    # A non-domestic bill whose rates are not loaded (LT-II before April 2025, or industry, agriculture and the other
+    # categories) is priced as household only for the engine's bookkeeping, and the audit reports it not checkable.
     printed = bill.tariff_category()
-    return printed if has_tariff(bill.month_date(), printed) else "domestic"
+    return printed if printed != "other" and has_tariff(bill.month_date(), printed) else "domestic"
+
+
+def checkable(bill: ExtractedBill) -> bool:
+    """Whether the engine has this bill's own tariff, so its charges can be checked at all."""
+    return bill.is_domestic or category(bill) == "non_domestic"
 
 
 def price(bill: ExtractedBill, units: int, import_units: int | None = None) -> Computation:

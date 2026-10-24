@@ -1,5 +1,6 @@
 """Bill as read from a photo, PDF, SMS or typed by the consumer."""
 
+import re
 from calendar import monthrange
 from datetime import date
 from typing import Literal
@@ -40,6 +41,12 @@ def _date_or_none(value: str | None) -> str | None:
     if value is not None and not real_date(value):
         raise ValueError("not a calendar date")
     return value
+
+
+# Categories other than household and commercial, as printed: LT-III industry, LT-IV cottage, LT-V agriculture,
+# LT-VI street lights and water works, LT-VII general purpose, temporary supply, and "Cat 3" to "Cat 9".
+_OTHER_CATEGORY = re.compile(r"INDUS|AGRI|COTTAGE|STREET|WATER\s*WORK|GENERAL|TEMP|LT[\s-]*(III|IV|V|VI|VII|VIII|IX)\b|"
+                             r"^\s*(CAT\s*:?\s*)?[3-9]", re.I)
 
 
 class LineItem(BaseModel):
@@ -156,8 +163,15 @@ class ExtractedBill(BaseModel):
             return max(self.export_units + banked_in - (self.carry_forward_units or 0), 0)
         return self.units
 
-    def tariff_category(self) -> Literal["domestic", "non_domestic"]:
-        return "domestic" if self.is_domestic else "non_domestic"
+    def tariff_category(self) -> Literal["domestic", "non_domestic", "other"]:
+        """Household (LT-I), commercial (LT-II), or another category (industrial, agriculture, street lights...)
+        whose tariff is not loaded: such a bill is read and explained, never checked against the wrong rates."""
+        if self.is_domestic:
+            return "domestic"
+        printed = self.category or ""
+        if _OTHER_CATEGORY.search(printed):
+            return "other"
+        return "non_domestic"
 
     def item(self, code: str) -> float | None:
         values = [line.amount for line in self.line_items if line.code == code]

@@ -30,11 +30,16 @@ async def handle(turn: Turn, reading_doc: ExtractedBill, today: date | None = No
         projected = round(used / days * 30)
         eligible = gruha_jyothi_eligible(bill)
         month = today.replace(day=1)
-        category = bill.tariff_category() if has_tariff(month, bill.tariff_category()) else "domestic"
+        printed = bill.tariff_category()
+        # A category whose tariff is not loaded gets the units only: a rupee figure would be priced on the wrong rates.
+        priced = printed != "other" and has_tariff(month, printed)
+        category = printed if priced else "domestic"
         amount = compute(projected, month, bill.load_kw or 1.0, eligible, category=category).net
-        step.note(f"{used} units in {days} days; month end about {projected} units, Rs {rs(amount)}")
-    message = turn.t("meter_projection", reading=round(reading_doc.meter_reading), used=used, days=days,
-                     proj=projected, amount=rs(amount))
+        step.note(f"{used} units in {days} days; month end about {projected} units"
+                  + (f", Rs {rs(amount)}" if bill.is_domestic or priced else ", no tariff for this category"))
+    key = "meter_projection" if bill.is_domestic or priced else "meter_projection_units"
+    message = turn.t(key, reading=round(reading_doc.meter_reading), used=used, days=days, proj=projected,
+                     amount=rs(amount))
     if projected > 200 >= used:
         message += "\n" + turn.t("warn_gj" if eligible else "warn_cross", t=200)
     await turn.say(message)
