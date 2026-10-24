@@ -6,6 +6,7 @@ the model, and a mix of the two reads is taken only when exactly one mix passes 
 """
 
 import re
+from collections import Counter
 from itertools import product
 
 from app.domain import capture
@@ -96,3 +97,55 @@ def reconcile(first: ExtractedBill, second: ExtractedBill) -> ExtractedBill | No
         if candidate.units is not None and capture.failed_check(candidate) is None:
             passing[values] = candidate
     return next(iter(passing.values())) if len(passing) == 1 else None
+
+
+# Reading twice. Two reads of different views of the same photo rarely misread the same digit the same way, so a key
+# figure is trusted only when the reads agree on it. When they do not, a third read decides by majority; a figure with
+# no majority is never guessed.
+VOTED = (*COMPARED, "previous_carry_forward_units", "carry_forward_units", "bill_date", "due_date", "load_kw",
+         "line_items")
+# A figure that stays undecided makes the bill untrusted through the key field it feeds.
+UNDECIDED_BLOCKS = {"line_items": "energy", "bill_amount": "bill_amount", "total_payable": "bill_amount",
+                    "arrears": "bill_amount"}
+
+
+def _voted(bill: ExtractedBill, key: str) -> object:
+    if key == "line_items":
+        return tuple((item.code, round(item.amount, 2)) for item in bill.line_items)
+    return getattr(bill, key)
+
+
+def disagreements(first: ExtractedBill, second: ExtractedBill) -> list[str]:
+    """The key figures two reads of the same bill did not read the same."""
+    return [key for key in VOTED if _voted(first, key) != _voted(second, key)]
+
+
+def vote(reads: list[ExtractedBill]) -> tuple[ExtractedBill, list[str]]:
+    """The first read with each disputed figure set to the value most reads agree on, and the figures with no
+    majority. Every value kept was read; a majority is more than half the reads."""
+    base = reads[0]
+    disputed = sorted({key for other in reads[1:] for key in disagreements(base, other)}, key=VOTED.index)
+    update: dict[str, object] = {}
+    undecided: list[str] = []
+    for key in disputed:
+        counts = Counter(_voted(r, key) for r in reads)
+        best, seen = counts.most_common(1)[0]
+        if seen * 2 <= len(reads) or best is None:
+            undecided.append(key)
+            continue
+        winner = next(r for r in reads if _voted(r, key) == best)
+        update[key] = winner.line_items if key == "line_items" else best
+    return base.model_copy(update=update), undecided
+
+
+def mark_undecided(bill: ExtractedBill, undecided: list[str]) -> ExtractedBill:
+    """Figures the reads could not agree on are cleared and listed unreadable, so the bill is not trusted on them."""
+    if not undecided:
+        return bill
+    # A figure that may be empty is cleared; one that may not (arrears) keeps the first read, marked unreadable.
+    fields = ExtractedBill.model_fields
+    cleared = {key: None for key in undecided if key in fields and key != "line_items" and fields[key].default is None}
+    # Units, readings and solar figures feed the units; dates and the load are shown as unreadable but do not block.
+    units_side = {*COMPARED, "previous_carry_forward_units", "carry_forward_units"} - set(UNDECIDED_BLOCKS)
+    blocks = {UNDECIDED_BLOCKS.get(key) or ("units" if key in units_side else None) for key in undecided} - {None}
+    return bill.model_copy(update={**cleared, "unreadable_fields": sorted({*bill.unreadable_fields, *undecided, *blocks})})

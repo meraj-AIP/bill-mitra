@@ -13,6 +13,8 @@ for key in ("OPENAI_API_KEY", "SONIOX_API_KEY", "WHATSAPP_TOKEN"):
     os.environ[key] = ""
 os.environ["AUTOMATION_ENABLED"] = "false"  # tests call the jobs directly with a fixed clock
 os.environ["QUEUE_RETRY_ENABLED"] = "false"  # the same for the queue recovery jobs
+os.environ["READ_PRINTED_LINES"] = "false"  # the line copy is one more model call; test_printed_lines fakes it
+os.environ["READ_TWICE"] = "false"  # scripted model answers are one per read; test_read_twice turns it on
 # SQLite in the temp dir, unless TEST_DATABASE_URL names a Postgres database the suite may wipe. A DATABASE_URL in a
 # developer's .env is never used by tests.
 os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL", "")

@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     soniox_tts_model: str = "tts-rt-v2"
     soniox_tts_voice: str = ""
     soniox_tts_accent: str = "indian"
+    # Read every bill twice, in parallel, and trust a key figure only when the reads agree (a third read decides).
+    read_twice: bool = True
+    # Copy every printed line too, alongside the reads, so a consumer can ask about anything on the bill.
+    read_printed_lines: bool = True
 
     whatsapp_token: str = ""
     whatsapp_phone_number_id: str = ""

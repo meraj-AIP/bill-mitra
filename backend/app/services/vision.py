@@ -4,7 +4,9 @@ The first pass stops a selfie or a shop receipt from ever being "read" as a bill
 (name, address, phone) are deliberately not extracted.
 """
 
+import asyncio
 import base64
+import contextlib
 import io
 import logging
 from dataclasses import dataclass, replace
@@ -19,7 +21,7 @@ from pydantic import BaseModel, ValidationError
 from app.config import get_settings
 from app.core import retry
 from app.domain import bill_normalise, capture, second_read
-from app.domain.bill import ExtractedBill
+from app.domain.bill import ExtractedBill, PrintedLine
 from app.services.openai_client import ProviderError, chat_json
 
 log = logging.getLogger(__name__)
@@ -325,13 +327,14 @@ def sharpened(jpeg: bytes) -> bytes:
 
 
 async def extract(jpeg: bytes, seen: Classification, failed_check: str | None = None,
-                  suspects: list[str] | None = None, doubts: list[str] | None = None) -> ExtractedBill:
+                  suspects: list[str] | None = None, doubts: list[str] | None = None,
+                  sharp: bool = False) -> ExtractedBill:
     """One careful read. On a second read, `failed_check` names the check that failed and `suspects` the rows to look
     at, or `doubts` the figures the first read was unsure of. Never the expected numbers, so the model cannot bend a
     value to fit the sum."""
     model = get_settings().openai_vision_model
     second = bool(failed_check or doubts)
-    parts = crops(sharpened(jpeg) if second else jpeg)
+    parts = crops(sharpened(jpeg) if second or sharp else jpeg)
     hint = f"A first look says this is: {seen.document_type}, {seen.discom}."
     if len(parts) > 1:
         hint += f" The page is sent as {len(parts)} overlapping crops, top to bottom."
@@ -410,7 +413,13 @@ async def read_document(data: bytes, mime: str) -> Reading:
     if seen.document_type not in ("electricity_bill", "meter") or seen.quality == "unreadable" or \
             seen.discom == "OTHER":
         return Reading(seen, None)
-    bill = await extract(jpeg, seen)
+    if seen.document_type == "meter":
+        return await _settled(jpeg, seen, await _read_twice(jpeg, seen))
+    bill, printed = await asyncio.gather(_read_twice(jpeg, seen), transcribe(jpeg))
+    return _with_lines(await _settled(jpeg, seen, bill), printed)
+
+
+async def _settled(jpeg: bytes, seen: Classification, bill: ExtractedBill) -> Reading:
     if bill.document_type == "meter":
         return Reading(seen, bill)
     failed = capture.failed_check(bill)
@@ -420,6 +429,59 @@ async def read_document(data: bytes, mime: str) -> Reading:
         # The amounts agree but a meter reading does not: look again at the readings before showing them.
         return _registers_checked(await _second_read(jpeg, seen, bill, "Present minus previous reading equals units"))
     return _registers_checked(await _second_read(jpeg, seen, bill, failed))
+
+
+def _with_lines(reading: Reading, printed: list[PrintedLine]) -> Reading:
+    if reading.bill is None or not printed or reading.bill.document_type == "meter":
+        return reading
+    return replace(reading, bill=reading.bill.model_copy(update={"printed": printed}))
+
+
+PRINTED = """You copy an Indian electricity bill (TGSPDCL / TGNPDCL) line by line.
+Return JSON {"printed": [{"label": "...", "value": "..."}]}: every line printed on the bill, top to bottom, label and
+value exactly as printed (for example {"label": "STR CODE", "value": "1510097001"}, {"label": "Recorded MD",
+"value": "1.84 KW"}, {"label": "Disc Date", "value": "03-11-2026"}). A heading has an empty value.
+Leave out the consumer's name, address, mobile number and email entirely: never copy those lines or any part of them.
+Copy only what is printed; never work anything out."""
+
+
+async def transcribe(jpeg: bytes) -> list[PrintedLine]:
+    """Every printed line, for questions about anything on the bill. Made alongside the reads and never needed for
+    trust: a failure only means fewer questions can be answered from the bill's own lines."""
+    if not get_settings().read_printed_lines:
+        return []
+    try:
+        raw = await chat_json(get_settings().openai_vision_model, PRINTED,
+                              _content(crops(jpeg), "high", "Copy every line."), temperature=0, max_tokens=2500,
+                              policy=READ)
+        return [PrintedLine.model_validate(line) for line in bill_normalise.printed_lines(raw.get("printed"))]
+    except (ProviderError, ValidationError, AttributeError):
+        return []
+
+
+async def _read_twice(jpeg: bytes, seen: Classification) -> ExtractedBill:
+    """Two reads at once, of the photo and of a sharpened copy, so they rarely share a misread. Where they disagree on
+    a key figure a third read, told only which figures to look at, decides by majority; a figure with no majority is
+    marked unreadable, never guessed. One read failing at the provider leaves the other to stand alone, as before."""
+    if not get_settings().read_twice:
+        return await extract(jpeg, seen)
+    results = await asyncio.gather(extract(jpeg, seen), extract(jpeg, seen, sharp=True), return_exceptions=True)
+    reads = [r for r in results if isinstance(r, ExtractedBill)]
+    failures = [r for r in results if isinstance(r, BaseException)]
+    # Only a provider failure lets the other read stand alone; anything else is a fault and is raised.
+    if not reads or any(not isinstance(f, ProviderError) for f in failures):
+        raise failures[0]
+    if len(reads) == 1 or reads[0].document_type == "meter":
+        return reads[0]
+    differ = second_read.disagreements(reads[0], reads[1])
+    if not differ:
+        return reads[0]
+    log.info("the two reads disagree on %s; a third read decides", ", ".join(differ))
+    # Two reads that disagree and no third: nothing has a majority, so the disputed figures are unclear.
+    with contextlib.suppress(ProviderError):
+        reads.append(await extract(jpeg, seen, doubts=[second_read.ROW_NAMES.get(k, k) for k in differ]))
+    voted, undecided = second_read.vote(reads)
+    return second_read.mark_undecided(voted, undecided)
 
 
 def _registers_checked(reading: Reading) -> Reading:
