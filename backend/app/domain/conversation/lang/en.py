@@ -187,6 +187,7 @@ T = {
     "chk_readings": "Your bill shows meter readings {previous} to {present}, which makes {difference} units, but it says {units} units.",
     "chk_energy_units": "The energy charge on your bill, Rs {energy}, matches {fits} units, but I read the units as {units}.",
     "chk_which": "Which one is right? Tap it, or send a new photo.",
+    "bill_lines": "On your bill:\n{lines}",
     "chk_net_units": "Units from the grid ({units}) minus units exported ({export}) make {net}, but I read the billed units as {billed}. Please send a sharper photo of the units, near the top of the slip.",
     "chk_net_units_banked": "Units from the grid ({units}) minus units exported ({export}) and units saved from earlier months ({prev_cf}) make {net}, but I read the billed units as {billed}. Please send a sharper photo of the units, near the top of the slip.",
     "chk_net_units_carried": "Your panels sent out more than you drew, so {carried} units should carry forward, but I read {pres_cf} on the CF Units line. Please send a sharper photo of the units, near the top of the slip.",

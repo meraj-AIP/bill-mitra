@@ -45,6 +45,27 @@ is the one outcome that must not happen; asking for a retake is the safe fallbac
    never trusted, because a reader asked to look again may supply a value that is not printed.
 7. **Otherwise** the consumer is asked for a clearer photo, with what we could and could not read.
 
+### Reading twice
+
+Every bill is read twice at once (`vision._read_twice`): the photo and a sharpened copy. Two views rarely share a
+misread, and on one real bill a set of misread figures still added up, which no sum can catch. Where the two reads
+disagree on a key figure (units, solar import, export, billed and banked units, any reading, any charge row, bill
+amount, arrears, total, bill and due dates, load), a third read is told only which figures to look at and the value
+two of three reads agree on stands (`second_read.vote`). A figure with no majority is cleared and marked unreadable
+(`second_read.mark_undecided`): a units or money figure makes the bill untrusted, a date is shown as unclear. The two
+reads run in parallel, so the time is about one read. `READ_TWICE=false` turns it off.
+
+### Every printed line
+
+Alongside the reads, one more request copies every printed line as label and value (`vision.transcribe`), so a
+consumer can ask about anything on the bill. The consumer's name, address, mobile and email are left out by the
+prompt and again by the code, including any fragment in the "Consumer Details" block. Lines for figures the checks
+cover (readings, import, export, units, charges, amounts) are left out too: those questions are answered from the
+checked figures, so a misread copy is never quoted. A question outside the fixed topics goes to the model, which may
+only pick line numbers (`llm.pick_lines`); the reply quotes the lines as printed. A named term ("what is MD") whose
+field the reader left empty quotes its printed line. Nothing checks these free lines, so on a poor photo a minor line
+may be garbled; they never feed an amount. `READ_PRINTED_LINES=false` turns it off.
+
 ## Measuring it
 
 `python -m app.tools.eval_bills <out_dir>` degrades the two real scans in `tests/real_bills` the ways phone photos
@@ -55,6 +76,7 @@ correct, retake, or TRUSTED_BUT_WRONG. It makes about two vision calls per case.
 | --- | --- | --- | --- |
 | Before this round | 16 | 6 | 0 |
 | After | 17 | 5 | 0 |
+| Read twice, paper crop, solar rules (Oct 2026) | 18 | 4 | 0 |
 
 Read correctly now that were retakes: the tilted March slip and the heavily blurred October slip. The remaining
 retakes are right to be retakes: two photos have the bill amount cut off, two are blurred past reading, and one had

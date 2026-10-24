@@ -48,6 +48,12 @@ class LineItem(BaseModel):
     amount: float
 
 
+class PrintedLine(BaseModel):
+    """One line as printed on the bill, label and value, for questions about anything on it. Never a personal line."""
+    label: str = Field(max_length=80)
+    value: str = Field(default="", max_length=120)
+
+
 class UsagePoint(BaseModel):
     """One month from the consumption table many TG bills print."""
 
@@ -107,6 +113,7 @@ class ExtractedBill(BaseModel):
     gruha_jyothi_household: bool | None = None
     subsidy_amount: float | None = None
     usage_history: list[UsagePoint] = Field(default_factory=list)
+    printed: list[PrintedLine] = Field(default_factory=list)
     unreadable_fields: list[str] = Field(default_factory=list)
     # Figures the consumer chose in the chat when two printed figures disagreed (capture.confirm_units).
     confirmed_by_consumer: list[str] = Field(default_factory=list)

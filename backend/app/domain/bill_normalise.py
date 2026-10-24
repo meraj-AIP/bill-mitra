@@ -172,6 +172,43 @@ def _ranges(raw: dict[str, Any]) -> None:
     raw["confidence"] = min(max(confidence, 0.0), 1.0)
 
 
+# Lines that are about the person, not the bill. The reader is told to leave them out; this is the second guard.
+_PERSONAL = re.compile(r"name|addr|mobile|phone|e-?mail|contact\s*no|cell", re.I)
+# The block those lines sit in: from "Consumer Details" until a line that is plainly about the connection again.
+_PERSONAL_START = re.compile(r"consumer\s*details", re.I)
+_PERSONAL_END = re.compile(r"str\s*code|sd\s*avail|cat\b|category|load|meter|usc|sc\s*no", re.I)
+# Figures the checks already confirm or reject. Questions about them are answered from the checked fields, so the
+# printed copy, which nothing checks, is never quoted for them (a misread reading must not come back this way).
+_CHECKED = re.compile(r"^(prs|prv|present|previous|export|import|units?\b|billed|prev/pres|cf units|energy charges|"
+                      r"fixed charges|customer charges|electricity duty|bill amount|arrears|total due|acd due|"
+                      r"interest on|surcharge|fsa|fca|subsidy|adjustment|loss/gain|true.?up)", re.I)
+MAX_PRINTED = 120
+
+
+def printed_lines(raw: Any) -> list[dict[str, str]]:
+    """Every printed line as label and value that a question may quote: no personal line, nothing the checks cover,
+    no repeats."""
+    out: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    personal = False
+    for line in raw if isinstance(raw, list) else []:
+        if not isinstance(line, dict):
+            continue
+        label = " ".join(str(line.get("label") or "").split())[:80]
+        value = " ".join(str(line.get("value") if line.get("value") is not None else "").split())[:120]
+        if _PERSONAL_START.search(label):
+            personal = True
+            continue
+        if personal and not _PERSONAL_END.search(label):
+            continue  # a fragment of a name or address the reader kept despite being told not to
+        personal = False
+        if not label or _PERSONAL.search(label) or _CHECKED.search(label) or (label, value) in seen:
+            continue
+        seen.add((label, value))
+        out.append({"label": label, "value": value})
+    return out[:MAX_PRINTED]
+
+
 def _net_metered(raw: dict[str, Any]) -> None:
     """A solar slip prints "Import:" (drawn from the grid) and "Units:" (billed, often 0). The reader copies each label
     as printed and they take their places here: units is what was drawn, billed_units what was billed. Asking the
@@ -211,6 +248,7 @@ def normalise(raw: dict[str, Any]) -> dict[str, Any]:
         raw["bill_month"] = raw["bill_date"][:7] if raw.get("bill_date") else None
     raw["line_items"] = _lines(raw.get("line_items"))
     raw["usage_history"] = _history(raw.get("usage_history"))
+    raw["printed"] = printed_lines(raw.get("printed"))
     for key in ("quality", "document_type"):
         if isinstance(raw.get(key), str):
             raw[key] = raw[key].strip().lower()

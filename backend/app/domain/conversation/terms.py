@@ -135,9 +135,20 @@ def match(message: str) -> Term | None:
     return next((t for t in TERMS if any(_hit(k, lowered) for k in t.keywords)), None)
 
 
+def _printed(term: Term, bill: ExtractedBill) -> str | None:
+    """The term's line as printed, when the reader kept the line but not the field ("Recorded MD: 1.84 KW")."""
+    for line in bill.printed:
+        label = line.label.lower()
+        if line.value and any(re.search(rf"(?<![a-z]){re.escape(k)}(?![a-z])", label) for k in term.keywords):
+            return f"{line.label}: {line.value}"
+    return None
+
+
 def answer(term: Term, bill: ExtractedBill, facts: Facts, lang: str) -> str:
     body = text(lang, f"term_{term.code}")
     if term.value is None:
-        return body
-    value = term.value(bill, facts, lang)
+        # No field for it, but if the line is printed, this bill's own line goes with the explanation.
+        line = _printed(term, bill)
+        return f"{body} {text(lang, 'term_value', value=line)}" if line else body
+    value = term.value(bill, facts, lang) or _printed(term, bill)
     return f"{body} {text(lang, 'term_value', value=value) if value else text(lang, 'term_not_printed')}"

@@ -9,7 +9,7 @@ from app.flows import bill as bill_flow
 from app.flows import case_bills, cases, complaint, complaint_chat, understand
 from app.flows.analysis import Analysis, analyse, gruha_jyothi_eligible
 from app.flows.turn import Turn
-from app.services import sms_parser
+from app.services import llm, sms_parser
 from app.store import repos
 
 NO_BILL_NEEDED = {"greeting": "greeting", "thanks": "thanks", "power_cut": "power_cut",
@@ -103,8 +103,28 @@ async def _answer_term(turn: Turn, message: str) -> bool:
     return True
 
 
+async def _answer_printed(turn: Turn, said: str) -> bool:
+    """A question outside the fixed topics may still be about a line on the bill ("what is my STR code", "when is the
+    disconnection date"). The model only picks which printed lines answer it; the reply quotes them as printed."""
+    a = _current(turn)
+    if a is None or not a.bill.printed:
+        return False
+    lines = [f"{line.label}: {line.value}".rstrip(": ") for line in a.bill.printed]
+    async with turn.tracer.step("Find the line on the bill", "ai") as step:
+        picked = await llm.pick_lines(said, lines)
+        if not picked:
+            step.skip("No printed line answers it" if picked == [] else "Model unavailable")
+            return False
+        step.note(f"Picked {len(picked)} of {len(lines)} printed lines; quoted as printed, nothing written by the model")
+    repos.log_event(turn.inbound.channel, "question", language=turn.lang, intent="bill_line")
+    await _reply(turn, turn.t("bill_lines", lines="\n".join(lines[i] for i in picked)))
+    return True
+
+
 async def answer_intent(turn: Turn, intent: Intent, units: int | None = None, *, complaint_type: str | None = None,
                         said: str | None = None, details: dict[str, object] | None = None) -> None:
+    if intent == "off_topic" and said and await _answer_printed(turn, said):
+        return
     repos.log_event(turn.inbound.channel, "question", language=turn.lang, intent=intent)
     if intent in NO_BILL_NEEDED:
         await _reply(turn, turn.t(NO_BILL_NEEDED[intent]))
