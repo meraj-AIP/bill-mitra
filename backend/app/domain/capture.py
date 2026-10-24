@@ -117,14 +117,22 @@ def _export_readings(bill: ExtractedBill) -> Check:
 
 
 def _net_units(bill: ExtractedBill) -> Check:
+    """Import, export and banked units against the billed units. Units banked from earlier months are used first;
+    when export (with them) is more than import, nothing is billed and the extra is carried on."""
     label = "Import minus solar export equals billed units"
     if None in (bill.units, bill.export_units, bill.billed_units):
         return Check(key="net_units", label=label, status="skipped", detail="Not a net-metered bill, or a figure is missing")
     assert bill.units is not None and bill.export_units is not None and bill.billed_units is not None
-    net = bill.units - bill.export_units
-    ok = net == bill.billed_units  # whole units on both sides, so any gap is a misread digit
+    banked_in, banked_on = bill.previous_carry_forward_units or 0, bill.carry_forward_units or 0
+    left = bill.units - bill.export_units - banked_in
+    billed, carried = max(left, 0), max(-left, 0)
+    # Whole units on every side, so any gap is a misread digit. A banked figure not printed is not held against it.
+    ok = billed == bill.billed_units and (bill.carry_forward_units is None or carried == banked_on)
+    shown = f"{bill.units} - {bill.export_units}" + (f" - {banked_in} banked" if banked_in else "")
+    extra = f", {carried} carried forward" if carried else ""
     return Check(key="net_units", label=label, status="pass" if ok else "fail",
-                 detail=f"{bill.units} - {bill.export_units} = {net}, bill says {bill.billed_units}")
+                 detail=f"{shown} = {billed} billed{extra}; bill says {bill.billed_units}"
+                        + (f", {banked_on} carried forward" if bill.carry_forward_units is not None else ""))
 
 
 def _energy_units(bill: ExtractedBill) -> Check:
@@ -238,3 +246,15 @@ def report(bill: ExtractedBill) -> CaptureReport:
     problem = _problem(bill, checks)
     return CaptureReport(captured=sum(f.status == "captured" for f in fields), expected=len(fields), fields=fields,
                          checks=checks, trusted=problem is None, problem=problem)
+
+
+REGISTERS = (("previous_reading", "present_reading"), ("export_previous_reading", "export_present_reading"))
+
+
+def register_misreads(bill: ExtractedBill) -> list[str]:
+    """Readings that fail their own register check on a bill whose net figures agree. The units are confirmed by
+    import, export and billed units, so the bill stands, but a reading digit is wrong and must not be shown."""
+    if _net_units(bill).status != "pass":
+        return []
+    failed = [_readings(bill).status == "fail", _export_readings(bill).status == "fail"]
+    return [field for bad, pair in zip(failed, REGISTERS, strict=True) if bad for field in pair]

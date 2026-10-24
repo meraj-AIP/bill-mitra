@@ -15,7 +15,8 @@ from pydantic import ValidationError
 from app.domain.bill import ExtractedBill, real_month
 
 _CODES = {"energy", "fixed", "customer", "duty", "fsa", "true_up", "surcharge", "adjustment", "other"}
-INTEGERS = ("units", "export_units", "billed_units", "billing_days", "carry_forward_units", "phase")
+INTEGERS = ("units", "import_units", "export_units", "billed_units", "billing_days", "carry_forward_units", "previous_carry_forward_units",
+            "phase")
 DECIMALS = ("meter_reading", "previous_reading", "present_reading", "export_previous_reading", "export_present_reading",
             "load_kw", "multiplying_factor", "recorded_md", "power_factor", "security_deposit", "bill_amount", "arrears",
             "total_payable", "subsidy_amount")
@@ -171,12 +172,36 @@ def _ranges(raw: dict[str, Any]) -> None:
     raw["confidence"] = min(max(confidence, 0.0), 1.0)
 
 
+def _net_metered(raw: dict[str, Any]) -> None:
+    """A solar slip prints "Import:" (drawn from the grid) and "Units:" (billed, often 0). The reader copies each label
+    as printed and they take their places here: units is what was drawn, billed_units what was billed. Asking the
+    model to swap them itself was unreliable; a label is not."""
+    drawn = raw.pop("import_units", None)
+    if drawn is None:
+        return
+    said = raw.get("units")
+    if raw.get("billed_units") is None:
+        # The same figure in both places on a bill that exported is a copy, not the billed units.
+        raw["billed_units"] = None if said == drawn and raw.get("export_units") else said
+    raw["units"] = drawn
+
+
+def _register_order(raw: dict[str, Any]) -> None:
+    """A register only counts up. "Export Read : 40218 40355" is easy to take in the wrong order, so a pair read
+    backwards is put right, unless the gap is so large that the meter rolled over (then it is left for the checks)."""
+    before, after = raw.get("export_previous_reading"), raw.get("export_present_reading")
+    if before is not None and after is not None and before > after and before - after < before * 0.5:
+        raw["export_previous_reading"], raw["export_present_reading"] = after, before
+
+
 def normalise(raw: dict[str, Any]) -> dict[str, Any]:
     raw = dict(raw)
     raw["source"] = "vision"
     said = raw.get("unreadable_fields")
     raw["unreadable_fields"] = [str(f) for f in said if f][:30] if isinstance(said, list) else []
     _scalars(raw)
+    _net_metered(raw)
+    _register_order(raw)
     _ranges(raw)
     raw["arrears"] = raw.get("arrears") or 0
     raw["discom"] = DISCOM_ALIASES.get(re.sub(r"\W", "", str(raw.get("discom") or "")).upper(), "UNKNOWN")

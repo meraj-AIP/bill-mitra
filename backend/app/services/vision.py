@@ -7,7 +7,7 @@ The first pass stops a selfie or a shop receipt from ever being "read" as a bill
 import base64
 import io
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import ceil
 from typing import Any, Literal
 
@@ -79,12 +79,14 @@ previous_reading, present_reading: readings from the "Previous" and "Present" ro
   difference equals the units or the "Import:" value (these bills are usually billed on KVAH)
 present_status, previous_status: the 2 digit status ("Sts") printed right after the date on the "Present"/"Prs" and
   "Previous"/"Prv" rows, e.g. "01", exactly as printed; null if there is none
-units: the "Units:" value; on a solar net-metered bill the "Import:" value instead (units drawn from the grid), or null
+units: the number printed after "Units:" (or "Billed Units:"), exactly as printed, or null. On a solar net-metered bill
+  this is the billed (net) figure and is often 0; copy it as printed, do not replace it with the Import value
+import_units: on a solar net-metered bill, the number printed after "Import:" (units drawn from the grid), else null
 export_units: on a solar net-metered bill the "Export:" value (units sent to the grid), else null
 export_previous_reading, export_present_reading: on a solar net-metered bill, the previous and present readings of
-  the export register (rows marked "Exp", "Export" or "Exp KWH"), else null. Keep them apart from the import
-  readings above
-billed_units: the "Billed Units:" value when printed (import minus export on net-metered bills), or null
+  the export register (rows marked "Exp", "Export" or "Exp KWH"), else null. TGSPDCL slips print them on one line as
+  "Export Read : <previous> <present>". Keep them apart from the import readings above
+billed_units: null (worked out from "Units:" and "Import:" after reading)
 load_kw: "Contracted Load" in kW, or null
 phase: 1 or 3 from "Ph:", or null
 multiplying_factor: the "MF:" value, or null
@@ -93,6 +95,7 @@ power_factor: the "PF" value (0 to 1), or null
 security_deposit: the "SD AVAILABLE" or "SD Available" amount, or null
 carry_forward_units: the present "CF Units" or banked units value (from "Prev/Pres CF Units : a/b" take b), or null.
   On a solar bill that exported more than it imported, the extra is carried forward here and billed units are 0
+previous_carry_forward_units: from "Prev/Pres CF Units : a/b" take a (units banked from earlier months), or null
 disconnection_date: "YYYY-MM-DD" from "Disc Date", or null
 last_paid_date: "YYYY-MM-DD" from "Last Paid Dt", or null
 line_items: every charge row between the readings and "Bill Amount", as {code, label, amount}, label as printed,
@@ -102,7 +105,8 @@ line_items: every charge row between the readings and "Bill Amount", as {code, l
   adjustment = Adjustment, Loss/Gain, rounding; other = Interest on ED, Interest on CD or SD, Subsidy row, anything else
 bill_amount: the "Bill Amount" value, or null
 arrears: the sum of the arrears rows ("Arrears", "Arrears as on ...", "Arrears after ...") plus "ACD Due", 0 if all are
-  0.00. A row printed with a minus is a credit and makes the sum negative; check it against Total Due minus Bill Amount
+  0.00. A row printed with a minus is a credit and makes the sum negative. Read each arrears row itself; never copy
+  the Total Due figure into arrears
 total_payable: the "Total Due" value, or null
 gruha_jyothi_household: true if the bill mentions Gruha Jyothi or a 200 unit free scheme for this connection,
   false if it clearly does not, null if you cannot tell
@@ -176,8 +180,58 @@ def deskewed(image: Image.Image) -> Image.Image:
     return image.rotate(angle, resample=Image.Resampling.BICUBIC, expand=True, fillcolor=(255, 255, 255))
 
 
+# Paper: bright and nearly colourless. A slip on a patterned cloth or a table stands out from it.
+PAPER_SAT, PAPER_VALUE = 45, 160
+PAPER_PROBE = 400  # px, the long side of the small copy the paper is found on
+PAPER_SHARE = 0.5  # of a column or row that must be paper for it to count
+PAPER_MAX_AREA = 0.8  # a crop that would keep more than this of the photo is not worth making
+
+
+def _longest_run(flags: list[bool], gap: int = 2) -> tuple[int, int] | None:
+    """The longest stretch of True, bridging gaps of up to `gap` (a dark line of print across the paper)."""
+    best, start, last = None, None, None
+    for i, on in enumerate(flags + [False] * (gap + 1)):
+        if on:
+            start = i if start is None else start
+            last = i
+        elif start is not None and last is not None and i - last > gap:
+            if best is None or last - start > best[1] - best[0]:
+                best = (start, last)
+            start = None
+    return best
+
+
+def paper_box(image: Image.Image) -> tuple[int, int, int, int] | None:
+    """Where the bill is, when it fills only part of the photo. A thermal slip photographed on a bed or a table is
+    often a third of the frame's width; the reader then gets it at a fraction of the pixels and misreads digits.
+    None when the paper already fills most of the photo, or no clear paper shape is found."""
+    small = image.convert("RGB")
+    scale = PAPER_PROBE / max(small.size)
+    small = small.resize((max(round(small.width * scale), 1), max(round(small.height * scale), 1)), Image.Resampling.BOX)
+    w, h = small.size
+    hsv = list(small.convert("HSV").get_flattened_data())
+    paper = [s <= PAPER_SAT and v >= PAPER_VALUE for _, s, v in hsv]
+    cols = _longest_run([sum(paper[y * w + x] for y in range(h)) >= PAPER_SHARE * h * 0.6 for x in range(w)])
+    if cols is None:
+        return None
+    x0, x1 = cols
+    # A stamp, a fold or a pen mark over the name crosses the slip; a tenth of its height still counts as one paper.
+    rows = _longest_run([sum(paper[y * w + x] for x in range(x0, x1 + 1)) >= PAPER_SHARE * (x1 - x0 + 1) for y in range(h)],
+                        gap=max(2, h // 10))
+    if rows is None:
+        return None
+    y0, y1 = rows
+    if (x1 - x0) < w * 0.12 or (y1 - y0) < h * 0.3 or (x1 - x0) * (y1 - y0) > PAPER_MAX_AREA * w * h:
+        return None
+    pad_x, pad_y = round((x1 - x0) * 0.04) + 2, round((y1 - y0) * 0.02) + 2
+    box = (max(x0 - pad_x, 0), max(y0 - pad_y, 0), min(x1 + pad_x + 1, w), min(y1 + pad_y + 1, h))
+    return tuple(round(v / scale) for v in box)  # type: ignore[return-value]
+
+
 def _bounded(image: Image.Image) -> bytes:
-    image = deskewed(image.convert("RGB"))
+    image = image.convert("RGB")
+    box = paper_box(image)
+    image = deskewed(image.crop(box) if box else image)
     # WhatsApp shrinks a long thermal slip to about 330 px wide; enlarging it gives the reader room for each digit.
     short = min(image.size)
     if short < MIN_SHORT_SIDE:
@@ -349,5 +403,18 @@ async def read_document(data: bytes, mime: str) -> Reading:
         return Reading(seen, bill)
     failed = capture.failed_check(bill)
     if failed is None and not second_read.doubtful(bill):
-        return Reading(seen, bill)
-    return await _second_read(jpeg, seen, bill, failed)
+        if not capture.register_misreads(bill):
+            return Reading(seen, bill)
+        # The amounts agree but a meter reading does not: look again at the readings before showing them.
+        return _registers_checked(await _second_read(jpeg, seen, bill, "Present minus previous reading equals units"))
+    return _registers_checked(await _second_read(jpeg, seen, bill, failed))
+
+
+def _registers_checked(reading: Reading) -> Reading:
+    """A reading that still does not add up after the second look is dropped and marked unreadable, never shown."""
+    bill = reading.bill
+    wrong = capture.register_misreads(bill) if bill is not None else []
+    if bill is None or not wrong:
+        return reading
+    cleared = bill.model_copy(update={**dict.fromkeys(wrong), "unreadable_fields": sorted({*bill.unreadable_fields, *wrong})})
+    return replace(reading, bill=cleared)

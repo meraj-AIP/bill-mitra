@@ -98,7 +98,8 @@ def compute(
 ) -> Computation:
     """Price a month of use. `period` is the billing period as a fraction of a month: real TGSPDCL bills
     stretch every slab by it (31 days read from a 30 day month bills the first 103 units at the first rate).
-    `import_units` is what came from the grid before solar export; non-domestic duty is charged on it."""
+    `import_units` is what came from the grid before solar export. Electricity duty is charged on it, domestic and
+    non-domestic alike: real net-metered TGSPDCL bills print duty at the rate times import, not times billed units."""
     if units < 0:
         raise ValueError("units cannot be negative")
     if not 0.5 <= period <= 2.0:
@@ -113,7 +114,7 @@ def compute(
     per_kw = nd.fixed_charge_per_kw[group.code] if nd else version.fixed_charge_per_kw
     fixed = money(per_kw * max(load_kw, 1.0))
     customer = customer_charge(units, nd.customer_charges if nd else version.customer_charges)
-    duty_units = max(import_units or units, units) if nd else units
+    duty_units = max(import_units or units, units)
     duty = money(duty_units * (nd.duty_per_unit if nd else version.duty_per_unit))
     fsa = money(units * version.fsa_per_unit.get(bill_month.strftime("%Y-%m"), 0.0))
     gross = money(energy + fixed + customer + duty + fsa)
