@@ -317,3 +317,33 @@ def test_a_slip_on_a_cloth_is_cropped_to_the_whole_paper(marker):
 def test_a_page_that_fills_the_photo_is_left_alone():
     assert vision.paper_box(Image.new("RGB", (1000, 1400), (250, 250, 250))) is None
     assert vision.paper_box(Image.new("RGB", (1000, 1400), (60, 90, 170))) is None
+
+
+def test_the_energy_charge_confirms_the_billed_units_on_a_solar_bill():
+    from app.flows import read_problem
+
+    checks = {c.key: c for c in capture.report(SOLAR_DOM_AUG_2026).checks}
+    assert checks["energy_units"].status == "pass"  # 23 billed units give Rs 44.85
+    misread = variant(SOLAR_DOM_AUG_2026, billed_units=28, units=165)  # import and billed both misread, so net agrees
+    report = capture.report(misread)
+    energy = next(c for c in report.checks if c.key == "energy_units")
+    assert energy.status == "fail" and energy.values["fits"] == 23 and not report.trusted
+    assert read_problem.choices("chk_energy_units", report) == []  # billed units are not offered as a pick
+
+
+@pytest.mark.parametrize(("fields", "key"), [
+    ({"billed_units": 5}, "chk_net_units"),
+    ({"billed_units": 5, "previous_carry_forward_units": 3}, "chk_net_units_banked"),
+    ({"carry_forward_units": 19}, "chk_net_units_carried"),
+])
+def test_each_net_units_mismatch_is_said_plainly_in_every_language(fields, key):
+    from app.domain.conversation.lang import text
+    from app.flows import read_problem
+
+    base = SOLAR_DOM_OCT_2026 if key == "chk_net_units_carried" else SOLAR_DOM_AUG_2026
+    report = capture.report(variant(base, **fields))
+    code = read_problem.diagnose("retake", reading(variant(base, **fields)), report)
+    assert code == key
+    for language in ("te", "en", "hi", "ur"):
+        said = text(language, code, **read_problem.values(code, report))
+        assert "{" not in said and said.strip()

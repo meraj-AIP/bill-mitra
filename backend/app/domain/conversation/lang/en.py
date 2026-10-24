@@ -188,6 +188,8 @@ T = {
     "chk_energy_units": "The energy charge on your bill, Rs {energy}, matches {fits} units, but I read the units as {units}.",
     "chk_which": "Which one is right? Tap it, or send a new photo.",
     "chk_net_units": "Units from the grid ({units}) minus units exported ({export}) make {net}, but I read the billed units as {billed}. Please send a sharper photo of the units, near the top of the slip.",
+    "chk_net_units_banked": "Units from the grid ({units}) minus units exported ({export}) and units saved from earlier months ({prev_cf}) make {net}, but I read the billed units as {billed}. Please send a sharper photo of the units, near the top of the slip.",
+    "chk_net_units_carried": "Your panels sent out more than you drew, so {carried} units should carry forward, but I read {pres_cf} on the CF Units line. Please send a sharper photo of the units, near the top of the slip.",
     "chk_export_readings": "The solar export readings {previous} to {present} make {difference} units, but I read the units exported as {units}. Please send a sharper photo of the readings, near the top of the slip.",
     "chk_charges_sum": "The charges I read add up to Rs {sum}, but the bill amount reads Rs {bill_amount}, a gap of Rs {gap}. One of them is probably misread. Please send a sharper photo of the charges in the middle of the slip.",
     "chk_total": "Bill amount Rs {bill_amount} plus arrears Rs {arrears} makes Rs {expected}, but the total due reads Rs {total}. Please send a sharper photo of the total at the bottom of the slip.",

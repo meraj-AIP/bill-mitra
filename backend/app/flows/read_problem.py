@@ -29,10 +29,22 @@ def _retake(reading: vision.Reading, report: capture.CaptureReport | None) -> st
     if report is None or report.problem_code is None:
         return "poor_quality"
     if report.problem_code == "check":
-        return f"chk_{report.problem_key}"
+        return _net_units_key(report) if report.problem_key == "net_units" else f"chk_{report.problem_key}"
     if report.problem_code == "low_confidence":
         return "unread_low_confidence"
     return _UNREAD.get(report.problem_key or "units", "unread_units")
+
+
+def _net_units_key(report: capture.CaptureReport) -> str:
+    """Solar net figures can disagree on the billed units or on the units carried forward, with or without units
+    banked from earlier months; each gets the sentence that names what does not add up."""
+    check = next((c for c in report.checks if c.key == "net_units" and c.status == "fail"), None)
+    if check is None:
+        return "chk_net_units"
+    v = check.values
+    if v.get("net") == v.get("billed"):
+        return "chk_net_units_carried"
+    return "chk_net_units_banked" if v.get("prev_cf") else "chk_net_units"
 
 
 def diagnose(result: str, reading: vision.Reading | None, report: capture.CaptureReport | None) -> str | None:
@@ -51,7 +63,9 @@ def diagnose(result: str, reading: vision.Reading | None, report: capture.Captur
 def failed_check(code: str, report: capture.CaptureReport | None) -> capture.Check | None:
     if report is None or not code.startswith("chk_"):
         return None
-    return next((c for c in report.checks if c.key == code.removeprefix("chk_") and c.status == "fail"), None)
+    key = code.removeprefix("chk_")
+    key = "net_units" if key.startswith("net_units") else key  # the banked and carried sentences belong to it too
+    return next((c for c in report.checks if c.key == key and c.status == "fail"), None)
 
 
 def _shown(key: str, value: float) -> str:
@@ -71,7 +85,7 @@ def values(code: str, report: capture.CaptureReport | None) -> dict[str, str]:
 def choices(code: str, report: capture.CaptureReport | None) -> list[int]:
     """The two unit counts the consumer may pick between, or none for this problem."""
     check = failed_check(code, report)
-    if check is None or code not in CHOICES:
+    if check is None or code not in CHOICES or check.values.get("solar"):
         return []
     return sorted({round(check.values[key]) for key in CHOICES[code]})
 

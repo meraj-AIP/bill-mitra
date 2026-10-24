@@ -141,31 +141,36 @@ def _net_units(bill: ExtractedBill) -> Check:
                  detail=f"{shown} = {billed} billed{extra}; bill says {bill.billed_units}"
                         + (f", {banked_on} carried forward" if bill.carry_forward_units is not None else ""),
                  values={"units": bill.units, "export": bill.export_units, "net": billed, "billed": bill.billed_units,
-                         "prev_cf": banked_in, "pres_cf": banked_on})
+                         "prev_cf": banked_in, "pres_cf": banked_on, "carried": carried})
 
 
 def _energy_units(bill: ExtractedBill) -> Check:
     """The energy charge encodes the units through the slabs. A misread digit can make the readings and the units
     agree with each other and still be wrong; the printed energy charge then fits a different unit count exactly.
-    A charge that fits no nearby count is a pricing difference for the audit to report, not a misread."""
+    A charge that fits no nearby count is a pricing difference for the audit to report, not a misread. On a solar
+    bill the charge is on the units billed (import less export and banked units), so those are what it confirms."""
     label = "Units agree with the energy charge"
     energy = bill.item("energy")
-    if energy is None or bill.units is None or bill.export_units is not None or bill.billed_units is not None:
-        return Check(key="energy_units", label=label, status="skipped", detail="No energy charge, or a solar bill")
+    solar = bill.export_units is not None or bill.billed_units is not None
+    units = bill.billed_units if solar else bill.units
+    if energy is None or units is None:
+        return Check(key="energy_units", label=label, status="skipped",
+                     detail="No energy charge, or no billed units read on a solar bill")
     try:
-        if abs(price(bill, bill.units).energy - energy) <= MONEY_TOLERANCE:
+        if abs(price(bill, units, bill.import_units()).energy - energy) <= MONEY_TOLERANCE:
             return Check(key="energy_units", label=label, status="pass",
-                         detail=f"{bill.units} units give the printed energy charge of Rs {energy:.2f}")
-        fits = next((u for u in range(max(bill.units - ENERGY_SEARCH, 0), bill.units + ENERGY_SEARCH + 1)
+                         detail=f"{units} {'billed ' if solar else ''}units give the printed energy charge of Rs {energy:.2f}")
+        fits = next((u for u in range(max(units - ENERGY_SEARCH, 0), units + ENERGY_SEARCH + 1)
                      if abs(price(bill, u).energy - energy) <= 0.5), None)
     except (ValueError, KeyError, LookupError):
         return Check(key="energy_units", label=label, status="skipped", detail="No tariff for this bill to compare")
     if fits is None:
         return Check(key="energy_units", label=label, status="skipped",
                      detail="The energy charge does not follow the tariff for any nearby units, so it cannot confirm them")
+    # On a solar bill the consumer is not offered the two counts to pick from: they are billed units, not units used.
     return Check(key="energy_units", label=label, status="fail",
-                 detail=f"The printed energy charge fits {fits} units, the bill was read as {bill.units}",
-                 values={"energy": energy, "fits": fits, "units": bill.units})
+                 detail=f"The printed energy charge fits {fits} units, the bill was read as {units}",
+                 values={"energy": energy, "fits": fits, "units": units, **({"solar": 1} if solar else {})})
 
 
 def _reading_status(bill: ExtractedBill) -> Check:
