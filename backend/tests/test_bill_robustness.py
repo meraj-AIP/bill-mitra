@@ -14,7 +14,7 @@ from app.domain.bill_normalise import iso_date, normalise, number, to_bill
 from app.domain.pricing import price
 from app.domain.review import Policy, detect
 from app.services import vision
-from tests.real import MAR_2024, OCT_2025, SOLAR_SEP_2026, reading, variant
+from tests.real import MAR_2024, OCT_2025, SOLAR_DOM_AUG_2026, SOLAR_DOM_OCT_2026, SOLAR_SEP_2026, reading, variant
 
 
 @pytest.mark.parametrize(("raw", "expected"), [
@@ -243,3 +243,77 @@ def test_reconcile_keeps_one_sided_figures_flagged():
     settled = second_read.reconcile(cut, OCT_2025)
     assert settled is not None and "bill_amount" in settled.unreadable_fields
     assert not capture.report(settled).trusted
+
+
+# Domestic rooftop solar: the two real slips that were refused or misread before.
+
+
+@pytest.mark.parametrize("bill", [SOLAR_DOM_OCT_2026, SOLAR_DOM_AUG_2026], ids=["exported_more", "billed_23"])
+def test_domestic_solar_bills_are_trusted_and_every_charge_checks(bill):
+    from app.flows.analysis import analyse
+
+    report = capture.report(bill)
+    assert report.trusted, report.problem
+    assert {c.key: c.status for c in report.checks}["net_units"] == "pass"
+    audit = analyse(bill, "web:test-solar-domestic").audit
+    assert audit.status == "verified" and audit.overcharge == 0  # duty on import, energy on billed units
+
+
+def test_units_banked_from_export_are_carried_not_failed():
+    assert SOLAR_DOM_OCT_2026.import_units() == 256 and SOLAR_DOM_OCT_2026.net_units() == 0
+    assert SOLAR_DOM_AUG_2026.import_units() == 160 and SOLAR_DOM_AUG_2026.net_units() == 23
+    wrong_carry = variant(SOLAR_DOM_OCT_2026, carry_forward_units=19)  # a misread banked figure
+    assert {c.key: c.status for c in capture.report(wrong_carry).checks}["net_units"] == "fail"
+    banked_in = variant(SOLAR_DOM_AUG_2026, previous_carry_forward_units=5, billed_units=18)
+    assert {c.key: c.status for c in capture.report(banked_in).checks}["net_units"] == "pass"
+
+
+def test_the_printed_import_and_units_labels_take_their_places():
+    read = normalise({"units": "0", "import_units": "256.0", "export_units": "266"})
+    assert (read["units"], read["billed_units"]) == (256, 0) and "import_units" not in read
+    copied = normalise({"units": 160, "import_units": 160, "export_units": 137})
+    assert (copied["units"], copied["billed_units"]) == (160, None)  # a copy of Import is not the billed figure
+    plain = normalise({"units": 138})
+    assert (plain["units"], plain.get("billed_units")) == (138, None)
+
+
+def test_an_export_register_read_backwards_is_put_in_order_but_a_rollover_is_not():
+    swapped = normalise({"export_previous_reading": "40355", "export_present_reading": "40218"})
+    assert (swapped["export_previous_reading"], swapped["export_present_reading"]) == (40218.0, 40355.0)
+    rolled = normalise({"export_previous_reading": "99950", "export_present_reading": "40"})
+    assert (rolled["export_previous_reading"], rolled["export_present_reading"]) == (99950.0, 40.0)
+
+
+def test_a_misread_reading_on_a_bill_whose_amounts_agree_is_never_shown():
+    misread = variant(SOLAR_DOM_AUG_2026, present_reading=54769.0, export_previous_reading=40210.0)
+    assert capture.register_misreads(misread) == ["previous_reading", "present_reading", "export_previous_reading",
+                                                  "export_present_reading"]
+    assert capture.register_misreads(SOLAR_DOM_AUG_2026) == []
+    cleared = vision._registers_checked(reading(misread)).bill
+    assert cleared is not None and cleared.present_reading is None and cleared.export_previous_reading is None
+    assert {"present_reading", "export_previous_reading"} <= set(cleared.unreadable_fields) and cleared.units == 160
+
+
+def _slip_on_cloth(marker: bool) -> Image.Image:
+    photo = Image.new("RGB", (1200, 1600), (60, 90, 170))  # a patterned bedsheet, simplified to blue
+    draw = ImageDraw.Draw(photo)
+    draw.rectangle((450, 20, 760, 1590), fill=(245, 245, 240))
+    for y in range(60, 1560, 26):
+        draw.line((480, y, 700, y), fill=(30, 30, 30), width=3)
+    if marker:  # the green pen over the name and address
+        draw.rectangle((440, 470, 800, 580), fill=(80, 230, 170))
+    return photo
+
+
+@pytest.mark.parametrize("marker", [False, True])
+def test_a_slip_on_a_cloth_is_cropped_to_the_whole_paper(marker):
+    box = vision.paper_box(_slip_on_cloth(marker))
+    assert box is not None
+    left, top, right, bottom = box
+    assert left < 460 and right > 750 and top < 60 and bottom > 1560  # top to bottom, past the marker
+    assert right - left < 450  # the cloth on both sides is gone
+
+
+def test_a_page_that_fills_the_photo_is_left_alone():
+    assert vision.paper_box(Image.new("RGB", (1000, 1400), (250, 250, 250))) is None
+    assert vision.paper_box(Image.new("RGB", (1000, 1400), (60, 90, 170))) is None

@@ -48,6 +48,39 @@ SOLAR_SEP_2026 = ExtractedBill.model_validate({
     "confidence": 0.95,
 })
 
+# Real TGSPDCL domestic slips with rooftop solar (net metering), typed from the owner's photos; the service number is
+# a placeholder. October exported more than it drew: nothing billed, 10 units carried forward. August billed 23 units.
+# Both charge electricity duty on the units imported (0.06 x 256 and 0.06 x 160), not on the units billed.
+SOLAR_DOM_OCT_2026 = ExtractedBill.model_validate({
+    "discom": "TGSPDCL", "service_number": PLACEHOLDER_USC, "category": "1A DOMESTIC", "is_domestic": True,
+    "bill_month": "2026-10", "bill_date": "2026-10-06", "due_date": "2026-10-20", "previous_reading_date": "2026-09-04",
+    "billing_days": 32, "previous_reading": 11333.0, "present_reading": 11589.0, "present_status": "01",
+    "previous_status": "01", "units": 256, "export_units": 266, "billed_units": 0, "previous_carry_forward_units": 0,
+    "carry_forward_units": 10, "export_previous_reading": 10304.0, "export_present_reading": 10570.0, "load_kw": 5.0,
+    "phase": 3, "multiplying_factor": 1.0, "security_deposit": 900.0,
+    "line_items": _items(("energy", "Energy Charges", 0.0), ("fixed", "Fixed Charges", 50.0),
+                         ("customer", "Customer Charges", 40.0), ("duty", "Electricity Duty", 15.36),
+                         ("other", "Interest on ED", 0.0), ("surcharge", "Surcharge", 0.0),
+                         ("fsa", "FSA/FCA Charges", 0.0), ("other", "Subsidy", 0.0), ("adjustment", "Adjustment", 0.0),
+                         ("other", "Interest on CD", 0.0), ("adjustment", "Loss/Gain", -0.36)),
+    "bill_amount": 105.0, "arrears": -157.0, "total_payable": -52.0, "gruha_jyothi_household": False, "confidence": 0.95,
+})
+
+SOLAR_DOM_AUG_2026 = ExtractedBill.model_validate({
+    "discom": "TGSPDCL", "service_number": PLACEHOLDER_USC, "category": "1A DOMESTIC", "is_domestic": True,
+    "bill_month": "2026-08", "bill_date": "2026-08-17", "due_date": "2026-08-31", "previous_reading_date": "2026-07-03",
+    "billing_days": 45, "previous_reading": 54629.0, "present_reading": 54789.0, "present_status": "01",
+    "previous_status": "01", "units": 160, "export_units": 137, "billed_units": 23, "previous_carry_forward_units": 0,
+    "carry_forward_units": 0, "export_previous_reading": 40218.0, "export_present_reading": 40355.0, "load_kw": 10.0,
+    "phase": 3, "multiplying_factor": 1.0, "security_deposit": 1500.0,
+    "line_items": _items(("energy", "Energy Charges", 44.85), ("fixed", "Fixed Charges", 100.0),
+                         ("customer", "Customer Charges", 40.0), ("duty", "Electricity Duty", 9.6),
+                         ("other", "Interest on ED", 0.15), ("surcharge", "Surcharge", 25.0),
+                         ("fsa", "FSA/FCA Charges", 0.0), ("other", "Subsidy", 0.0), ("adjustment", "Adjustment", 0.0),
+                         ("other", "Interest on CD", 0.0), ("adjustment", "Loss/Gain", 0.4)),
+    "bill_amount": 220.0, "arrears": 0.0, "total_payable": 220.0, "gruha_jyothi_household": False, "confidence": 0.95,
+})
+
 MAR_2024 = ExtractedBill.model_validate({
     "discom": "TGSPDCL", "service_number": PLACEHOLDER_USC, "category": "1B(1) Domestic", "is_domestic": True,
     "bill_month": "2024-03", "bill_date": "2024-03-06", "due_date": "2024-03-20",

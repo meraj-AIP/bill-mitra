@@ -9,13 +9,17 @@ is the one outcome that must not happen; asking for a retake is the safe fallbac
 
 ## The path
 
-1. **Open and straighten** (`services/vision.py`). PDFs are rendered page by page, HEIC opens, tiny WhatsApp photos
-   are enlarged, and a photo tilted 3 degrees or more is turned straight (`skew_angle`), because on a tilted slip a
+1. **Open, crop and straighten** (`services/vision.py`). PDFs are rendered page by page, HEIC opens, a slip that fills
+   only part of the photo (on a bed or a table) is cropped to the paper (`paper_box`), a stamp or pen mark over the
+   name does not split it, tiny WhatsApp photos are enlarged, and a photo tilted 3 degrees or more is turned straight (`skew_angle`), because on a tilted slip a
    value drifts onto the row above or below its label. Tall slips are sent as overlapping crops.
 2. **First look.** A cheap pass decides whether it is an electricity bill, a meter photo or something else. Only a
    bill or a meter is read in detail.
 3. **Careful read.** The model returns the printed values only: readings with their meter status, units, solar
-   import, export, billed units and the export register's own readings, MF, every charge row, totals, dates.
+   import, export and the export register's own readings, banked ("CF") units brought in and carried on, MF, every
+   charge row, totals, dates. Each solar figure is copied under its printed label ("Units:", "Import:"); the code, not
+   the model, decides that Import is the units drawn and Units the units billed, because the model asked to swap them
+   itself did so unreliably. An export register read backwards is put in counting order unless it rolled over.
 4. **One form** (`domain/bill_normalise.py`). "Rs 1,234.50", "545.00 CR", "07/09/26", "Sts 1", "TSSPDCL" and a power
    factor of 99 are put in one form. A value that still does not fit is dropped and listed as unreadable, so one bad
    cell never loses the rest of the bill. The printed category decides domestic or not.
@@ -25,7 +29,7 @@ is the one outcome that must not happen; asking for a retake is the safe fallbac
    | --- | --- |
    | Present minus previous reading, times MF, equals units (meter rollover allowed) | A misread reading or units |
    | Export register readings equal the units exported (solar) | A misread export figure |
-   | Import minus export equals billed units (solar) | A misread import, export or billed figure |
+   | Import minus export minus units banked in equals billed units; any surplus is carried on (solar) | A misread import, export, billed or banked figure |
    | Units agree with the energy charge | Units and a reading misread the same way, so they still agree with each other |
    | Charges add up to the bill amount | A charge read from the wrong row |
    | Bill amount plus arrears equals total due | A misread total or arrears |
@@ -56,6 +60,9 @@ Read correctly now that were retakes: the tilted March slip and the heavily blur
 retakes are right to be retakes: two photos have the bill amount cut off, two are blurred past reading, and one had
 the units and a reading misread together, which the energy check caught.
 
-There is no real solar photo in the test set yet. Solar bills are covered by unit tests on the September 2026
-commercial bill fixture; add a scan of a solar bill to `tests/real_bills` and its expected values to `TRUTH` in the
+Solar is covered by the September 2026 commercial fixture and by two real domestic slips from October 2026
+(`SOLAR_DOM_OCT_2026`, which exported more than it drew and carried 10 units on, and `SOLAR_DOM_AUG_2026`). On both,
+duty is charged on the units imported, domestic as well as commercial, and the engine now does the same. A reading
+that still fails its register check on a solar bill whose net units agree is dropped and marked unreadable rather than
+shown. The photos themselves are not in the repo because they show the consumer's service number; add a scan of a solar bill to `tests/real_bills` and its expected values to `TRUTH` in the
 eval to measure them live.

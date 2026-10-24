@@ -197,4 +197,4 @@ def test_production_refuses_a_fixed_code():
     with pytest.raises(ValueError, match="DEMO_OTP_MOBILE"):
         Settings(app_env="production", hash_pepper="test-pepper-not-real", demo_otp_mobile="9999012345", demo_otp_code="123456")
     with pytest.raises(ValueError, match="together"):
-        Settings(demo_otp_mobile="9999012345")
+        Settings(demo_otp_mobile="9999012345", demo_otp_code="")  # explicit, so a developer's .env cannot fill it

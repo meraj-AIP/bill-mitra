@@ -95,6 +95,8 @@ class ExtractedBill(BaseModel):
     recorded_md: float | None = None
     power_factor: float | None = Field(default=None, ge=0, le=1)
     security_deposit: float | None = None
+    # Solar units banked from export, as printed "Prev/Pres CF Units : a/b": a is brought in, b is carried on.
+    previous_carry_forward_units: int | None = None
     carry_forward_units: int | None = None
     disconnection_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     last_paid_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
@@ -134,13 +136,17 @@ class ExtractedBill(BaseModel):
         if self.billed_units is not None:
             return self.billed_units
         units = self.units or 0
-        return max(units - (self.export_units or 0), 0)
+        return max(units - (self.export_units or 0) - (self.previous_carry_forward_units or 0), 0)
 
     def import_units(self) -> int | None:
-        """Units drawn from the grid. On a net-metered bill billed plus export is exact, where the faint
-        "Import:" figure is the one most often misread."""
+        """Units drawn from the grid. On a net-metered bill the printed billed, export and banked units give it
+        exactly, where the faint "Import:" figure is the one most often misread: billed + export + banked in when
+        something is billed, else export + banked in - banked on (units are carried on only when nothing is billed)."""
         if self.billed_units is not None and self.export_units is not None:
-            return self.billed_units + self.export_units
+            banked_in = self.previous_carry_forward_units or 0
+            if self.billed_units > 0:
+                return self.billed_units + self.export_units + banked_in
+            return max(self.export_units + banked_in - (self.carry_forward_units or 0), 0)
         return self.units
 
     def tariff_category(self) -> Literal["domestic", "non_domestic"]:
